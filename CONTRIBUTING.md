@@ -26,7 +26,17 @@ Pre-commit hooks and CI enforce most of these automatically.
 - Behaviour is specified first, tests are written from the spec, then the code makes them pass. Every feature ships with unit and end-to-end tests.
 - PRs are merged with a merge commit after rebasing on `main` (no squash).
 
-Setup instructions will appear here once the workspace is scaffolded.
+## Local setup
+
+Requirements: Node.js 22.12+ and pnpm (via Corepack).
+
+```sh
+corepack enable
+pnpm install
+pnpm verify        # format check, lint, typecheck, unit tests with coverage, e2e
+```
+
+Useful scripts: `pnpm test:watch`, `pnpm format`, `pnpm lint`, `pnpm verify:fast` (no e2e).
 
 ## Licence
 
