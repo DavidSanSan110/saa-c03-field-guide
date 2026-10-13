@@ -1,0 +1,16 @@
+name: Idea or improvement
+description: Suggest a topic, diagram, lab or feature.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: Idea
+      description: What would you like, and how would it help someone studying for SAA-C03?
+    validations:
+      required: true
+  - type: input
+    id: task
+    attributes:
+      label: Exam task statement (optional)
+      placeholder: "1.3 Determine appropriate data security controls"

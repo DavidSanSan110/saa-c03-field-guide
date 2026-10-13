@@ -1,0 +1,25 @@
+name: Bug report
+description: Something on the site, a diagram, a lab or the tooling doesn't work.
+labels: ["bug"]
+body:
+  - type: input
+    id: where
+    attributes:
+      label: Where
+      description: Page URL, diagram ID or lab folder.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: input
+    id: env
+    attributes:
+      label: Browser / OS / Terraform version

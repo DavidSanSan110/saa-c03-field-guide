@@ -1,0 +1,33 @@
+name: Report a practice question
+description: A practice question is wrong, ambiguous or outdated.
+title: "question: <question id>"
+labels: ["content", "question-report"]
+body:
+  - type: input
+    id: question
+    attributes:
+      label: Question ID
+      description: Shown on the question, for example `d1-1.3-0007`.
+      placeholder: d1-1.3-0007
+    validations:
+      required: true
+  - type: dropdown
+    id: problem
+    attributes:
+      label: What's the problem?
+      options:
+        - The marked answer is wrong
+        - More than one answer is correct
+        - The question is ambiguous
+        - The explanation is wrong or incomplete
+        - Outdated (AWS changed the service)
+        - Typo or formatting
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: Explain the problem. A link to the AWS documentation that supports your point helps a lot.
+    validations:
+      required: true
