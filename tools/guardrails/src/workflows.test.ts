@@ -230,3 +230,72 @@ describe('workflow policy: the checker itself', () => {
     expect(check(GOOD.replace('    timeout-minutes: 15\n', ''))).not.toEqual([]);
   });
 });
+
+// ---- Spec 005: the no-merges step in ci.yml ---------------------------------------------------
+
+/** The `verify` job step of ci.yml whose command runs `guardrails no-merges`, if any. */
+function noMergesStep(): Dict | undefined {
+  const ci = loadWorkflows().find((workflow) => workflow.name === 'ci.yml');
+  if (ci === undefined) throw new Error('.github/workflows/ci.yml is missing');
+  const verify = jobsOf(parseWorkflow(ci)).find(([id]) => id === 'verify');
+  if (verify === undefined) throw new Error('ci.yml has no verify job');
+  const steps = verify[1]['steps'];
+  if (!Array.isArray(steps)) throw new Error('the verify job has no steps');
+  return (steps as unknown[]).find(
+    (step): step is Dict =>
+      isDict(step) && typeof step['run'] === 'string' && /guardrails no-merges\b/.test(step['run']),
+  );
+}
+
+function requireNoMergesStep(): Dict {
+  const step = noMergesStep();
+  if (step === undefined)
+    throw new Error('the verify job has no step running guardrails no-merges');
+  return step;
+}
+
+/** The environment variable a `--flag "$VAR"` argument in the step's command refers to. */
+function envVarFor(run: string, flag: string): string | undefined {
+  return new RegExp(`${flag}[ =]"?\\$\\{?([A-Za-z_][A-Za-z0-9_]*)\\}?"?`).exec(run)?.[1];
+}
+
+describe('ci.yml: the no-merges step', () => {
+  test('AC-10: the verify job has a step that runs guardrails no-merges', () => {
+    expect(noMergesStep()).toBeDefined();
+  });
+
+  test('AC-10: the command passes --base and --head', () => {
+    const run = String(requireNoMergesStep()['run']);
+    expect(run).toMatch(/guardrails no-merges\b.*--base\b/);
+    expect(run).toMatch(/--head\b/);
+  });
+
+  test('AC-10: the head comes from github.event.pull_request.head.sha through env', () => {
+    const step = requireNoMergesStep();
+    const variable = envVarFor(String(step['run']), '--head');
+    expect(variable).toBeDefined();
+    const env = step['env'];
+    expect(isDict(env)).toBe(true);
+    expect(String((env as Dict)[variable ?? ''])).toContain('github.event.pull_request.head.sha');
+  });
+
+  test('AC-10: the base comes from the pull request base branch through env', () => {
+    const step = requireNoMergesStep();
+    const variable = envVarFor(String(step['run']), '--base');
+    expect(variable).toBeDefined();
+    const env = step['env'];
+    expect(isDict(env)).toBe(true);
+    expect(String((env as Dict)[variable ?? ''])).toContain('github.base_ref');
+  });
+
+  test('AC-10: the step only runs on pull requests and when not cancelled', () => {
+    const condition = String(requireNoMergesStep()['if']);
+    expect(condition).toContain("github.event_name == 'pull_request'");
+    expect(condition).toContain('!cancelled()');
+  });
+
+  test('AC-10: the tests-approved label does not lift the step', () => {
+    const condition = String(requireNoMergesStep()['if']);
+    expect(condition).not.toContain('tests-approved');
+  });
+});

@@ -838,3 +838,246 @@ describe('guardrails test-lock and commits usage errors', () => {
     expect(run.status).toBe(2);
   });
 });
+
+// ---- Spec 005: test-control files and the no-merges command -----------------------------------
+
+const PACKAGE_JSON = [
+  '{',
+  '  "name": "sample",',
+  '  "scripts": {',
+  '    "test": "vitest run",',
+  '    "e2e": "playwright test",',
+  '    "lint": "eslint ."',
+  '  },',
+  '  "dependencies": {',
+  '    "left-pad": "^1.0.0"',
+  '  }',
+  '}',
+  '',
+].join('\n');
+
+const PLAYWRIGHT_CONFIG = [
+  "import { defineConfig } from '@playwright/test';",
+  '',
+  'retries();',
+  '',
+];
+
+/**
+ * A repository whose base commit holds the test-control files, plus a feature branch
+ * that is checked out and still empty.
+ */
+function makeControlRepo(): { dir: string; base: string } {
+  const dir = makeTempRepo();
+  write(dir, 'README.md', '# Seed\n');
+  write(dir, 'package.json', PACKAGE_JSON);
+  write(dir, 'packages/x/package.json', PACKAGE_JSON);
+  write(dir, 'vitest.config.ts', 'export default { test: { include: ["src/**/*.test.ts"] } };\n');
+  write(dir, 'vitest.setup.ts', 'export {};\n');
+  write(dir, 'playwright.config.ts', PLAYWRIGHT_CONFIG.join('\n'));
+  const base = commitWith(dir, 'chore: seed');
+  git(dir, ['checkout', '--quiet', '-b', 'feature']);
+  return { dir, base };
+}
+
+describe('guardrails test-lock --base <ref> and test-control files', () => {
+  test('AC-8: a fix commit editing vitest.config.ts exits 1 with [test-lock] naming it', () => {
+    const { dir, base } = makeControlRepo();
+    write(dir, 'vitest.config.ts', 'export default { test: { include: [] } };\n');
+    const fixSha = commitWith(dir, 'fix: make the suite pass');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*vitest\.config\.ts.*\[test-lock\]/);
+    expect(run.output).toContain(fixSha.slice(0, 7));
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-8: a feat commit adding --pass-with-no-tests to a package.json script exits 1 naming package.json', () => {
+    const { dir, base } = makeControlRepo();
+    write(
+      dir,
+      'package.json',
+      PACKAGE_JSON.replace(
+        '"e2e": "playwright test"',
+        '"e2e": "playwright test --pass-with-no-tests"',
+      ),
+    );
+    commitWith(dir, 'feat: tolerate empty suites');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*package\.json.*\[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-8: a feat commit removing the test script of a nested package.json exits 1 naming it', () => {
+    const { dir, base } = makeControlRepo();
+    write(dir, 'packages/x/package.json', PACKAGE_JSON.replace('    "test": "vitest run",\n', ''));
+    commitWith(dir, 'feat: drop the test script');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*packages\/x\/package\.json.*\[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-8: a chore(deps) commit changing only a dependency version in package.json exits 0', () => {
+    const { dir, base } = makeControlRepo();
+    write(dir, 'package.json', PACKAGE_JSON.replace('^1.0.0', '^1.1.0'));
+    commitWith(dir, 'chore(deps): bump left-pad');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: a feat commit changing a non-test script in package.json exits 0', () => {
+    const { dir, base } = makeControlRepo();
+    write(dir, 'package.json', PACKAGE_JSON.replace('"lint": "eslint ."', '"lint": "eslint src"'));
+    commitWith(dir, 'feat: lint only src');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: a test commit removing a line from playwright.config.ts exits 0', () => {
+    const { dir, base } = makeControlRepo();
+    write(dir, 'playwright.config.ts', PLAYWRIGHT_CONFIG.slice(0, 2).join('\n') + '\n');
+    commitWith(dir, 'test(e2e): simplify the runner config');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: a test commit changing a test script in package.json exits 0', () => {
+    const { dir, base } = makeControlRepo();
+    write(dir, 'package.json', PACKAGE_JSON.replace('"vitest run"', '"vitest run --coverage"'));
+    commitWith(dir, 'test: run the suite with coverage');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: a feat commit deleting vitest.setup.ts exits 1 naming it', () => {
+    const { dir, base } = makeControlRepo();
+    rmSync(join(dir, 'vitest.setup.ts'));
+    commitWith(dir, 'feat: drop the global setup');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*vitest\.setup\.ts.*\[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-8: a feat commit touching only ordinary source exits 0', () => {
+    const { dir, base } = makeControlRepo();
+    write(dir, 'src/a.ts', 'export const a = 1;\n');
+    commitWith(dir, 'feat: add a');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.status).toBe(0);
+  });
+});
+
+describe('guardrails no-merges --base <ref>', () => {
+  /** Merges a side branch (created from `from`) into the current branch with a merge commit. */
+  function mergeSideBranch(dir: string, from: string): string {
+    const current = gitOut(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+    git(dir, ['checkout', '--quiet', '-b', `side-${from.slice(0, 7)}`, from]);
+    write(dir, 'src/side.ts', 'export const side = 1;\n');
+    commitWith(dir, 'feat(side): add side');
+    git(dir, ['checkout', '--quiet', current]);
+    git(dir, [
+      'merge',
+      '--quiet',
+      '--no-ff',
+      '--no-verify',
+      '-m',
+      'Merge branch side',
+      `side-${from.slice(0, 7)}`,
+    ]);
+    return gitOut(dir, ['rev-parse', 'HEAD']);
+  }
+
+  test('AC-9: a linear branch exits 0 with the ok line', () => {
+    const { dir, base } = makeFeatureRepo();
+    const run = runCli(dir, ['no-merges', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: no-merges ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-9: a branch containing a merge commit exits 1 with [no-merges] and the merge short sha', () => {
+    const { dir, base } = makeFeatureRepo();
+    const mergeSha = mergeSideBranch(dir, base);
+    const run = runCli(dir, ['no-merges', '--base', base]);
+    expect(run.output).toMatch(/✖ .* \[no-merges\]/);
+    expect(run.output).toContain(mergeSha.slice(0, 7));
+    expect(run.output).not.toContain('✔');
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-9: only the merge commit is reported, not the linear commits around it', () => {
+    const { dir, base, featSha } = makeFeatureRepo();
+    const mergeSha = mergeSideBranch(dir, base);
+    write(dir, 'src/after.ts', 'export const after = 1;\n');
+    commitWith(dir, 'feat: after the merge');
+    const run = runCli(dir, ['no-merges', '--base', base]);
+    expect(run.output).toContain(mergeSha.slice(0, 7));
+    expect(run.output).not.toContain(featSha.slice(0, 7));
+    expect(run.output.match(/\[no-merges\]/g)).toHaveLength(1);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-9: a merge commit at or before the base is not reported', () => {
+    const dir = makeTempRepo();
+    write(dir, 'README.md', '# Seed\n');
+    const seed = commitWith(dir, 'chore: seed');
+    const base = mergeSideBranch(dir, seed);
+    write(dir, 'src/a.ts', 'export const a = 1;\n');
+    commitWith(dir, 'feat: add a');
+    const run = runCli(dir, ['no-merges', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: no-merges ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-9: --head set to the commit before the merge exits 0', () => {
+    const { dir, base, featSha } = makeFeatureRepo();
+    mergeSideBranch(dir, base);
+    const run = runCli(dir, ['no-merges', '--base', base, '--head', featSha]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: no-merges ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-9: --head set to the merge commit itself exits 1', () => {
+    const { dir, base } = makeFeatureRepo();
+    const mergeSha = mergeSideBranch(dir, base);
+    write(dir, 'src/after.ts', 'export const after = 1;\n');
+    commitWith(dir, 'feat: after the merge');
+    const run = runCli(dir, ['no-merges', '--base', base, '--head', mergeSha]);
+    expect(run.output).toMatch(/✖ .* \[no-merges\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-9: an empty range exits 0', () => {
+    const { dir } = makeFeatureRepo();
+    const run = runCli(dir, ['no-merges', '--base', 'HEAD']);
+    expect(run.stdout).toContain('✔ guardrails: no-merges ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-9: without --base exits 2 with usage on stderr', () => {
+    const { dir } = makeFeatureRepo();
+    const run = runCli(dir, ['no-merges']);
+    expect(run.stderr).toMatch(/usage/i);
+    expect(run.stderr).toContain('no-merges');
+    expect(run.stderr).toContain('--base');
+    expect(run.stdout).not.toContain('✔');
+    expect(run.status).toBe(2);
+  });
+
+  test('AC-9: --head alone is not enough, no-merges still exits 2', () => {
+    const { dir } = makeFeatureRepo();
+    const run = runCli(dir, ['no-merges', '--head', 'HEAD']);
+    expect(run.stderr).toMatch(/usage/i);
+    expect(run.stderr).toContain('no-merges');
+    expect(run.stderr).toContain('--base');
+    expect(run.status).toBe(2);
+  });
+});
