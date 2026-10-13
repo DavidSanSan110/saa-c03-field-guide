@@ -1,4 +1,4 @@
-// Guardrail rules (private spec 003): pure functions, one table entry per rule.
+// Guardrail rules: pure path, content, question, commit-message and push checks, one table entry per rule.
 import { validateQuestion } from '@field-guide/schema';
 import { parse } from 'yaml';
 
@@ -11,7 +11,10 @@ export interface Violation {
 interface PathRule {
   id: string;
   message: string;
-  /** Receives the path with '/' separators and no leading './', split into segments. */
+  /**
+   * Receives the lower-cased path (path rules are case-insensitive, as Windows and macOS file
+   * systems are) with '/' separators and no leading './', split into segments.
+   */
   blocks: (path: string, segments: string[], name: string) => boolean;
 }
 
@@ -34,14 +37,14 @@ const PATH_RULES: PathRule[] = [
   {
     id: 'private-path',
     message: 'private/ is a separate private repository and must never be committed here',
-    blocks: (_path, segments) => segments.length > 1 && segments[0] === 'private',
+    blocks: (_path, segments) => segments[0] === 'private',
   },
   {
     id: 'local-only',
     message: 'CLAUDE.md, PLAN.md and .claude/ are local-only files',
     blocks: (path, segments) =>
-      path === 'CLAUDE.md' ||
-      path === 'PLAN.md' ||
+      path === 'claude.md' ||
+      path === 'plan.md' ||
       (segments.length > 1 && segments[0] === '.claude'),
   },
   {
@@ -70,7 +73,7 @@ const CONTENT_RULES: ContentRule[] = [
     id: 'client-reference',
     message: 'client, employer or local machine reference',
     pattern: new RegExp(
-      [['kraken', 'legrand'].join(''), 'telef[oó]nica', 'c:\\\\users\\\\'].join('|'),
+      [['kraken', 'legrand'].join(''), 'telef[oó]nica', 'c:(\\\\+|/+)users(\\\\+|/+)'].join('|'),
       'i',
     ),
   },
@@ -80,13 +83,13 @@ const COMMIT_RULES: ContentRule[] = [
   {
     id: 'ai-attribution',
     message: 'AI attribution is not allowed in commit messages',
-    pattern: /^\s*co-authored-by:.*(claude|anthropic\.com)|generated with \[?claude code/i,
+    pattern: /^\s*co-authored-by:.*(\bclaude\b|anthropic\.com)|generated with \[?claude code/i,
   },
 ];
 
 /** `path` is relative to the repo root; '/' and '\' separators are both accepted. */
 export function checkPath(path: string): Violation[] {
-  const normalised = normalisePath(path);
+  const normalised = normalisePath(path).toLowerCase();
   const segments = normalised.split('/');
   const name = segments.at(-1) ?? '';
   return PATH_RULES.filter((rule) => rule.blocks(normalised, segments, name)).map((rule) => ({
