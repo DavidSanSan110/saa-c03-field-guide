@@ -1,5 +1,5 @@
 # Git hooks (installed by `pnpm install` through the `prepare` script).
-# Bad content is blocked before it enters history; CI runs the same checks again.
+# Bad content is blocked before it enters history; CI will run the same checks once it is added.
 
 pre-commit:
   jobs:
