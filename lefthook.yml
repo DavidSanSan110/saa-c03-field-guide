@@ -1,0 +1,40 @@
+# Git hooks (installed by `pnpm install` through the `prepare` script).
+# Bad content is blocked before it enters history; CI runs the same checks again.
+
+pre-commit:
+  jobs:
+    - name: gitleaks
+      # No braces in run commands: Lefthook reads {…} as a template placeholder.
+      run: >-
+        if ! command -v gitleaks >/dev/null 2>&1; then
+        echo 'gitleaks is required (Windows: winget install Gitleaks.Gitleaks)'; exit 1; fi;
+        gitleaks git --pre-commit --staged --redact --no-banner
+    - name: guardrails
+      run: pnpm -s guardrails paths --staged
+    - name: eslint
+      glob: '*.{js,mjs,cjs,ts,tsx,astro}'
+      run: pnpm -s eslint --fix --no-warn-ignored {staged_files}
+      stage_fixed: true
+    - name: prettier
+      run: pnpm -s prettier --write --ignore-unknown {staged_files}
+      stage_fixed: true
+    - name: terraform-fmt
+      glob: '*.{tf,tfvars}'
+      run: terraform fmt -check {staged_files}
+
+commit-msg:
+  jobs:
+    - name: commitlint
+      run: pnpm -s commitlint --edit {1}
+    - name: guardrails
+      run: pnpm -s guardrails commit-msg {1}
+
+pre-push:
+  jobs:
+    - name: no-push-to-main
+      run: pnpm -s guardrails pre-push
+      use_stdin: true
+    - name: typecheck
+      run: pnpm -s typecheck
+    - name: unit-tests
+      run: pnpm -s test
