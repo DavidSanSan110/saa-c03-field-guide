@@ -19,6 +19,7 @@
     "verify:fast": "pnpm verify:static && pnpm test",
     "verify": "pnpm verify:static && pnpm coverage && pnpm e2e",
     "guardrails": "tsx tools/guardrails/src/cli.ts",
+    "sync": "tsx tools/sync/src/cli.ts",
     "prepare": "lefthook install"
   },
   "devDependencies": {
