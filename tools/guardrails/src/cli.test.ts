@@ -16,6 +16,7 @@ const WINDOWS_USER_PATH = ['C:', 'Users', 'bob', 'notes'].join('\\');
 const TRAILER = 'Co-Authored-By' + ': ';
 const AI_NAME = 'Clau' + 'de';
 const AI_DOMAIN = 'anthro' + 'pic.com';
+const GENERATED = 'Generated' + ' with ';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
@@ -415,6 +416,128 @@ describe('guardrails on this repository', () => {
     const run = runCli(REPO_ROOT, ['paths', '--all']);
     expect(run.output).not.toContain('✖');
     expect(run.stdout).toContain('✔ guardrails: paths ok');
+    expect(run.status).toBe(0);
+  });
+});
+
+/** Writes `content` as a blob into the repository and returns its object id. */
+function hashObject(dir: string, content: string): string {
+  return execFileSync('git', ['hash-object', '-w', '--stdin'], {
+    cwd: dir,
+    env: cleanEnv(),
+    input: content,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).trim();
+}
+
+/** Adds an index entry without touching the working tree. */
+function setIndexEntry(dir: string, mode: string, sha: string, path: string): void {
+  git(dir, ['update-index', '--add', '--cacheinfo', `${mode},${sha},${path}`]);
+}
+
+const GITLINK_SHA = 'a1b2c3d4e5f60718293a4b5c6d7e8f9012345678';
+
+describe('guardrails paths with a gitlink (the nested private repo)', () => {
+  test('AC-18: paths --staged flags a staged gitlink at private as private-path, not exit 2', () => {
+    const dir = makeTempRepo();
+    setIndexEntry(dir, '160000', GITLINK_SHA, 'private');
+    const run = runCli(dir, ['paths', '--staged']);
+    expect(run.output).toMatch(/✖ private \[private-path\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-18: paths --all flags a committed gitlink at private as private-path, not exit 2', () => {
+    const dir = makeTempRepo();
+    write(dir, 'docs/a.md', 'clean\n');
+    git(dir, ['add', 'docs/a.md']);
+    setIndexEntry(dir, '160000', GITLINK_SHA, 'private');
+    git(dir, ['commit', '--quiet', '--no-verify', '-m', 'chore: seed']);
+    const run = runCli(dir, ['paths', '--all']);
+    expect(run.output).toMatch(/✖ private \[private-path\]/);
+    expect(run.output).not.toMatch(/✖ docs\/a\.md/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-18: a gitlink at an allowed path is path-checked and skipped for content', () => {
+    const dir = makeTempRepo();
+    setIndexEntry(dir, '160000', GITLINK_SHA, 'vendor/lib');
+    const staged = runCli(dir, ['paths', '--staged']);
+    expect(staged.output).not.toContain('✖');
+    expect(staged.stdout).toContain('✔ guardrails: paths ok');
+    expect(staged.status).toBe(0);
+  });
+});
+
+describe('guardrails paths --staged with type changes', () => {
+  test('AC-20: flags a file that changed from symlink to regular file with a client reference', () => {
+    const dir = makeTempRepo();
+    setIndexEntry(dir, '120000', hashObject(dir, 'target.md'), 'link');
+    git(dir, ['commit', '--quiet', '--no-verify', '-m', 'chore: seed']);
+    setIndexEntry(dir, '100644', hashObject(dir, `copied from ${CLIENT}\n`), 'link');
+    const run = runCli(dir, ['paths', '--staged']);
+    expect(run.output).toMatch(/✖ link \[client-reference\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-20: a clean type change from symlink to regular file passes', () => {
+    const dir = makeTempRepo();
+    setIndexEntry(dir, '120000', hashObject(dir, 'target.md'), 'link');
+    git(dir, ['commit', '--quiet', '--no-verify', '-m', 'chore: seed']);
+    setIndexEntry(dir, '100644', hashObject(dir, 'plain text\n'), 'link');
+    const run = runCli(dir, ['paths', '--staged']);
+    expect(run.stdout).toContain('✔ guardrails: paths ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-20: flags a path violation on a type change', () => {
+    const dir = makeTempRepo();
+    setIndexEntry(dir, '120000', hashObject(dir, 'target.md'), 'deck.pdf');
+    git(dir, ['commit', '--quiet', '--no-verify', '-m', 'chore: seed']);
+    setIndexEntry(dir, '100644', hashObject(dir, 'now a file\n'), 'deck.pdf');
+    const run = runCli(dir, ['paths', '--staged']);
+    expect(run.output).toMatch(/✖ deck\.pdf \[source-material\]/);
+    expect(run.status).toBe(1);
+  });
+});
+
+describe('guardrails commit-msg with the scissors line', () => {
+  const aiTrailer = `${TRAILER}${AI_NAME} Opus 5.5 <noreply@${AI_DOMAIN}>`;
+  const SCISSORS = '# ------------------------ >8 ------------------------';
+  const verboseTail = [
+    SCISSORS,
+    '# Do not modify or remove the line above.',
+    '# Everything below it will be ignored.',
+    'diff --git a/docs/a.md b/docs/a.md',
+    `+${aiTrailer}`,
+    aiTrailer,
+    `+${GENERATED}${AI_NAME} Code`,
+    '',
+  ].join('\n');
+
+  test('AC-21: ignores a trailer in the diff below the scissors line (git commit -v)', () => {
+    const dir = makeTempDir();
+    write(dir, 'COMMIT_EDITMSG', `feat: add y\n\nBecause.\n${verboseTail}`);
+    const run = runCli(dir, ['commit-msg', join(dir, 'COMMIT_EDITMSG')]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: commit-msg ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-21: still catches a trailer above the scissors line', () => {
+    const dir = makeTempDir();
+    write(dir, 'COMMIT_EDITMSG', `feat: add y\n\n${aiTrailer}\n${verboseTail}`);
+    const run = runCli(dir, ['commit-msg', join(dir, 'COMMIT_EDITMSG')]);
+    expect(run.output).toMatch(/✖ COMMIT_EDITMSG \[ai-attribution\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-21: allows a Co-authored-by trailer for a person named like the assistant', () => {
+    const dir = makeTempDir();
+    const person = `Co-authored-by: ${AI_NAME}tte Dupont <c@example.com>`;
+    write(dir, 'COMMIT_EDITMSG', `feat: add y\n\n${person}\n`);
+    const run = runCli(dir, ['commit-msg', join(dir, 'COMMIT_EDITMSG')]);
+    expect(run.output).not.toContain('✖');
     expect(run.status).toBe(0);
   });
 });

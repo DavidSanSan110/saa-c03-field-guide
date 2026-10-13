@@ -68,6 +68,13 @@ importers:
       yaml:
         specifier: ^2.9.1
         version: 2.9.1
+    devDependencies:
+      '@commitlint/lint':
+        specifier: ^21.2.3
+        version: 21.2.3
+      '@commitlint/load':
+        specifier: ^21.2.3
+        version: 21.2.3(@types/node@22.20.5)(typescript@6.0.3)
 
 packages:
 

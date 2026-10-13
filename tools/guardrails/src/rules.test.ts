@@ -352,3 +352,102 @@ describe('checkPushRefs', () => {
     expect(checkPushRefs('\n\n')).toEqual([]);
   });
 });
+
+describe('checkPath: case-insensitive on Windows', () => {
+  test.each([
+    ['Private/x.md', 'private-path'],
+    ['PRIVATE/x', 'private-path'],
+    ['Private\\Notes\\a.md', 'private-path'],
+    ['.Claude/settings.json', 'local-only'],
+    ['claude.md', 'local-only'],
+    ['Plan.md', 'local-only'],
+    ['QUIZ.md', 'source-material'],
+    ['12-S3/Quiz.MD', 'source-material'],
+    ['.ENV', 'secret-file'],
+    ['ID.PEM', 'secret-file'],
+    ['Terraform.TFSTATE', 'secret-file'],
+  ])('AC-17: flags %s as %s, like its lower-case form', (path, rule) => {
+    expect(ruleIds(checkPath(path))).toEqual([rule]);
+  });
+
+  test.each(['.ENV.EXAMPLE', 'Apps/Site/.Env.Example'])(
+    'AC-17: still allows the example file %s',
+    (path) => {
+      expect(checkPath(path)).toEqual([]);
+    },
+  );
+
+  test.each(['docs/Private/notes.md', 'packages/schema/Plan.md', 'docs/Claude.md'])(
+    'AC-17: keeps the root-only scope for %s',
+    (path) => {
+      expect(checkPath(path)).toEqual([]);
+    },
+  );
+});
+
+describe('checkPath: the bare private path', () => {
+  test.each(['private', 'Private', 'PRIVATE'])(
+    'AC-18: flags the bare path %s (the nested repo as a gitlink) as private-path',
+    (path) => {
+      expect(ruleIds(checkPath(path))).toEqual(['private-path']);
+    },
+  );
+
+  test.each(['privateer', 'docs/private', 'private-notes'])(
+    'AC-18: does not flag the similar path %s',
+    (path) => {
+      expect(checkPath(path)).toEqual([]);
+    },
+  );
+});
+
+describe('checkContent: Windows user paths in other notations', () => {
+  const ESCAPED = 'C:' + '\\\\' + 'Users' + '\\\\' + 'bob' + '\\\\' + 'notes';
+  const FORWARD = 'C:' + '/' + 'Users' + '/bob/notes';
+  const FILE_URL = 'file:///' + 'C:' + '/' + 'Users' + '/bob/notes';
+
+  test.each([
+    ['the JSON-escaped form', `{"path": "${ESCAPED}"}`],
+    ['the JSON-escaped form in lower case', ESCAPED.toLowerCase()],
+    ['the JSON-escaped form in upper case', ESCAPED.toUpperCase()],
+    ['the forward-slash form', `open ${FORWARD} now`],
+    ['the forward-slash form in lower case', FORWARD.toLowerCase()],
+    ['the forward-slash form in upper case', FORWARD.toUpperCase()],
+    ['a file URL', `see ${FILE_URL}`],
+    ['a file URL in upper case', FILE_URL.toUpperCase()],
+  ])('AC-19: flags text containing %s as client-reference', (_label, text) => {
+    expect(ruleIds(checkContent('docs/notes.md', text))).toEqual(['client-reference']);
+  });
+
+  test.each([
+    ['a %USERPROFILE% path', '%USERPROFILE%' + '\\Documents\\notes'],
+    ['a %USERPROFILE% path with forward slashes', '%USERPROFILE%' + '/Documents/notes'],
+    ['a Unix-style /Users/ path', 'open ' + '/' + 'Users' + '/bob/notes'],
+    ['a macOS home in prose', 'the ' + '/' + 'Users' + '/ folder on macOS'],
+  ])('AC-19: does not flag %s', (_label, text) => {
+    expect(checkContent('docs/notes.md', text)).toEqual([]);
+  });
+});
+
+describe('checkCommitMessage: whole-word assistant name', () => {
+  const person = `Co-authored-by: ${AI_NAME}tte Dupont <c@example.com>`;
+
+  test('AC-21: allows a Co-authored-by trailer for a person whose name starts with the assistant name', () => {
+    expect(checkCommitMessage(`feat: y\n\n${person}\n`)).toEqual([]);
+  });
+
+  test('AC-21: allows a person whose name merely contains the assistant name', () => {
+    const message = `feat: y\n\n${TRAILER}Mc${AI_NAME}son <m@example.com>\n`;
+    expect(checkCommitMessage(message)).toEqual([]);
+  });
+
+  test('AC-21: still flags the assistant name as a whole word after a first name', () => {
+    const message = `feat: y\n\n${TRAILER}Jane ${AI_NAME} <j@example.com>\n`;
+    expect(ruleIds(checkCommitMessage(message))).toEqual(['ai-attribution']);
+  });
+
+  test('AC-21: still flags the assistant name followed by punctuation', () => {
+    const message = `feat: y\n\n${TRAILER}${AI_NAME}, Opus <j@example.com>\n`;
+    expect(ruleIds(checkCommitMessage(message))).toEqual(['ai-attribution']);
+  });
+});

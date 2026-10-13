@@ -589,3 +589,75 @@ describe('AC-11: validateQuestion never throws on bad input', () => {
     }
   });
 });
+
+describe('AC-12: whitespace-only strings are rejected where a non-empty string is required', () => {
+  const blanks = [
+    ['spaces', '   '],
+    ['a tab and a newline', '\t\n'],
+    ['a no-break space', '\u00a0'],
+  ] as const;
+
+  /** The example question with `options[index][field]` replaced by `value`. */
+  function withOption(index: number, field: 'text' | 'why', value: string): Raw {
+    const options = buildOptions(4, [2]);
+    options[index] = { ...options[index], [field]: value };
+    return make({ options });
+  }
+
+  test.each(blanks)('AC-12: rejects options[].text made of %s', (_label, value) => {
+    expectRejected(withOption(1, 'text', value), 'options');
+  });
+
+  test.each(blanks)('AC-12: rejects options[].why made of %s', (_label, value) => {
+    expectRejected(withOption(0, 'why', value), 'options');
+  });
+
+  test.each(blanks)('AC-12: rejects a cue made of %s', (_label, value) => {
+    expectRejected(make({ cue: value }), 'cue');
+  });
+
+  test.each(['guide', 'diagram', 'lab'])('AC-12: rejects a whitespace-only links.%s', (key) => {
+    expectRejected(make({ links: { [key]: '   ' } }), 'links');
+  });
+
+  test.each(['generated_by', 'verified_by', 'reviewed_by'])(
+    'AC-12: rejects a whitespace-only provenance.%s',
+    (key) => {
+      const provenance = { generated_by: 'claude', verified_by: 'claude', reviewed_by: 'owner' };
+      expectRejected(make({ provenance: { ...provenance, [key]: '  \t ' } }), key);
+    },
+  );
+
+  test('AC-12: still accepts a question whose strings have real content', () => {
+    expectAccepted(make());
+  });
+});
+
+describe('AC-13: references must literally start with https://', () => {
+  const goodReference = 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/x.html';
+
+  test.each([
+    'https:docs.aws.amazon.com/x',
+    'https:/docs.aws.amazon.com/x',
+    'https:\\\\docs.aws.amazon.com\\x',
+  ])('AC-13: rejects the reference %s', (reference) => {
+    expectRejected(make({ references: [reference] }), 'references');
+  });
+
+  test('AC-13: rejects a malformed reference next to a valid one', () => {
+    expectRejected(
+      make({ references: [goodReference, 'https:docs.aws.amazon.com/x'] }),
+      'references',
+    );
+  });
+
+  test('AC-13: rejects a malformed reference in the public schema too', () => {
+    expect(
+      publicQuestionSchema.safeParse(make({ references: ['https:docs.aws.amazon.com/x'] })).success,
+    ).toBe(false);
+  });
+
+  test('AC-13: still accepts a well-formed https:// reference', () => {
+    expectAccepted(make({ references: [goodReference] }));
+  });
+});
