@@ -1,4 +1,4 @@
-// Question schema: stubs for private spec 002 (tests first, implementation follows).
+// Question schema: one zod schema for practice questions, shared by CI, guardrails and tools.
 import { z } from 'zod';
 
 import { getTask, isTaskId } from './exam.ts';
@@ -45,7 +45,10 @@ const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const ID_PATTERN = /^d[1-4]-[1-4]\.\d-\d{4}$/;
 const DOCS_HOST = 'docs.aws.amazon.com';
 
-const nonEmpty = z.string().min(1);
+/** A string with at least one non-whitespace character. */
+const nonEmpty = z.string().refine((value) => value.trim().length > 0, {
+  message: 'must not be empty or blank',
+});
 
 const domainSchema = z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)]);
 const taskSchema = z.custom<TaskId>(isTaskId, { message: 'not a task of the exam catalog' });
@@ -58,9 +61,7 @@ const optionSchema = z.strictObject({
 });
 
 const linksSchema = z.strictObject({
-  guide: z
-    .string()
-    .min(1)
+  guide: nonEmpty
     .refine((value) => value.startsWith('/'), { message: 'must start with /' })
     .exactOptional(),
   diagram: nonEmpty.exactOptional(),
@@ -80,7 +81,7 @@ function fail(ctx: Ctx, path: (string | number)[], message: string): void {
 }
 
 function parseHttpsUrl(value: string): URL | undefined {
-  if (!URL.canParse(value)) return undefined;
+  if (!value.startsWith('https://') || !URL.canParse(value)) return undefined;
   const url = new URL(value);
   return url.protocol === 'https:' ? url : undefined;
 }
