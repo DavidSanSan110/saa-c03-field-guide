@@ -761,3 +761,215 @@ describe('sync usage errors', () => {
     },
   );
 });
+
+// ---- Spec 006 amendments: explicit refspecs, case-only renames, plan lines ---------------------
+
+import { renameSync } from 'node:fs';
+
+/** Public fixture on main, pushed, then a feature branch that tracks origin/main. */
+function makeTrackingMainFixture(branch: string): Fixture {
+  const fx = makeFixture({ branch: 'main' });
+  addRemotes(fx, { pushPublic: true });
+  git(fx.root, ['checkout', '--quiet', '-b', branch, '--track', 'origin/main']);
+  write(fx.root, 'docs/feature.md', 'feature work\n');
+  commitAll(fx.root, 'docs: feature work');
+  return fx;
+}
+
+/** True when `dir` is on a case-sensitive file system (probed with a throwaway file). */
+function isCaseSensitive(dir: string): boolean {
+  write(dir, 'case-probe.tmp', 'x');
+  const sensitive = !existsSync(join(dir, 'CASE-PROBE.TMP'));
+  rmSync(join(dir, 'case-probe.tmp'), { force: true });
+  return sensitive;
+}
+
+/** Both repos pushed and in step: a first sync, then the private commit is pushed by hand. */
+function makeFullyPushedFixture(options: { branch?: string } = {}): Fixture {
+  const fx = makeFixture(options);
+  addRemotes(fx, { pushPublic: true });
+  syncOnce(fx);
+  git(fx.priv, ['push', '--quiet']);
+  return fx;
+}
+
+describe('sync push: explicit refspecs', () => {
+  test('AC-10: a feature branch tracking origin/main with push.default=upstream never moves main', () => {
+    const fx = makeTrackingMainFixture('feat/x');
+    git(fx.root, ['config', 'push.default', 'upstream']);
+    const mainBefore = remoteRef(fx.publicRemote, 'refs/heads/main');
+    const run = runCli(fx.root, [], 'y\n');
+    expect(remoteRef(fx.publicRemote, 'refs/heads/main')).toBe(mainBefore);
+    expect(remoteRef(fx.publicRemote, 'refs/heads/feat/x')).toBe(head(fx.root));
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-10: the pushed feature branch becomes the upstream of the local branch', () => {
+    const fx = makeTrackingMainFixture('feat/x');
+    git(fx.root, ['config', 'push.default', 'upstream']);
+    runCli(fx.root, [], 'y\n');
+    expect(gitOut(fx.root, ['rev-parse', '--abbrev-ref', '@{u}'])).toBe('origin/feat/x');
+  });
+
+  test('AC-10: with push.default=matching a local main that is ahead is not pushed either', () => {
+    const fx = makeFixture({ branch: 'main' });
+    addRemotes(fx, { pushPublic: true });
+    git(fx.root, ['checkout', '--quiet', '-b', 'feat/y']);
+    git(fx.root, ['push', '--quiet', '-u', 'origin', 'feat/y']);
+    git(fx.root, ['checkout', '--quiet', 'main']);
+    write(fx.root, 'docs/c.md', 'main moved on\n');
+    commitAll(fx.root, 'docs: main moved on');
+    git(fx.root, ['checkout', '--quiet', 'feat/y']);
+    write(fx.root, 'docs/d.md', 'feature work\n');
+    commitAll(fx.root, 'docs: feature work');
+    git(fx.root, ['config', 'push.default', 'matching']);
+    const mainBefore = remoteRef(fx.publicRemote, 'refs/heads/main');
+    const run = runCli(fx.root, [], 'y\n');
+    expect(remoteRef(fx.publicRemote, 'refs/heads/main')).toBe(mainBefore);
+    expect(remoteRef(fx.publicRemote, 'refs/heads/feat/y')).toBe(head(fx.root));
+    expect(run.status).toBe(0);
+  });
+});
+
+describe('sync mirror: case-only renames', () => {
+  test('AC-11: renaming agents/a.md to agents/A.md keeps the file in the backup with its content', () => {
+    const fx = makeFixture();
+    syncOnce(fx);
+    const agents = join(fx.root, '.claude', 'agents');
+    renameSync(join(agents, 'a.md'), join(agents, 'a.md.tmp'));
+    renameSync(join(agents, 'a.md.tmp'), join(agents, 'A.md'));
+    const run = runCli(fx.root, ['--no-push']);
+    const backupAgents = join(backupDir(fx), 'agents');
+    expect(run.status).toBe(0);
+    expect(readFileSync(join(backupAgents, 'A.md'))).toEqual(Buffer.from('agent a\n'));
+    if (isCaseSensitive(fx.base)) {
+      expect(listFiles(backupAgents)).toEqual(['A.md']);
+    } else {
+      const names = readdirSync(backupAgents);
+      expect(names).toHaveLength(1);
+      expect(names[0]?.toLowerCase()).toBe('a.md');
+    }
+  });
+
+  test('AC-11: after the case-only rename the next run has nothing left to do', () => {
+    const fx = makeFixture();
+    syncOnce(fx);
+    const agents = join(fx.root, '.claude', 'agents');
+    renameSync(join(agents, 'a.md'), join(agents, 'a.md.tmp'));
+    renameSync(join(agents, 'a.md.tmp'), join(agents, 'A.md'));
+    syncOnce(fx);
+    const run = runCli(fx.root, ['--no-push']);
+    expect(lines(run.stdout)).toContain('sync: backup already up to date');
+    expect(gitOut(fx.priv, ['status', '--porcelain'])).toBe('');
+  });
+});
+
+describe('sync push: plan lines and nothing to push', () => {
+  test('AC-12: prints one plan line per repo with its own branch, upstream and count', () => {
+    const fx = makeFixture();
+    addRemotes(fx, { pushPublic: false });
+    write(fx.priv, 'extra.txt', 'unpushed\n');
+    commitAll(fx.priv, 'chore: extra');
+    const run = runCli(fx.root, [], 'n\n');
+    expect(lines(run.stdout)).toContain(
+      'private: branch main, upstream origin/main, 2 commit(s) ahead',
+    );
+    expect(lines(run.stdout)).toContain(
+      'public: branch feat/6-demo, upstream none, 3 commit(s) ahead',
+    );
+  });
+
+  test('AC-12: a public branch with an upstream reports that upstream and only its own commits', () => {
+    const fx = makeFixture();
+    addRemotes(fx, { pushPublic: true });
+    write(fx.root, 'docs/c.md', 'c\n');
+    commitAll(fx.root, 'docs: add c');
+    write(fx.priv, 'extra.txt', 'unpushed\n');
+    commitAll(fx.priv, 'chore: extra');
+    const run = runCli(fx.root, [], 'n\n');
+    expect(lines(run.stdout)).toContain(
+      'public: branch feat/6-demo, upstream origin/feat/6-demo, 1 commit(s) ahead',
+    );
+    expect(lines(run.stdout)).toContain(
+      'private: branch main, upstream origin/main, 2 commit(s) ahead',
+    );
+  });
+
+  test('AC-12: the public repo on main is a skipped plan line', () => {
+    const fx = makeFixture({ branch: 'main' });
+    addRemotes(fx, { pushPublic: true });
+    const run = runCli(fx.root, [], 'n\n');
+    expect(lines(run.stdout)).toContain('public: skipped (main is updated through pull requests)');
+    expect(lines(run.stdout)).toContain(
+      'private: branch main, upstream origin/main, 1 commit(s) ahead',
+    );
+  });
+
+  test('AC-12: a detached public HEAD is a skipped plan line', () => {
+    const fx = makeFixture();
+    addRemotes(fx, { pushPublic: true });
+    git(fx.root, ['checkout', '--quiet', '--detach']);
+    const run = runCli(fx.root, [], 'n\n');
+    expect(lines(run.stdout)).toContain('public: skipped (detached HEAD)');
+  });
+
+  test('AC-12: with nothing to push in either repo it says so, does not ask, and exits 0', () => {
+    const fx = makeFullyPushedFixture();
+    const privateBefore = remoteRefs(fx.privateRemote);
+    const publicBefore = remoteRefs(fx.publicRemote);
+    const run = runCli(fx.root, []);
+    expect(lines(run.stdout)).toContain('sync: nothing to push');
+    expect(run.output).not.toContain('Push these?');
+    expect(remoteRefs(fx.privateRemote)).toBe(privateBefore);
+    expect(remoteRefs(fx.publicRemote)).toBe(publicBefore);
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-12: a confirmation on stdin is not needed when there is nothing to push', () => {
+    const fx = makeFullyPushedFixture();
+    const run = runCli(fx.root, [], 'y\n');
+    expect(lines(run.stdout)).toContain('sync: nothing to push');
+    expect(lines(run.stdout)).not.toContain('sync: not pushed');
+    expect(run.status).toBe(0);
+  });
+});
+
+describe('sync push: progress lines', () => {
+  const ELLIPSIS = '(?:…|\\.\\.\\.)';
+
+  test('AC-6: a confirmed push prints pushing and pushed lines, private first, then public', () => {
+    const fx = makeFixture();
+    addRemotes(fx, { pushPublic: false });
+    const run = runCli(fx.root, [], 'y\n');
+    const out = lines(run.stdout);
+    const at = (pattern: RegExp): number => out.findIndex((line) => pattern.test(line));
+    const pushingPrivate = at(new RegExp(`^sync: pushing private${ELLIPSIS}$`));
+    const pushedPrivate = at(/^sync: pushed private$/);
+    const pushingPublic = at(new RegExp(`^sync: pushing public${ELLIPSIS}$`));
+    const pushedPublic = at(/^sync: pushed public$/);
+    expect(pushingPrivate).toBeGreaterThanOrEqual(0);
+    expect(pushedPrivate).toBeGreaterThan(pushingPrivate);
+    expect(pushingPublic).toBeGreaterThan(pushedPrivate);
+    expect(pushedPublic).toBeGreaterThan(pushingPublic);
+  });
+
+  test('AC-7: a skipped public main is never reported as pushing', () => {
+    const fx = makeFixture({ branch: 'main' });
+    addRemotes(fx, { pushPublic: true });
+    const run = runCli(fx.root, [], 'y\n');
+    expect(lines(run.stdout)).toContain('sync: pushed private');
+    expect(run.output).not.toMatch(/sync: pushing public/);
+    expect(run.output).not.toMatch(/sync: pushed public/);
+  });
+
+  test('AC-8: a rejected private push stops before the public push', () => {
+    const fx = makeFixture();
+    addRemotes(fx, { pushPublic: false });
+    divergeRemote(fx, fx.privateRemote, 'main');
+    const run = runCli(fx.root, [], 'y\n');
+    expect(lines(run.output)).toContain('sync: push failed for private');
+    expect(run.output).not.toMatch(/sync: pushing public/);
+    expect(remoteRef(fx.publicRemote, `refs/heads/${fx.branch}`)).toBe('');
+    expect(run.status).toBe(1);
+  });
+});
