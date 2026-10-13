@@ -24,7 +24,8 @@ Pre-commit hooks and CI enforce most of these automatically.
 - Every change starts as an issue, lives on a branch (`feat/12-short-slug`) and lands through a pull request.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat(diagrams): add step-back control`).
 - Behaviour is specified first, tests are written from the spec, then the code makes them pass. Every feature ships with unit and end-to-end tests.
-- PRs are merged with a merge commit after rebasing on `main` (no squash).
+- PRs are merged with a merge commit after rebasing on `main` (no squash). The PR's own commits must not contain merge commits; CI rejects them.
+- Only `test:` commits may change test files, test configs, setup files, mocks or the `test`/`coverage`/`e2e` scripts.
 
 ## Local setup
 
