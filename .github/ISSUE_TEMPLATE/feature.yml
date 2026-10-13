@@ -1,6 +1,6 @@
 name: Idea or improvement
 description: Suggest a topic, diagram, lab or feature.
-labels: ["enhancement"]
+labels: ['enhancement']
 body:
   - type: textarea
     id: idea
@@ -13,4 +13,4 @@ body:
     id: task
     attributes:
       label: Exam task statement (optional)
-      placeholder: "1.3 Determine appropriate data security controls"
+      placeholder: '1.3 Determine appropriate data security controls'

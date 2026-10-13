@@ -1,6 +1,6 @@
 name: Bug report
 description: Something on the site, a diagram, a lab or the tooling doesn't work.
-labels: ["bug"]
+labels: ['bug']
 body:
   - type: input
     id: where
