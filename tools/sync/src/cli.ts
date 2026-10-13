@@ -231,10 +231,13 @@ async function pushBoth(root: string, privateDir: string): Promise<number> {
   }
 
   for (const { name, dir, branch, upstream } of pushes) {
-    // Always an explicit refspec: a bare `git push` depends on push.default and the upstream.
+    // Always a full `src:dst` refspec: a bare `git push` depends on push.default and the upstream,
+    // and even `git push origin <branch>` sent a branch tracking origin/main to main under
+    // push.default=upstream (git 2.52).
     console.log(`sync: pushing ${name}…`);
     const setUpstream = upstream === `origin/${branch}` ? [] : ['-u'];
-    const result = run(dir, ['push', ...setUpstream, 'origin', branch]);
+    const ref = `refs/heads/${branch}`;
+    const result = run(dir, ['push', ...setUpstream, 'origin', `${ref}:${ref}`]);
     if (!result.ok) {
       console.error(`sync: push failed for ${name}\n${result.stderr.trim()}`);
       return 1;
