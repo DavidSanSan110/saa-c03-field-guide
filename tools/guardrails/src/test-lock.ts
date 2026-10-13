@@ -107,6 +107,11 @@ export function isTestControlPath(path: string): boolean {
   );
 }
 
+/** True when the file name (case-insensitive, `\` treated as `/`) is package.json. */
+export function isPackageJson(path: string): boolean {
+  return path.replaceAll('\\', '/').split('/').pop()?.toLowerCase() === 'package.json';
+}
+
 /** True for a package.json diff line (prefix already stripped) that controls the test scripts. */
 export function isTestControlLine(line: string): boolean {
   return TEST_CONTROL_LINE.test(line);
@@ -116,10 +121,8 @@ export function isTestControlLine(line: string): boolean {
 function touchedControlFile({ path, oldPath, lines }: CommitChange): string | undefined {
   if (isTestControlPath(path)) return path;
   if (oldPath !== undefined && isTestControlPath(oldPath)) return oldPath;
-  const isPackageJson =
-    path.replaceAll('\\', '/').split('/').pop()?.toLowerCase() === 'package.json';
   const changed = [...(lines?.added ?? []), ...(lines?.removed ?? [])];
-  return isPackageJson && changed.some(isTestControlLine) ? path : undefined;
+  return isPackageJson(path) && changed.some(isTestControlLine) ? path : undefined;
 }
 
 /** Rules 3 and 4 of spec 005: non-test commits must not change test-control files or lines. */

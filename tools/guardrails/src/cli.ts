@@ -1,7 +1,7 @@
 // Guardrails CLI: argument parsing, git calls, I/O and exit codes only.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { basename, join } from 'node:path';
+import { join } from 'node:path';
 import {
   checkCommitMessage,
   checkContent,
@@ -11,7 +11,13 @@ import {
   isQuestionFile,
 } from './rules.ts';
 import type { Violation } from './rules.ts';
-import { checkCommits, checkNoMerges, checkTestControl, checkTestLock } from './test-lock.ts';
+import {
+  checkCommits,
+  checkNoMerges,
+  checkTestControl,
+  checkTestLock,
+  isPackageJson,
+} from './test-lock.ts';
 import type { CommitChange, CommitInfo } from './test-lock.ts';
 
 const USAGE = `Usage:
@@ -192,11 +198,21 @@ function parseNumstat(tokens: string[]): { added: number; removed: number }[] {
 
 /** The added and removed lines of one file in one commit (`git show -U0`), without the +/- prefix. */
 function fileLines(sha: string, path: string): NonNullable<CommitChange['lines']> {
-  const diff = git(['show', '--format=', '-U0', '--no-color', sha, '--', path]).toString('utf8');
+  const diff = git([
+    '--literal-pathspecs',
+    'show',
+    '--format=',
+    '-U0',
+    '--no-color',
+    sha,
+    '--',
+    path,
+  ]).toString('utf8');
   const lines: NonNullable<CommitChange['lines']> = { added: [], removed: [] };
   let inHunk = false; // the +++/--- headers come before the first hunk, so they are skipped
   for (const line of diff.split('\n')) {
-    if (line.startsWith('@@')) inHunk = true;
+    if (line.startsWith('diff --git')) inHunk = false;
+    else if (line.startsWith('@@')) inHunk = true;
     else if (inHunk && line.startsWith('+')) lines.added.push(line.slice(1));
     else if (inHunk && line.startsWith('-')) lines.removed.push(line.slice(1));
   }
@@ -215,9 +231,7 @@ function commitInfo(sha: string): CommitInfo {
       removed: entry.status === 'A' ? 0 : counts.removed,
     };
     // Counts cannot tell which package.json lines changed, so the test-control check needs them.
-    return basename(entry.path) === 'package.json'
-      ? { ...change, lines: fileLines(sha, entry.path) }
-      : change;
+    return isPackageJson(entry.path) ? { ...change, lines: fileLines(sha, entry.path) } : change;
   });
   const subject = git(['log', '-1', '--format=%s', sha]).toString('utf8').trim();
   return { sha, subject, changes };
