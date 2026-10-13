@@ -5,13 +5,15 @@ on:
   push:
     branches: [main]
   schedule:
-    - cron: '0 6 * * 1'
+    - cron: '0 6 * * 1' # weekly full-history secret scan
+  workflow_dispatch: # run a full-history scan on demand
 
 permissions:
   contents: read
 
 concurrency:
-  group: security-${{ github.ref }}
+  # Per event, so a push to main never cancels a queued scheduled full scan.
+  group: security-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -26,7 +28,9 @@ jobs:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # scan the whole history, not just the tip
+          # PRs and pushes scan their commit range; scheduled and manual runs scan the whole history.
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Scan for secrets
         uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
@@ -44,6 +48,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Initialise CodeQL
         uses: github/codeql-action/init@2892aa5e19bbd11bc0cff5427e3b750a04d9e3c2 # v4.38.2
@@ -63,6 +69,8 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Review dependency changes
         uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
