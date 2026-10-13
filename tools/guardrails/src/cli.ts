@@ -1,6 +1,7 @@
 // Guardrails CLI: argument parsing, git calls, I/O and exit codes only.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   checkCommitMessage,
   checkContent,
@@ -27,20 +28,34 @@ interface Target {
   read: () => Buffer | undefined;
 }
 
+let repoRoot: string | undefined;
+
+/** The repository top level: index paths are relative to it, whatever the working directory. */
+function topLevel(): string {
+  repoRoot ??= execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+  return repoRoot;
+}
+
+/** Runs git from the repository top level. */
 function git(args: string[]): Buffer {
-  return execFileSync('git', args, { maxBuffer: 1 << 28, stdio: ['ignore', 'pipe', 'pipe'] });
+  return execFileSync('git', args, {
+    cwd: topLevel(),
+    maxBuffer: 1 << 28,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 }
 
 function gitList(args: string[]): string[] {
   return git(args).toString('utf8').split('\0').filter(Boolean);
 }
 
-function fromDisk(name: string): Target {
+/** `path` is read as given; `name` is how it is reported. */
+function fromDisk(name: string, path = name): Target {
   return {
     name,
     read: () => {
       try {
-        return readFileSync(name);
+        return readFileSync(path);
       } catch {
         return undefined; // deleted, or not a regular file
       }
@@ -48,15 +63,18 @@ function fromDisk(name: string): Target {
   };
 }
 
-/** Only regular files have content to check: not gitlinks (160000) or symlinks (120000). */
+/**
+ * Only regular files have content to check: not gitlinks (160000) or symlinks (120000).
+ * An unknown mode counts as regular, so a lookup miss reads the content instead of skipping it.
+ */
 function isRegular(mode: string | undefined): boolean {
-  return mode === '100644' || mode === '100755';
+  return mode !== '160000' && mode !== '120000';
 }
 
 /** Index entries as `path -> mode` (`git ls-files -s -z` prints `<mode> <sha> <stage>\t<path>`). */
 function indexModes(): Map<string, string> {
   const modes = new Map<string, string>();
-  for (const entry of gitList(['ls-files', '-s', '-z'])) {
+  for (const entry of gitList(['ls-files', '-s', '-z', '--full-name'])) {
     const tab = entry.indexOf('\t');
     modes.set(entry.slice(tab + 1), entry.slice(0, entry.indexOf(' ')));
   }
@@ -78,11 +96,11 @@ function pathTargets(args: string[]): Target[] {
   }
   if (args.length === 1 && first === '--all') {
     return [...indexModes()].map(([name, mode]) =>
-      isRegular(mode) ? fromDisk(name) : { name, read: () => undefined },
+      isRegular(mode) ? fromDisk(name, join(topLevel(), name)) : { name, read: () => undefined },
     );
   }
   if (args.length === 0 || args.some((arg) => arg.startsWith('--'))) throw new UsageError();
-  return args.map(fromDisk);
+  return args.map((arg) => fromDisk(arg));
 }
 
 function checkTarget({ name, read }: Target): Violation[] {
