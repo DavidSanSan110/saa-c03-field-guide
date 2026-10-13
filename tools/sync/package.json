@@ -1,0 +1,10 @@
+{
+  "name": "@field-guide/sync",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backs up the local-only setup into the private repo and pushes both repos after confirmation.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
