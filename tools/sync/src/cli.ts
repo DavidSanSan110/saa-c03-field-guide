@@ -193,7 +193,9 @@ async function pushBoth(root: string, privateDir: string): Promise<number> {
   }
 
   for (const { name, dir, branch, upstream } of pushes) {
-    const result = run(dir, upstream ? ['push'] : ['push', '-u', 'origin', branch]);
+    // Always an explicit refspec: a bare `git push` depends on push.default and the upstream.
+    const setUpstream = upstream === `origin/${branch}` ? [] : ['-u'];
+    const result = run(dir, ['push', ...setUpstream, 'origin', branch]);
     if (!result.ok) {
       console.error(`sync: push failed for ${name}\n${result.stderr.trim()}`);
       return 1;
