@@ -541,3 +541,33 @@ describe('guardrails commit-msg with the scissors line', () => {
     expect(run.status).toBe(0);
   });
 });
+
+describe('guardrails paths --staged from a subdirectory', () => {
+  test('AC-24: flags a staged client reference when run with cwd = <repo>/docs', () => {
+    const dir = makeTempRepo();
+    write(dir, 'docs/a.md', `from ${CLIENT}\n`);
+    git(dir, ['add', 'docs/a.md']);
+    const run = runCli(join(dir, 'docs'), ['paths', '--staged']);
+    expect(run.output).toMatch(/✖ .*a\.md \[client-reference\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-24: gives the same result when run from the repository root', () => {
+    const dir = makeTempRepo();
+    write(dir, 'docs/a.md', `from ${CLIENT}\n`);
+    git(dir, ['add', 'docs/a.md']);
+    const run = runCli(dir, ['paths', '--staged']);
+    expect(run.output).toMatch(/✖ .*a\.md \[client-reference\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-24: a clean staged file passes when run from a subdirectory', () => {
+    const dir = makeTempRepo();
+    write(dir, 'docs/a.md', 'clean\n');
+    git(dir, ['add', 'docs/a.md']);
+    const run = runCli(join(dir, 'docs'), ['paths', '--staged']);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: paths ok');
+    expect(run.status).toBe(0);
+  });
+});

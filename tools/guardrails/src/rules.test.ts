@@ -451,3 +451,42 @@ describe('checkCommitMessage: whole-word assistant name', () => {
     expect(ruleIds(checkCommitMessage(message))).toEqual(['ai-attribution']);
   });
 });
+
+describe('checkContent: the drive letter must sit at a word boundary', () => {
+  test.each([
+    ['a grpc URL', 'grpc:' + '//' + 'users/list'],
+    ['a custom scheme URL', 'svc:' + '//' + 'Users/v1'],
+    ['a multi-letter prefix', 'abc' + ':/' + 'Users/'],
+  ])('AC-25: does not flag %s', (_label, text) => {
+    expect(checkContent('docs/notes.md', `call ${text} now`)).toEqual([]);
+  });
+
+  test.each([
+    ['a drive letter at the start of the text', 'C:' + '/Users' + '/x'],
+    ['a drive letter after a space', 'open ' + 'C:' + '/Users' + '/x'],
+    ['a drive letter after a quote', ['"C:', 'Users', 'x"'].join('\\')],
+  ])('AC-25: still flags %s', (_label, text) => {
+    expect(ruleIds(checkContent('docs/notes.md', text))).toEqual(['client-reference']);
+  });
+});
+
+describe('checkContent: Git Bash and WSL forms of a Windows user path', () => {
+  test.each([
+    ['the Git Bash form', 'open ' + '/c/' + 'Users/x'],
+    ['the Git Bash form with another drive letter', 'open ' + '/d/' + 'Users/x'],
+    ['the Git Bash form in upper case', ('/c/' + 'Users/x').toUpperCase()],
+    ['the WSL form', 'open ' + '/mnt/c/' + 'Users/x'],
+    ['the WSL form with another drive letter', 'open ' + '/mnt/e/' + 'Users/x'],
+    ['the WSL form in upper case', ('/mnt/c/' + 'Users/x').toUpperCase()],
+    ['the WSL form in lower case', ('/mnt/c/' + 'Users/x').toLowerCase()],
+  ])('AC-26: flags %s as client-reference', (_label, text) => {
+    expect(ruleIds(checkContent('docs/notes.md', text))).toEqual(['client-reference']);
+  });
+
+  test.each([
+    ['a bare macOS home path', 'open ' + '/' + 'Users' + '/x'],
+    ['an unrelated path with the same segments', 'open ' + '/usr/c/' + 'users'],
+  ])('AC-26: does not flag %s', (_label, text) => {
+    expect(checkContent('docs/notes.md', text)).toEqual([]);
+  });
+});
