@@ -11,11 +11,15 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { backupPath, planSync } from './sync.ts';
 import type { FileMap } from './sync.ts';
 
 const USAGE = `Usage:
   sync [--no-push]   back up the local-only setup into private/ and push both repos after confirmation`;
+
+const SKIPPED_MAIN = 'skipped (main is updated through pull requests)';
+const PROMPT = 'Push these? [y/N] ';
 
 class UsageError extends Error {}
 
@@ -130,7 +134,76 @@ function commitBackup(privateDir: string, publicSha: string): void {
   console.log(`sync: committed ${git(privateDir, ['rev-parse', '--short', 'HEAD'])} in private`);
 }
 
-function runSync(args: string[]): void {
+interface PushPlan {
+  name: 'private' | 'public';
+  dir: string;
+  branch: string;
+  /** The upstream branch, or undefined when there is none. */
+  upstream: string | undefined;
+  /** Commits not on the upstream (all commits if there is none). */
+  ahead: number;
+  /** Why the repo is not pushed, if it is not. */
+  skip: string | undefined;
+}
+
+function pushPlan(name: PushPlan['name'], dir: string): PushPlan {
+  const branch = git(dir, ['rev-parse', '--abbrev-ref', 'HEAD']);
+  const upstreamResult = run(dir, ['rev-parse', '--abbrev-ref', '@{u}']);
+  const upstream = upstreamResult.ok ? upstreamResult.stdout.trim() : undefined;
+  const ahead = Number(git(dir, ['rev-list', '--count', upstream ? `${upstream}..HEAD` : 'HEAD']));
+  let skip: string | undefined;
+  if (branch === 'HEAD') skip = 'skipped (detached HEAD)';
+  else if (name === 'public' && branch === 'main') skip = SKIPPED_MAIN;
+  return { name, dir, branch, upstream, ahead, skip };
+}
+
+function describePlan({ name, branch, upstream, ahead, skip }: PushPlan): string {
+  const state = skip ?? `upstream ${upstream ?? 'none'}, ${ahead} commit(s) ahead`;
+  return `${name}: branch ${branch}, ${state}`;
+}
+
+/** Reads one line from stdin; end of input gives an empty line. */
+function readLine(): Promise<string> {
+  const input = createInterface({ input: process.stdin });
+  return new Promise((resolve) => {
+    input.once('line', (line) => {
+      resolve(line); // before close(), which resolves with an empty line
+      input.close();
+    });
+    input.once('close', () => resolve(''));
+  });
+}
+
+/** Plans, asks and pushes the private repo, then the public branch. Returns the exit code. */
+async function pushBoth(root: string, privateDir: string): Promise<number> {
+  const plans = [pushPlan('private', privateDir), pushPlan('public', root)];
+  for (const plan of plans) console.log(describePlan(plan));
+  const pushes = plans.filter((plan) => plan.skip === undefined && plan.ahead > 0);
+  if (pushes.length === 0) {
+    console.log('sync: nothing to push');
+    return 0;
+  }
+
+  process.stdout.write(PROMPT);
+  const answer = (await readLine()).trim().toLowerCase();
+  if (!process.stdin.isTTY) console.log(); // the typed newline is not echoed from a pipe
+  if (answer !== 'y' && answer !== 'yes') {
+    console.log('sync: not pushed');
+    return 0;
+  }
+
+  for (const { name, dir, branch, upstream } of pushes) {
+    const result = run(dir, upstream ? ['push'] : ['push', '-u', 'origin', branch]);
+    if (!result.ok) {
+      console.error(`sync: push failed for ${name}\n${result.stderr.trim()}`);
+      return 1;
+    }
+    console.log(`sync: pushed ${name}`);
+  }
+  return 0;
+}
+
+async function runSync(args: string[]): Promise<number> {
   const noPush = args.length === 1 && args[0] === '--no-push';
   if (args.length > 0 && !noPush) throw new UsageError();
 
@@ -141,19 +214,23 @@ function runSync(args: string[]): void {
 
   mirror(source, join(privateDir, 'claude-setup'));
   commitBackup(privateDir, git(root, ['rev-parse', '--short', 'HEAD']));
-  if (noPush) console.log('sync: not pushed (--no-push)');
+  if (!noPush) return pushBoth(root, privateDir);
+  console.log('sync: not pushed (--no-push)');
+  return 0;
 }
 
 /** Runs the CLI and resolves to the process exit code (0 ok, 1 check or push failure, 2 usage). */
-export function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   try {
-    runSync(argv);
+    return await runSync(argv);
   } catch (error) {
-    if (error instanceof UsageError) console.error(USAGE);
-    else console.error(error instanceof SyncError ? `sync: ${error.message}` : String(error));
-    return Promise.resolve(error instanceof UsageError ? 2 : 1);
+    if (error instanceof UsageError) {
+      console.error(USAGE);
+      return 2;
+    }
+    console.error(error instanceof SyncError ? `sync: ${error.message}` : String(error));
+    return 1;
   }
-  return Promise.resolve(0);
 }
 
 process.exitCode = await main(process.argv.slice(2));
