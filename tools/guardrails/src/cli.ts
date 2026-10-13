@@ -1,4 +1,4 @@
-// Guardrails CLI (private spec 003): argument parsing, git calls, I/O and exit codes only.
+// Guardrails CLI: argument parsing, git calls, I/O and exit codes only.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import {
@@ -15,6 +15,9 @@ const USAGE = `Usage:
   guardrails paths [--staged | --all | <files...>]
   guardrails commit-msg <file>
   guardrails pre-push   (reads git pre-push lines on stdin)`;
+
+/** `git commit -v` appends the diff below this line; it is not part of the message. */
+const SCISSORS_LINE = '# ------------------------ >8 ------------------------';
 
 class UsageError extends Error {}
 
@@ -45,17 +48,38 @@ function fromDisk(name: string): Target {
   };
 }
 
-function fromIndex(name: string): Target {
-  return { name, read: () => git(['show', `:0:${name}`]) };
+/** Only regular files have content to check: not gitlinks (160000) or symlinks (120000). */
+function isRegular(mode: string | undefined): boolean {
+  return mode === '100644' || mode === '100755';
+}
+
+/** Index entries as `path -> mode` (`git ls-files -s -z` prints `<mode> <sha> <stage>\t<path>`). */
+function indexModes(): Map<string, string> {
+  const modes = new Map<string, string>();
+  for (const entry of gitList(['ls-files', '-s', '-z'])) {
+    const tab = entry.indexOf('\t');
+    modes.set(entry.slice(tab + 1), entry.slice(0, entry.indexOf(' ')));
+  }
+  return modes;
+}
+
+function fromIndex(name: string, mode: string | undefined): Target {
+  return { name, read: () => (isRegular(mode) ? git(['show', `:0:${name}`]) : undefined) };
 }
 
 function pathTargets(args: string[]): Target[] {
   const [first] = args;
   if (args.length === 1 && first === '--staged') {
-    return gitList(['diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z']).map(fromIndex);
+    const modes = indexModes();
+    // Everything but deletions, so type changes are checked too.
+    return gitList(['diff', '--cached', '--name-only', '--diff-filter=d', '-z']).map((name) =>
+      fromIndex(name, modes.get(name)),
+    );
   }
   if (args.length === 1 && first === '--all') {
-    return gitList(['ls-files', '-z']).map(fromDisk);
+    return [...indexModes()].map(([name, mode]) =>
+      isRegular(mode) ? fromDisk(name) : { name, read: () => undefined },
+    );
   }
   if (args.length === 0 || args.some((arg) => arg.startsWith('--'))) throw new UsageError();
   return args.map(fromDisk);
@@ -94,8 +118,10 @@ function commandViolations(command: string, args: string[]): Violation[] {
       } catch {
         throw new UsageError();
       }
-      const lines = message.split(/\r?\n/).filter((line) => !line.startsWith('#'));
-      return checkCommitMessage(lines.join('\n'));
+      const lines = message.split(/\r?\n/);
+      const scissors = lines.indexOf(SCISSORS_LINE);
+      const body = scissors === -1 ? lines : lines.slice(0, scissors);
+      return checkCommitMessage(body.filter((line) => !line.startsWith('#')).join('\n'));
     }
     case 'pre-push':
       if (args.length > 0) throw new UsageError();
