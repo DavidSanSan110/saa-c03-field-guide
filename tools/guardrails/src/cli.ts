@@ -11,11 +11,15 @@ import {
   isQuestionFile,
 } from './rules.ts';
 import type { Violation } from './rules.ts';
+import { checkCommits, checkTestLock } from './test-lock.ts';
+import type { CommitChange, CommitInfo } from './test-lock.ts';
 
 const USAGE = `Usage:
   guardrails paths [--staged | --all | <files...>]
   guardrails commit-msg <file>
-  guardrails pre-push   (reads git pre-push lines on stdin)`;
+  guardrails pre-push   (reads git pre-push lines on stdin)
+  guardrails test-lock --base <ref> [--head <ref>]
+  guardrails commits --base <ref> [--head <ref>]`;
 
 /** `git commit -v` appends the diff below this line; it is not part of the message. */
 const SCISSORS_LINE = '# ------------------------ >8 ------------------------';
@@ -115,6 +119,72 @@ function checkTarget({ name, read }: Target): Violation[] {
   return violations;
 }
 
+/** Parses `--base <ref> [--head <ref>]`; the head defaults to HEAD. */
+function parseRange(args: string[]): string {
+  let base: string | undefined;
+  let head = 'HEAD';
+  for (let i = 0; i < args.length; i += 2) {
+    const value = args[i + 1];
+    if (value === undefined || value.startsWith('-')) throw new UsageError();
+    if (args[i] === '--base') base = value;
+    else if (args[i] === '--head') head = value;
+    else throw new UsageError();
+  }
+  if (base === undefined) throw new UsageError();
+  return `${base}..${head}`;
+}
+
+/** The non-merge commits of a range, oldest first. */
+function rangeShas(range: string): string[] {
+  return git(['rev-list', '--no-merges', '--reverse', range, '--'])
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean);
+}
+
+/** Parses `git show --name-status -z`: `<status>\0<path>\0`, or `<status>\0<old>\0<new>\0` for R/C. */
+function parseNameStatus(tokens: string[]): Omit<CommitChange, 'added' | 'removed'>[] {
+  const entries: Omit<CommitChange, 'added' | 'removed'>[] = [];
+  for (let i = 0; i < tokens.length;) {
+    const status = (tokens[i] ?? '').charAt(0) as CommitChange['status'];
+    if (status === 'R' || status === 'C') {
+      entries.push({ status, oldPath: tokens[i + 1] ?? '', path: tokens[i + 2] ?? '' });
+      i += 3;
+    } else {
+      entries.push({ status, path: tokens[i + 1] ?? '' });
+      i += 2;
+    }
+  }
+  return entries;
+}
+
+/** Parses `git show --numstat -z`: `<added>\t<removed>\t<path>\0`, or `...\t\0<old>\0<new>\0` for R/C. */
+function parseNumstat(tokens: string[]): { added: number; removed: number }[] {
+  const entries: { added: number; removed: number }[] = [];
+  for (let i = 0; i < tokens.length; i += 1) {
+    const [added = '', removed = '', ...path] = (tokens[i] ?? '').split('\t');
+    // Binary files report "-": their lines cannot be compared, so they count as fully changed.
+    entries.push({
+      added: added === '-' ? 1 : Number(added),
+      removed: removed === '-' ? 1 : Number(removed),
+    });
+    if (path.join('\t') === '') i += 2;
+  }
+  return entries;
+}
+
+function commitInfo(sha: string): CommitInfo {
+  const show = (flag: string): string[] => gitList(['show', '--format=', flag, '-M', '-z', sha]);
+  const numstat = parseNumstat(show('--numstat'));
+  const changes = parseNameStatus(show('--name-status')).map((entry, index) => {
+    const counts = numstat[index] ?? { added: 0, removed: 0 };
+    // A new file has nothing to remove (a binary one reports "-" for both counts).
+    return { ...entry, added: counts.added, removed: entry.status === 'A' ? 0 : counts.removed };
+  });
+  const subject = git(['log', '-1', '--format=%s', sha]).toString('utf8').trim();
+  return { sha, subject, changes };
+}
+
 function readStdin(): string {
   try {
     return readFileSync(0, 'utf8');
@@ -144,6 +214,15 @@ function commandViolations(command: string, args: string[]): Violation[] {
     case 'pre-push':
       if (args.length > 0) throw new UsageError();
       return checkPushRefs(readStdin());
+    case 'test-lock':
+      return checkTestLock(rangeShas(parseRange(args)).map(commitInfo));
+    case 'commits':
+      return checkCommits(
+        rangeShas(parseRange(args)).map((sha) => ({
+          sha,
+          message: git(['log', '-1', '--format=%B', sha]).toString('utf8'),
+        })),
+      );
     default:
       throw new UsageError();
   }
