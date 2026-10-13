@@ -1,0 +1,44 @@
+# Private material: its own separate git repo. Never commit.
+/private/
+
+# Dependencies and build output
+node_modules/
+dist/
+.astro/
+coverage/
+reports/
+playwright-report/
+test-results/
+blob-report/
+.stryker-tmp/
+*.tsbuildinfo
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.infracost/
+
+# Secrets and keys (never; guardrails also block these)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+
+# Source material (never; guardrails also block these)
+*.pdf
+*.pptx
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.idea/
+*.log
