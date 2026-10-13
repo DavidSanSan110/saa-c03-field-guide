@@ -571,3 +571,270 @@ describe('guardrails paths --staged from a subdirectory', () => {
     expect(run.status).toBe(0);
   });
 });
+
+// ---- Spec 004: test-lock and commits commands -------------------------------------------------
+
+function gitOut(cwd: string, args: string[]): string {
+  return execFileSync('git', args, {
+    cwd,
+    env: cleanEnv(),
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  }).trim();
+}
+
+/** Commits everything that is staged or changed, bypassing the repository's own hooks. */
+function commitWith(dir: string, subject: string, body?: string): string {
+  git(dir, ['add', '-A']);
+  const message = body === undefined ? ['-m', subject] : ['-m', subject, '-m', body];
+  git(dir, ['commit', '--quiet', '--no-verify', ...message]);
+  return gitOut(dir, ['rev-parse', 'HEAD']);
+}
+
+const TEST_FILE = 'src/a.test.ts';
+const TEST_BODY = ["test('one', () => {});", "test('two', () => {});", "test('three', () => {});"];
+
+/**
+ * A repository with a seed commit (the base) and a feature branch holding the usual
+ * spec, tests, code sequence: a `test:` commit adding a test file plus a stub, then a
+ * `feat:` commit that changes only source.
+ */
+function makeFeatureRepo(): { dir: string; base: string; testSha: string; featSha: string } {
+  const dir = makeTempRepo();
+  write(dir, 'README.md', '# Seed\n');
+  const base = commitWith(dir, 'chore: seed');
+  git(dir, ['checkout', '--quiet', '-b', 'feature']);
+  write(dir, TEST_FILE, TEST_BODY.join('\n') + '\n');
+  write(
+    dir,
+    'src/a.ts',
+    "export const a = (): never => { throw new Error('not implemented'); };\n",
+  );
+  const testSha = commitWith(dir, 'test(a): add tests and stubs');
+  write(dir, 'src/a.ts', 'export const a = (): number => 1;\n');
+  const featSha = commitWith(dir, 'feat(a): implement a');
+  return { dir, base, testSha, featSha };
+}
+
+describe('guardrails test-lock --base <ref>', () => {
+  test('AC-7: a test commit then a source-only feat commit exits 0 with the ok line', () => {
+    const { dir, base } = makeFeatureRepo();
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-7: a branch ref works as the base', () => {
+    const { dir, base } = makeFeatureRepo();
+    git(dir, ['branch', 'base-branch', base]);
+    const run = runCli(dir, ['test-lock', '--base', 'base-branch']);
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-7: an empty range exits 0', () => {
+    const { dir, featSha } = makeFeatureRepo();
+    const run = runCli(dir, ['test-lock', '--base', featSha]);
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-7: a later fix commit that edits the test exits 1 with [test-lock], naming the commit', () => {
+    const { dir, base } = makeFeatureRepo();
+    write(dir, TEST_FILE, TEST_BODY.join('\n').replace('three', 'THREE') + '\n');
+    const fixSha = commitWith(dir, 'fix(a): make it pass');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*a\.test\.ts.*\[test-lock\]/);
+    expect(run.output).toContain(fixSha.slice(0, 7));
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-7: --head limits the range, so a bad commit after it is not seen', () => {
+    const { dir, base, featSha } = makeFeatureRepo();
+    write(dir, TEST_FILE, TEST_BODY.join('\n').replace('three', 'THREE') + '\n');
+    commitWith(dir, 'fix(a): make it pass');
+    const run = runCli(dir, ['test-lock', '--base', base, '--head', featSha]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-7: a fix commit that deletes the test file exits 1 with [test-lock]', () => {
+    const { dir, base } = makeFeatureRepo();
+    rmSync(join(dir, 'src', 'a.test.ts'));
+    commitWith(dir, 'fix(a): drop the failing test');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*a\.test\.ts.*\[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-7: a later test commit that only appends a test exits 0', () => {
+    const { dir, base } = makeFeatureRepo();
+    write(dir, TEST_FILE, [...TEST_BODY, "test('four', () => {});"].join('\n') + '\n');
+    commitWith(dir, 'test(a): one more case');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-7: a later test commit that deletes a line exits 1 with [test-lock]', () => {
+    const { dir, base } = makeFeatureRepo();
+    write(dir, TEST_FILE, TEST_BODY.slice(0, 2).join('\n') + '\n');
+    commitWith(dir, 'test(a): trim');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*a\.test\.ts.*\[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-7: a later test commit that renames the test file exits 1 with [test-lock]', () => {
+    const { dir, base } = makeFeatureRepo();
+    git(dir, ['mv', TEST_FILE, 'src/b.test.ts']);
+    commitWith(dir, 'test(a): rename');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ .*\.test\.ts.*\[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-7: merge commits in the range are ignored', () => {
+    const { dir, base } = makeFeatureRepo();
+    git(dir, ['checkout', '--quiet', '-b', 'other', base]);
+    write(dir, 'src/other.ts', 'export const other = 1;\n');
+    commitWith(dir, 'feat(other): add other');
+    git(dir, ['checkout', '--quiet', 'feature']);
+    git(dir, ['merge', '--quiet', '--no-ff', '--no-verify', '-m', 'Merge branch other', 'other']);
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+    expect(run.status).toBe(0);
+  });
+});
+
+describe('guardrails commits --base <ref>', () => {
+  const aiBody = `${TRAILER}${AI_NAME} Opus 5.5 <noreply@${AI_DOMAIN}>`;
+
+  function makeRangeRepo(): { dir: string; base: string } {
+    const dir = makeTempRepo();
+    write(dir, 'README.md', '# Seed\n');
+    const base = commitWith(dir, 'chore: seed');
+    git(dir, ['checkout', '--quiet', '-b', 'feature']);
+    write(dir, 'a.txt', 'a\n');
+    commitWith(dir, 'feat: add a');
+    write(dir, 'b.txt', 'b\n');
+    commitWith(dir, 'feat: add b', 'A body paragraph.');
+    return { dir, base };
+  }
+
+  test('AC-8: exits 0 with the ok line when no commit in the range has an AI trailer', () => {
+    const { dir, base } = makeRangeRepo();
+    const run = runCli(dir, ['commits', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: commits ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: exits 1 and reports ai-attribution when one commit has an AI trailer', () => {
+    const { dir, base } = makeRangeRepo();
+    write(dir, 'c.txt', 'c\n');
+    const badSha = commitWith(dir, 'feat: add c', aiBody);
+    write(dir, 'd.txt', 'd\n');
+    commitWith(dir, 'feat: add d');
+    const run = runCli(dir, ['commits', '--base', base]);
+    expect(run.output).toMatch(/✖ .* \[ai-attribution\]/);
+    expect(run.output).toContain(badSha.slice(0, 7));
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-8: a trailer on a commit outside the range (at or before the base) is not reported', () => {
+    const dir = makeTempRepo();
+    write(dir, 'README.md', '# Seed\n');
+    commitWith(dir, 'chore: seed', aiBody);
+    write(dir, 'a.txt', 'a\n');
+    const base = commitWith(dir, 'chore: before the range', aiBody);
+    write(dir, 'b.txt', 'b\n');
+    commitWith(dir, 'feat: add b');
+    const run = runCli(dir, ['commits', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: --head limits the range, so a bad commit after it is not seen', () => {
+    const { dir, base } = makeRangeRepo();
+    const head = gitOut(dir, ['rev-parse', 'HEAD']);
+    write(dir, 'c.txt', 'c\n');
+    commitWith(dir, 'feat: add c', aiBody);
+    const run = runCli(dir, ['commits', '--base', base, '--head', head]);
+    expect(run.output).not.toContain('✖');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: an empty range exits 0', () => {
+    const { dir } = makeRangeRepo();
+    const run = runCli(dir, ['commits', '--base', 'HEAD']);
+    expect(run.stdout).toContain('✔ guardrails: commits ok');
+    expect(run.status).toBe(0);
+  });
+
+  test('AC-8: merge commits in the range are ignored', () => {
+    const { dir, base } = makeRangeRepo();
+    git(dir, ['checkout', '--quiet', '-b', 'other', base]);
+    write(dir, 'o.txt', 'o\n');
+    commitWith(dir, 'feat: add o');
+    git(dir, ['checkout', '--quiet', 'feature']);
+    git(dir, [
+      'merge',
+      '--quiet',
+      '--no-ff',
+      '--no-verify',
+      '-m',
+      'Merge branch other',
+      '-m',
+      aiBody,
+      'other',
+    ]);
+    const run = runCli(dir, ['commits', '--base', base]);
+    expect(run.output).not.toContain('✖');
+    expect(run.stdout).toContain('✔ guardrails: commits ok');
+    expect(run.status).toBe(0);
+  });
+});
+
+describe('guardrails test-lock and commits usage errors', () => {
+  test('AC-9: test-lock without --base exits 2 with usage on stderr', () => {
+    const { dir } = makeFeatureRepo();
+    const run = runCli(dir, ['test-lock']);
+    expect(run.stderr).toMatch(/usage/i);
+    expect(run.stderr).toContain('test-lock');
+    expect(run.stderr).toContain('--base');
+    expect(run.stdout).not.toContain('✔');
+    expect(run.status).toBe(2);
+  });
+
+  test('AC-9: commits without --base exits 2 with usage on stderr', () => {
+    const { dir } = makeFeatureRepo();
+    const run = runCli(dir, ['commits']);
+    expect(run.stderr).toMatch(/usage/i);
+    expect(run.stderr).toContain('commits');
+    expect(run.stderr).toContain('--base');
+    expect(run.stdout).not.toContain('✔');
+    expect(run.status).toBe(2);
+  });
+
+  test('AC-9: --head alone is not enough, test-lock still exits 2', () => {
+    const { dir } = makeFeatureRepo();
+    const run = runCli(dir, ['test-lock', '--head', 'HEAD']);
+    expect(run.stderr).toMatch(/usage/i);
+    expect(run.stderr).toContain('--base');
+    expect(run.status).toBe(2);
+  });
+
+  test('AC-9: --head alone is not enough, commits still exits 2', () => {
+    const { dir } = makeFeatureRepo();
+    const run = runCli(dir, ['commits', '--head', 'HEAD']);
+    expect(run.stderr).toMatch(/usage/i);
+    expect(run.stderr).toContain('--base');
+    expect(run.status).toBe(2);
+  });
+});
