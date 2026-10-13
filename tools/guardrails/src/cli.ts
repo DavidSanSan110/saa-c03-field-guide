@@ -1,7 +1,7 @@
 // Guardrails CLI: argument parsing, git calls, I/O and exit codes only.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   checkCommitMessage,
   checkContent,
@@ -11,7 +11,7 @@ import {
   isQuestionFile,
 } from './rules.ts';
 import type { Violation } from './rules.ts';
-import { checkCommits, checkTestLock } from './test-lock.ts';
+import { checkCommits, checkNoMerges, checkTestControl, checkTestLock } from './test-lock.ts';
 import type { CommitChange, CommitInfo } from './test-lock.ts';
 
 const USAGE = `Usage:
@@ -19,6 +19,7 @@ const USAGE = `Usage:
   guardrails commit-msg <file>
   guardrails pre-push   (reads git pre-push lines on stdin)
   guardrails test-lock --base <ref> [--head <ref>]
+  guardrails no-merges --base <ref> [--head <ref>]
   guardrails commits --base <ref> [--head <ref>]`;
 
 /** `git commit -v` appends the diff below this line; it is not part of the message. */
@@ -142,6 +143,22 @@ function rangeShas(range: string): string[] {
     .filter(Boolean);
 }
 
+/** The merge commits of a range with their subject and parent count. */
+function mergeCommits(range: string): { sha: string; subject: string; parents: number }[] {
+  const lines = git(['rev-list', '--merges', '--parents', '--reverse', range, '--'])
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean);
+  return lines.map((line) => {
+    const [sha = '', ...parents] = line.split(' ');
+    return {
+      sha,
+      subject: git(['log', '-1', '--format=%s', sha]).toString('utf8').trim(),
+      parents: parents.length,
+    };
+  });
+}
+
 /** Parses `git show --name-status -z`: `<status>\0<path>\0`, or `<status>\0<old>\0<new>\0` for R/C. */
 function parseNameStatus(tokens: string[]): Omit<CommitChange, 'added' | 'removed'>[] {
   const entries: Omit<CommitChange, 'added' | 'removed'>[] = [];
@@ -173,13 +190,34 @@ function parseNumstat(tokens: string[]): { added: number; removed: number }[] {
   return entries;
 }
 
+/** The added and removed lines of one file in one commit (`git show -U0`), without the +/- prefix. */
+function fileLines(sha: string, path: string): NonNullable<CommitChange['lines']> {
+  const diff = git(['show', '--format=', '-U0', '--no-color', sha, '--', path]).toString('utf8');
+  const lines: NonNullable<CommitChange['lines']> = { added: [], removed: [] };
+  let inHunk = false; // the +++/--- headers come before the first hunk, so they are skipped
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('@@')) inHunk = true;
+    else if (inHunk && line.startsWith('+')) lines.added.push(line.slice(1));
+    else if (inHunk && line.startsWith('-')) lines.removed.push(line.slice(1));
+  }
+  return lines;
+}
+
 function commitInfo(sha: string): CommitInfo {
   const show = (flag: string): string[] => gitList(['show', '--format=', flag, '-M', '-z', sha]);
   const numstat = parseNumstat(show('--numstat'));
   const changes = parseNameStatus(show('--name-status')).map((entry, index) => {
     const counts = numstat[index] ?? { added: 0, removed: 0 };
     // A new file has nothing to remove (a binary one reports "-" for both counts).
-    return { ...entry, added: counts.added, removed: entry.status === 'A' ? 0 : counts.removed };
+    const change = {
+      ...entry,
+      added: counts.added,
+      removed: entry.status === 'A' ? 0 : counts.removed,
+    };
+    // Counts cannot tell which package.json lines changed, so the test-control check needs them.
+    return basename(entry.path) === 'package.json'
+      ? { ...change, lines: fileLines(sha, entry.path) }
+      : change;
   });
   const subject = git(['log', '-1', '--format=%s', sha]).toString('utf8').trim();
   return { sha, subject, changes };
@@ -214,8 +252,12 @@ function commandViolations(command: string, args: string[]): Violation[] {
     case 'pre-push':
       if (args.length > 0) throw new UsageError();
       return checkPushRefs(readStdin());
-    case 'test-lock':
-      return checkTestLock(rangeShas(parseRange(args)).map(commitInfo));
+    case 'test-lock': {
+      const commits = rangeShas(parseRange(args)).map(commitInfo);
+      return [...checkTestLock(commits), ...checkTestControl(commits)];
+    }
+    case 'no-merges':
+      return checkNoMerges(mergeCommits(parseRange(args)));
     case 'commits':
       return checkCommits(
         rangeShas(parseRange(args)).map((sha) => ({
