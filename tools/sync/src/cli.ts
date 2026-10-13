@@ -103,11 +103,8 @@ function readSources(root: string): FileMap {
 /** Mirrors `source` into `backupDir` and prints the counts. */
 function mirror(source: FileMap, backupDir: string): void {
   const plan = planSync(source, readTree(backupDir));
-  for (const path of plan.write) {
-    const target = join(backupDir, path);
-    mkdirSync(dirname(target), { recursive: true });
-    writeFileSync(target, source.get(path) ?? Buffer.alloc(0));
-  }
+  // Stale files go first: on a case-insensitive file system `a.md` -> `A.md` is a remove plus a
+  // write of the same file, and removing last would delete the new copy.
   for (const path of plan.remove) {
     rmSync(join(backupDir, path));
     // Drop the folders that the removal left empty, up to the backup folder.
@@ -115,6 +112,11 @@ function mirror(source: FileMap, backupDir: string): void {
       if (readdirSync(dir).length > 0) break;
       rmdirSync(dir);
     }
+  }
+  for (const path of plan.write) {
+    const target = join(backupDir, path);
+    mkdirSync(dirname(target), { recursive: true });
+    writeFileSync(target, source.get(path) ?? Buffer.alloc(0));
   }
   console.log(
     `sync: ${plan.write.length} written, ${plan.remove.length} removed, ${plan.unchanged} unchanged`,
