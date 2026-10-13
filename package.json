@@ -17,9 +17,13 @@
     "e2e": "playwright test --pass-with-no-tests",
     "verify:static": "pnpm format:check && pnpm lint && pnpm typecheck",
     "verify:fast": "pnpm verify:static && pnpm test",
-    "verify": "pnpm verify:static && pnpm coverage && pnpm e2e"
+    "verify": "pnpm verify:static && pnpm coverage && pnpm e2e",
+    "guardrails": "tsx tools/guardrails/src/cli.ts",
+    "prepare": "lefthook install"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.3",
+    "@commitlint/config-conventional": "^21.2.3",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.64.0",
     "@types/node": "^22.20.5",
@@ -27,7 +31,9 @@
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.13.0",
+    "lefthook": "^2.2.1",
     "prettier": "^3.9.10",
+    "tsx": "^4.23.15",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3"

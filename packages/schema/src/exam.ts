@@ -1,4 +1,4 @@
-// Exam catalog: the SAA-C03 domains and task statements (spec 001).
+// Exam catalog: the SAA-C03 domains and task statements.
 
 export type DomainId = 1 | 2 | 3 | 4;
 export type TaskId =
