@@ -62,6 +62,15 @@ jobs:
           BASE: origin/${{ github.base_ref }}
         run: pnpm guardrails test-lock --base "$BASE"
 
+      # pull_request checks out GitHub's synthetic merge commit, so the head must be explicit.
+      # The tests-approved label does not lift this: PRs are rebased, never merged into (D11).
+      - name: No merge commits
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        env:
+          BASE: origin/${{ github.base_ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: pnpm guardrails no-merges --base "$BASE" --head "$HEAD_SHA"
+
       - name: Format
         if: ${{ !cancelled() }}
         run: pnpm format:check
