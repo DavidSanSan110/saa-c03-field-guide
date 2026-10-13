@@ -28,7 +28,7 @@ Pre-commit hooks and CI enforce most of these automatically.
 
 ## Local setup
 
-Requirements: Node.js 22.12+ and pnpm (via Corepack).
+Requirements: Node.js 22.12+, pnpm (via Corepack) and [gitleaks](https://github.com/gitleaks/gitleaks#installing) on your `PATH` (Windows: `winget install Gitleaks.Gitleaks`).
 
 ```sh
 corepack enable
@@ -36,7 +36,9 @@ pnpm install
 pnpm verify        # format check, lint, typecheck, unit tests with coverage, e2e
 ```
 
-Useful scripts: `pnpm test:watch`, `pnpm format`, `pnpm lint`, `pnpm verify:fast` (no e2e).
+Useful scripts: `pnpm test:watch`, `pnpm format`, `pnpm lint`, `pnpm verify:fast` (no e2e), `pnpm guardrails paths --all`.
+
+`pnpm install` also installs the git hooks ([Lefthook](lefthook.yml)): gitleaks, the guardrails, ESLint and Prettier on commit; commitlint on the message; typecheck and unit tests before a push. Pushing straight to `main` is refused.
 
 ## Licence
 
