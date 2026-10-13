@@ -1,7 +1,7 @@
 name: Report a practice question
 description: A practice question is wrong, ambiguous or outdated.
-title: "question: <question id>"
-labels: ["content", "question-report"]
+title: 'question: <question id>'
+labels: ['content', 'question-report']
 body:
   - type: input
     id: question

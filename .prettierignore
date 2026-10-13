@@ -1,0 +1,7 @@
+# Prettier 3 already skips everything in .gitignore; these are the extras.
+pnpm-lock.yaml
+# Local-only files (excluded via .git/info/exclude, which Prettier doesn't read)
+.claude/
+CLAUDE.md
+PLAN.md
+.vitest/
