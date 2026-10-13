@@ -1,0 +1,11 @@
+pnpm-lock.yaml
+dist/
+coverage/
+reports/
+.astro/
+playwright-report/
+test-results/
+private/
+.claude/
+CLAUDE.md
+PLAN.md
