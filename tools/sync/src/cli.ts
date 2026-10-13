@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -52,8 +53,15 @@ function git(cwd: string, args: string[]): string {
   return result.stdout.trim();
 }
 
-/** Every file under `dir` as `relative path -> bytes`; directories for which `prune` is true are skipped. */
-function readTree(dir: string, prune: (relativeDir: string) => boolean = () => false): FileMap {
+/**
+ * Every regular file under `dir` as `relative path -> bytes`; directories for which `prune` is true
+ * are skipped, and `onOther` hears about entries that are neither files nor directories.
+ */
+function readTree(
+  dir: string,
+  prune: (relativeDir: string) => boolean = () => false,
+  onOther: (relativePath: string) => void = () => undefined,
+): FileMap {
   const files: FileMap = new Map();
   const walk = (relative: string): void => {
     for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
@@ -62,6 +70,8 @@ function readTree(dir: string, prune: (relativeDir: string) => boolean = () => f
         if (!prune(path)) walk(path);
       } else if (entry.isFile()) {
         files.set(path, readFileSync(join(dir, path)));
+      } else {
+        onOther(path);
       }
     }
   };
@@ -84,7 +94,15 @@ function readSources(root: string): FileMap {
     if (!existsSync(join(root, name))) throw new SyncError(`${name} is missing`);
   }
   // A directory like `.claude/worktrees` or `node_modules` is pruned instead of walked.
-  const claude = readTree(join(root, '.claude'), (dir) => backupPath(`.claude/${dir}/x`) === null);
+  const claude = readTree(
+    join(root, '.claude'),
+    (dir) => backupPath(`.claude/${dir}/x`) === null,
+    (path) => {
+      if (backupPath(`.claude/${path}`) !== null) {
+        console.log(`sync: skipped .claude/${path} (not a regular file)`);
+      }
+    },
+  );
   for (const name of ['CLAUDE.md', 'PLAN.md']) {
     if (claude.has(name)) {
       throw new SyncError(`.claude/${name} collides with ${name} in the backup`);
@@ -100,9 +118,27 @@ function readSources(root: string): FileMap {
   return source;
 }
 
+/** Stops if the path, or any folder above it inside `backupDir`, is a symlink or junction. */
+function checkNoLinks(backupDir: string, path: string): void {
+  let current = backupDir;
+  for (const segment of ['', ...path.split('/')]) {
+    current = join(current, segment);
+    let isLink: boolean;
+    try {
+      isLink = lstatSync(current).isSymbolicLink();
+    } catch {
+      return; // nothing exists from here on
+    }
+    if (isLink)
+      throw new SyncError(`${current} is a symlink or junction; refusing to write through it`);
+  }
+}
+
 /** Mirrors `source` into `backupDir` and prints the counts. */
 function mirror(source: FileMap, backupDir: string): void {
   const plan = planSync(source, readTree(backupDir));
+  // Check everything before writing anything.
+  for (const path of [...plan.remove, ...plan.write]) checkNoLinks(backupDir, path);
   // Stale files go first: on a case-insensitive file system `a.md` -> `A.md` is a remove plus a
   // write of the same file, and removing last would delete the new copy.
   for (const path of plan.remove) {
@@ -217,8 +253,9 @@ async function runSync(args: string[]): Promise<number> {
   checkPrivateRepo(privateDir);
   const source = readSources(root);
 
+  const publicSha = git(root, ['rev-parse', '--short', 'HEAD']); // before anything is written
   mirror(source, join(privateDir, 'claude-setup'));
-  commitBackup(privateDir, git(root, ['rev-parse', '--short', 'HEAD']));
+  commitBackup(privateDir, publicSha);
   if (!noPush) return pushBoth(root, privateDir);
   console.log('sync: not pushed (--no-push)');
   return 0;
