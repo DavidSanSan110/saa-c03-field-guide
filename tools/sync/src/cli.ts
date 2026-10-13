@@ -18,7 +18,7 @@ import type { FileMap } from './sync.ts';
 const USAGE = `Usage:
   sync [--no-push]   back up the local-only setup into private/ and push both repos after confirmation`;
 
-const SKIPPED_MAIN = 'skipped (main is updated through pull requests)';
+const SKIPPED_MAIN = 'main is updated through pull requests';
 const PROMPT = 'Push these? [y/N] ';
 
 class UsageError extends Error {}
@@ -154,14 +154,14 @@ function pushPlan(name: PushPlan['name'], dir: string): PushPlan {
   const upstream = upstreamResult.ok ? upstreamResult.stdout.trim() : undefined;
   const ahead = Number(git(dir, ['rev-list', '--count', upstream ? `${upstream}..HEAD` : 'HEAD']));
   let skip: string | undefined;
-  if (branch === 'HEAD') skip = 'skipped (detached HEAD)';
+  if (branch === 'HEAD') skip = 'detached HEAD';
   else if (name === 'public' && branch === 'main') skip = SKIPPED_MAIN;
   return { name, dir, branch, upstream, ahead, skip };
 }
 
 function describePlan({ name, branch, upstream, ahead, skip }: PushPlan): string {
-  const state = skip ?? `upstream ${upstream ?? 'none'}, ${ahead} commit(s) ahead`;
-  return `${name}: branch ${branch}, ${state}`;
+  if (skip !== undefined) return `${name}: skipped (${skip})`;
+  return `${name}: branch ${branch}, upstream ${upstream ?? 'none'}, ${ahead} commit(s) ahead`;
 }
 
 /** Reads one line from stdin; end of input gives an empty line. */
@@ -196,6 +196,7 @@ async function pushBoth(root: string, privateDir: string): Promise<number> {
 
   for (const { name, dir, branch, upstream } of pushes) {
     // Always an explicit refspec: a bare `git push` depends on push.default and the upstream.
+    console.log(`sync: pushing ${name}…`);
     const setUpstream = upstream === `origin/${branch}` ? [] : ['-u'];
     const result = run(dir, ['push', ...setUpstream, 'origin', branch]);
     if (!result.ok) {
