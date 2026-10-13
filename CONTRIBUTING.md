@@ -25,7 +25,7 @@ Pre-commit hooks and CI enforce most of these automatically.
 - Commits follow [Conventional Commits](https://www.conventionalcommits.org/) (`feat(diagrams): add step-back control`).
 - Behaviour is specified first, tests are written from the spec, then the code makes them pass. Every feature ships with unit and end-to-end tests.
 - PRs are merged with a merge commit after rebasing on `main` (no squash). The PR's own commits must not contain merge commits; CI rejects them.
-- Only `test:` commits may change test files, test configs, setup files, mocks or the `test`/`coverage`/`e2e` scripts.
+- Only `test:` commits may touch tests: they may add to test files, but only the owner-approved `tests-approved` label lets a PR edit or delete existing ones. Test configs, setup files, mocks and the `test`/`coverage`/`e2e` scripts are likewise changed only in `test:` commits.
 
 ## Local setup
 
