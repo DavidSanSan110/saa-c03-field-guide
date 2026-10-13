@@ -73,7 +73,16 @@ const CONTENT_RULES: ContentRule[] = [
     id: 'client-reference',
     message: 'client, employer or local machine reference',
     pattern: new RegExp(
-      [['kraken', 'legrand'].join(''), 'telef[oó]nica', 'c:(\\\\+|/+)users(\\\\+|/+)'].join('|'),
+      [
+        ['kraken', 'legrand'].join(''),
+        'telef[oó]nica',
+        // Windows user folder: a drive letter at a word boundary (so not "grpc://users/"),
+        // either as "<drive>:\\users\\" / "<drive>:/users/" ...
+        '\\b[a-z]:[\\\\/]+users[\\\\/]+',
+        // ... or as Git Bash "/<drive>/users/" and WSL "/mnt/<drive>/users/". The lookbehind
+        // keeps "/usr/c/users" and bare "/users/" out.
+        '(?<![\\w/])(?:/mnt)?/[a-z]/users/',
+      ].join('|'),
       'i',
     ),
   },
