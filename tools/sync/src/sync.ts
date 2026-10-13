@@ -12,14 +12,36 @@ export interface SyncPlan {
   unchanged: number;
 }
 
-/** Repo-relative source path -> backup-relative path, or null if it is excluded or not a source. */
+const TOP_LEVEL_SOURCES = new Set(['CLAUDE.md', 'PLAN.md']);
+const KEEP_FILE = '.gitkeep';
+
+/**
+ * Repo-relative source path -> backup-relative path, or null if it is excluded or not a source.
+ * Sources are `CLAUDE.md`, `PLAN.md` and everything under `.claude/` except `.claude/worktrees/`
+ * and any `node_modules/` directory. Both `/` and `\` separate segments.
+ */
 export function backupPath(sourcePath: string): string | null {
-  void sourcePath;
-  throw new Error('not implemented');
+  const path = sourcePath.replaceAll('\\', '/').replace(/^(\.\/)+/, '');
+  if (TOP_LEVEL_SOURCES.has(path)) return path;
+  if (!path.startsWith('.claude/')) return null;
+  const relative = path.slice('.claude/'.length);
+  const segments = relative.split('/');
+  if (relative === '' || segments[0] === 'worktrees' || segments.includes('node_modules')) {
+    return null;
+  }
+  return relative;
 }
 
+/** What a mirror run has to write and remove so that the backup equals the source. */
 export function planSync(source: FileMap, backup: FileMap): SyncPlan {
-  void source;
-  void backup;
-  throw new Error('not implemented');
+  const write: string[] = [];
+  let unchanged = 0;
+  for (const [path, content] of source) {
+    if (backup.get(path)?.equals(content)) unchanged += 1;
+    else write.push(path);
+  }
+  const remove = [...backup.keys()].filter(
+    (path) => !source.has(path) && path.split('/').pop() !== KEEP_FILE,
+  );
+  return { write: write.sort(), remove: remove.sort(), unchanged };
 }
