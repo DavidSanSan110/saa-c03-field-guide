@@ -21,7 +21,7 @@
       "groupName": "github actions"
     },
     {
-      "description": "typescript-eslint does not support TypeScript 7 yet",
+      "description": "Stay on 6.0.x: typescript-eslint supports TypeScript up to <6.1; widen together with it",
       "matchPackageNames": ["typescript"],
       "allowedVersions": "<6.1"
     }
