@@ -8,12 +8,16 @@ export interface CommitChange {
   oldPath?: string;
   added: number;
   removed: number;
+  /** Diff lines without the +/- prefix; the CLI fills it for package.json files only. */
+  lines?: { added: string[]; removed: string[] };
 }
 
 export interface CommitInfo {
   sha: string;
   subject: string;
   changes: CommitChange[];
+  /** Number of parents; a missing value means 1. */
+  parents?: number;
 }
 
 const TEST_FILE_NAME = /\.(test|spec)\.(ts|tsx|js|mjs)$|\.tftest\.hcl$/;
@@ -80,6 +84,32 @@ export function checkTestLock(commits: CommitInfo[]): Violation[] {
     }
   }
   return violations;
+}
+
+/** True for files that decide which tests run and how strictly (runner configs, setup files, mocks). */
+export function isTestControlPath(path: string): boolean {
+  void path;
+  throw new Error('not implemented');
+}
+
+/** True for a package.json diff line (prefix already stripped) that controls the test scripts. */
+export function isTestControlLine(line: string): boolean {
+  void line;
+  throw new Error('not implemented');
+}
+
+/** Rules 3 and 4 of spec 005: non-test commits must not change test-control files or lines. */
+export function checkTestControl(commits: CommitInfo[]): Violation[] {
+  void commits;
+  throw new Error('not implemented');
+}
+
+/** One `no-merges` violation per commit with two or more parents. */
+export function checkNoMerges(
+  commits: { sha: string; subject: string; parents: number }[],
+): Violation[] {
+  void commits;
+  throw new Error('not implemented');
 }
 
 export function checkCommits(commits: { sha: string; message: string }[]): Violation[] {
