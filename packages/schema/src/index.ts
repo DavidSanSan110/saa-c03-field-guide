@@ -1,2 +1,3 @@
 export * from './exam.ts';
 export * from './question.ts';
+export * from './diagram.ts';
