@@ -1,0 +1,11 @@
+---
+import { domains } from '@field-guide/schema';
+
+interface Props {
+  domain: number;
+}
+
+const weight = domains.find((candidate) => candidate.id === Astro.props.domain)?.weight;
+---
+
+<p>{weight}% of the scored content</p>

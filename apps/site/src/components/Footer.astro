@@ -1,0 +1,29 @@
+---
+import Default from '@astrojs/starlight/components/Footer.astro';
+
+const repoBlobUrl = 'https://github.com/DavidSanSan110/saa-c03-field-guide/blob/main';
+---
+
+<Default />
+<footer class="site-footer" data-pagefind-ignore>
+  <p>Not affiliated with, endorsed by or sponsored by Amazon Web Services, Inc.</p>
+  <p>
+    Licensed <a href={`${repoBlobUrl}/LICENSE`}>MIT</a> (code) and{' '}
+    <a href={`${repoBlobUrl}/LICENSE-CONTENT.md`}>CC BY-SA 4.0</a> (content).
+  </p>
+</footer>
+
+<style>
+  .site-footer {
+    margin-top: 1.5rem;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+    text-align: center;
+  }
+  .site-footer p {
+    margin: 0;
+  }
+  .site-footer a {
+    color: var(--sl-color-text-accent);
+  }
+</style>
