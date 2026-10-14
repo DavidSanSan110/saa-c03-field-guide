@@ -47,7 +47,7 @@ scenarios:
     steps:
       - edge: put
         packet: GetObject
-        caption: GetObject over HTTPS, with no encryption headers. S3 knows the key from the object's metadata.
+        caption: GetObject over HTTPS, without encryption headers. S3 knows the key from the object's metadata.
       - edge: gen
         packet: Decrypt
         caption: S3 sends the encrypted data key to KMS. The caller needs kms:Decrypt on the KMS key.
@@ -64,7 +64,7 @@ scenarios:
         packet: Object
         caption: S3 decrypts the object with the data key, deletes that key and returns the object over HTTPS.
   - id: denied
-    label: No KMS permission
+    label: Missing KMS permission
     steps:
       - edge: put
         packet: PutObject
@@ -100,7 +100,7 @@ scenarios:
         state: { s3: highlighted }
       - edge: put
         packet: PutObject
-        caption: More uploads from the same caller get their data keys from the bucket key, with no call to KMS.
+        caption: More uploads from the same caller get their data keys from the bucket key, without a call to KMS.
         metrics: { KMS requests: '+0' }
       - node: s3
         caption: Fewer calls to KMS cut KMS request costs by up to 99% and keep you further from the KMS quota.
