@@ -14,7 +14,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
-    "e2e": "playwright test --pass-with-no-tests",
+    "e2e": "playwright test",
     "verify:static": "pnpm format:check && pnpm lint && pnpm typecheck",
     "verify:fast": "pnpm verify:static && pnpm test",
     "verify": "pnpm verify:static && pnpm coverage && pnpm e2e",
@@ -23,6 +23,7 @@
     "prepare": "lefthook install"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@commitlint/cli": "^21.2.3",
     "@commitlint/config-conventional": "^21.2.3",
     "@eslint/js": "^10.0.1",
