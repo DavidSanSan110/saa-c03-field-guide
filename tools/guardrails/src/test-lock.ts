@@ -8,7 +8,7 @@ export interface CommitChange {
   oldPath?: string;
   added: number;
   removed: number;
-  /** Diff lines without the +/- prefix; the CLI fills it for package.json files only. */
+  /** Diff lines without the +/- prefix; the CLI fills it for changes touching a package.json (new or old path). */
   lines?: { added: string[]; removed: string[] };
 }
 
@@ -117,12 +117,17 @@ export function isTestControlLine(line: string): boolean {
   return TEST_CONTROL_LINE.test(line);
 }
 
-/** The file a change puts under test control: a test-control path, or a package.json with such lines. */
+/**
+ * The file a change puts under test control: a test-control path, or a package.json with such lines.
+ * A package.json counts under its new path, or under its old one if it was renamed to another name.
+ */
 function touchedControlFile({ path, oldPath, lines }: CommitChange): string | undefined {
   if (isTestControlPath(path)) return path;
   if (oldPath !== undefined && isTestControlPath(oldPath)) return oldPath;
+  const file = isPackageJson(path) ? path : oldPath;
+  if (file === undefined || !isPackageJson(file)) return undefined;
   const changed = [...(lines?.added ?? []), ...(lines?.removed ?? [])];
-  return isPackageJson(path) && changed.some(isTestControlLine) ? path : undefined;
+  return changed.some(isTestControlLine) ? file : undefined;
 }
 
 /** Rules 3 and 4 of spec 005: non-test commits must not change test-control files or lines. */
