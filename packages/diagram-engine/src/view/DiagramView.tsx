@@ -226,6 +226,12 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
           void fitRef.current({ padding: FIT_PADDING }).then(() => {
             setHydrated(true);
           });
+          // Never leave the controls hidden: two frames later the island is live whatever the fit did.
+          frame = requestAnimationFrame(() => {
+            frame = requestAnimationFrame(() => {
+              setHydrated(true);
+            });
+          });
         });
       });
     };
@@ -353,7 +359,11 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
         data-layout={layout}
         style={
           {
-            aspectRatio: `${String(compiled.width)} / ${String(compiled.height)}`,
+            // Unitless sizes feed `aspect-ratio`; the compact ones let CSS reserve the narrow box before hydration.
+            '--dl-aw': compiled.width,
+            '--dl-ah': compiled.height,
+            '--dl-caw': compact.width,
+            '--dl-cah': compact.height,
             '--dl-w': `${String(compiled.width)}px`,
             '--dl-h': `${String(compiled.height)}px`,
           } as CSSProperties

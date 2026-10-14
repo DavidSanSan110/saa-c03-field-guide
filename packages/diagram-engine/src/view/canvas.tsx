@@ -219,7 +219,8 @@ function FlowEdgeView({ data }: EdgeProps<FlowEdgeType>) {
             <path d="M0,0 L10,5 L0,10 z" className="dl-edge__arrow" />
           </marker>
         </defs>
-        {/* A straight horizontal or vertical line has an empty bounding box: this gives the edge an area. */}
+        {/* SVG getBBox ignores the stroke, so a straight horizontal or vertical edge has a zero-height or
+            zero-width box: this padded rect gives the edge group an area. */}
         <rect
           x={bounds.x}
           y={bounds.y}

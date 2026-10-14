@@ -71,6 +71,8 @@
   font-family: var(--sl-font, system-ui, sans-serif);
 }
 .dl-view {
+  /* The island's own width decides which canvas box the server render reserves (see .dl-canvas). */
+  container: dl-view / inline-size;
   background: var(--dl-bg);
 }
 .dl-view:focus-visible {
@@ -124,6 +126,7 @@
   /* Lets the server-rendered picture size itself from the container (see below). */
   container-type: size;
   width: 100%;
+  aspect-ratio: var(--dl-aw) / var(--dl-ah);
   min-height: 14rem;
   max-height: 32rem;
   background-image: radial-gradient(var(--dl-dots) 1px, transparent 1px);
@@ -131,6 +134,14 @@
 }
 .dl-canvas[data-layout='compact'] {
   max-height: 75svh;
+}
+/* Before hydration a narrow island already reserves the compact layout's box (same clamps as after), so
+   the page does not move when the compact layout takes over. */
+@container dl-view (max-width: 559.98px) {
+  .dl-view:not([data-hydrated]) .dl-canvas {
+    aspect-ratio: var(--dl-caw) / var(--dl-cah);
+    max-height: 75svh;
+  }
 }
 .dl-flow {
   position: absolute;
@@ -150,12 +161,15 @@
     )
     scale(var(--dl-s)) !important;
 }
-/* The controls only exist once the island is live: no dead buttons. */
-.dl-view:not([data-hydrated]) .dl-tabs {
+/* The controls only exist once the island is live: no dead buttons. They keep their space until then (the page
+   must not move when the island hydrates) and collapse only where scripts never run. */
+.dl-view:not([data-hydrated]) :is(.dl-tabs, .dl-bar, .dl-log) {
   visibility: hidden;
 }
-.dl-view:not([data-hydrated]) :is(.dl-bar, .dl-log) {
-  display: none;
+@media (scripting: none) {
+  .dl-view:not([data-hydrated]) :is(.dl-tabs, .dl-bar, .dl-log) {
+    display: none;
+  }
 }
 .dl .react-flow__renderer,
 .dl .react-flow__pane {
