@@ -33,15 +33,23 @@ export function readDiagramFile(dir: string, id: string): unknown {
   // Silent: the parser collects warnings instead of printing them; any error or warning makes the file invalid.
   // Only the first line of its message is kept (the rest is a code frame).
   const docs = parseAllDocuments(text, { logLevel: 'silent' });
+  const notValid = (problem: Error) =>
+    new Error(
+      `Diagram file '${name}' is not valid YAML: ${problem.message.split(/\r?\n/)[0] ?? ''}`,
+      { cause: problem },
+    );
   const problem =
     docs.flatMap((doc) => doc.errors)[0] ??
     docs.flatMap((doc) => doc.warnings)[0] ??
     (docs.length > 1 ? new Error('Source contains multiple documents') : undefined);
-  if (problem) {
-    const firstLine = problem.message.split(/\r?\n/)[0] ?? '';
-    throw new Error(`Diagram file '${name}' is not valid YAML: ${firstLine}`, { cause: problem });
+  if (problem) throw notValid(problem);
+  // Converting can still fail (unresolved alias, too many aliases), so it gets the same message.
+  let data: unknown;
+  try {
+    data = docs[0]?.toJS() ?? null;
+  } catch (error) {
+    throw notValid(error instanceof Error ? error : new Error(String(error)));
   }
-  const data: unknown = docs[0]?.toJS() ?? null;
 
   const fileId =
     typeof data === 'object' && data !== null ? (data as { id?: unknown }).id : undefined;
