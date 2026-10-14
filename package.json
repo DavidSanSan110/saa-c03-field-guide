@@ -9,6 +9,7 @@
   "scripts": {
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "build": "pnpm -r --if-present build",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json && pnpm -r --if-present typecheck",
     "test": "vitest run",
