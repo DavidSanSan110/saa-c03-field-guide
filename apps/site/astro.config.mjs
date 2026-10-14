@@ -6,12 +6,18 @@ import { fileURLToPath } from 'node:url';
 import { shouldInjectFixtures } from './src/diagram/fixtures-route.ts';
 import { buildSidebar } from './src/sidebar.ts';
 
-// The diagram view's test page (spec 012): only with FIELD_GUIDE_FIXTURES=1 or in dev, never in production.
+// Diagram support (spec 012): hands the configured publicDir to Diagram.astro (its icon check) and, with
+// FIELD_GUIDE_FIXTURES=1 or in dev, injects the view's test page. Production builds never contain it.
 /** @type {import('astro').AstroIntegration} */
-const diagramFixtures = {
-  name: 'diagram-fixtures',
+const diagrams = {
+  name: 'diagrams',
   hooks: {
-    'astro:config:setup': ({ command, injectRoute }) => {
+    'astro:config:setup': ({ command, config, injectRoute, updateConfig }) => {
+      updateConfig({
+        vite: {
+          define: { __FIELD_GUIDE_PUBLIC_DIR__: JSON.stringify(fileURLToPath(config.publicDir)) },
+        },
+      });
       if (!shouldInjectFixtures(process.env, command)) return;
       injectRoute({
         pattern: '/fixtures/diagram/',
@@ -43,6 +49,6 @@ export default defineConfig({
       },
     }),
     react(),
-    diagramFixtures,
+    diagrams,
   ],
 });

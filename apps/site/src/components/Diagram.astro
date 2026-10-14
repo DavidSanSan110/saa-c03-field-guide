@@ -4,30 +4,36 @@
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { DiagramView } from '@field-guide/diagram-engine/view';
+import { instanceId } from '../diagram/instance.ts';
 import { prepareDiagram } from '../diagram/prepare.ts';
 
 interface Props {
   diagram: unknown;
 }
 
-const publicDir = join(process.cwd(), 'public');
 const { props, fallback, id } = await prepareDiagram(Astro.props.diagram, {
-  iconExists: (publicPath) => existsSync(join(publicDir, publicPath)),
+  iconExists: (publicPath) => existsSync(join(__FIELD_GUIDE_PUBLIC_DIR__, publicPath)),
 });
+
+// One request object per rendered page: the ids stay unique even if a diagram is used twice.
+const uid = instanceId(Astro.request, id);
 
 const stepText = (step: { caption: string; metrics?: string }) =>
   step.metrics === undefined ? step.caption : `${step.caption} (${step.metrics})`;
 ---
 
 <figure class="dl not-content" data-diagram={id}>
-  <DiagramView client:visible {...props} />
+  <!-- Only the text fallback is searchable; the island holds the same words as UI chrome. -->
+  <div data-pagefind-ignore>
+    <DiagramView client:visible {...props} />
+  </div>
   <details class="dl-text">
     <summary>Steps as text</summary>
     {
       fallback.map((scenario) => (
         <>
-          <p id={`${id}-${scenario.id}-label`}>{scenario.label}</p>
-          <ol aria-labelledby={`${id}-${scenario.id}-label`}>
+          <p id={`${uid}-${scenario.id}-label`}>{scenario.label}</p>
+          <ol aria-labelledby={`${uid}-${scenario.id}-label`}>
             {scenario.steps.map((step) => (
               <li>{stepText(step)}</li>
             ))}
