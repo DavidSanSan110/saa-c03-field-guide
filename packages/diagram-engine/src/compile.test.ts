@@ -719,8 +719,12 @@ describe('AC-9: pos override inside a subnet', () => {
   test('AC-9: grown groups never get smaller than before', async () => {
     const { base, moved } = await both();
     for (const id of OVERRIDDEN) {
-      expect(getGroup(moved, id).width, id).toBeGreaterThan(getGroup(base, id).width);
-      expect(getGroup(moved, id).height, id).toBeGreaterThan(getGroup(base, id).height);
+      const before = getGroup(base, id);
+      const after = getGroup(moved, id);
+      expect(after.grown, id).toBe(true);
+      expect(after.width, id).toBeGreaterThanOrEqual(before.width);
+      expect(after.height, id).toBeGreaterThanOrEqual(before.height);
+      expect(after.width > before.width || after.height > before.height, id).toBe(true);
     }
   });
 
