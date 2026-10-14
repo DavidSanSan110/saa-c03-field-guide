@@ -1311,3 +1311,70 @@ describe('AC-19: options passed as undefined fall back to their defaults', () =>
     expect(getNode(result, 'a').width).toBe(100);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review round 2: float noise must never mark a group grown (AC-20)
+// ---------------------------------------------------------------------------
+
+/** The AC-20 fixture: g0 holds g1 and g2; a down layout of it overshoots a group by ~5.7e-14. */
+function floatNoiseDiagram(): Diagram {
+  return {
+    id: 'float-noise',
+    title: 'Float noise',
+    groups: [
+      { id: 'g0', label: 'G0', kind: 'generic' },
+      { id: 'g1', label: 'G1', kind: 'generic', parent: 'g0' },
+      { id: 'g2', label: 'G2', kind: 'generic', parent: 'g0' },
+    ],
+    nodes: [
+      { id: 'n0', icon: 'ec2', label: 'N0' },
+      { id: 'n1', icon: 'ec2', label: 'N1', group: 'g2' },
+      { id: 'n2', icon: 'ec2', label: 'N2' },
+      { id: 'n3', icon: 'ec2', label: 'N3', group: 'g1' },
+      { id: 'n4', icon: 'ec2', label: 'N4' },
+      { id: 'n5', icon: 'ec2', label: 'N5', group: 'g2' },
+    ],
+    edges: [
+      { id: 'e0', from: 'n1', to: 'n3' },
+      { id: 'e1', from: 'n5', to: 'n4' },
+      { id: 'e2', from: 'n4', to: 'n3' },
+      { id: 'e3', from: 'n5', to: 'g1' },
+      { id: 'e4', from: 'g2', to: 'n2' },
+      { id: 'e5', from: 'n0', to: 'n3' },
+    ],
+    scenarios: scenarioFor('n0'),
+  };
+}
+
+describe('AC-20: float noise never marks a group grown', () => {
+  test('AC-20: the fixture still exercises float noise (guard against a stale fixture)', async () => {
+    const result = await compiled(floatNoiseDiagram(), { direction: 'down' });
+    const padding = COMPILE_DEFAULTS.groupPadding;
+    const noisy = result.groups.filter((group) => {
+      const children = [...result.groups, ...result.nodes].filter(
+        (element) => element.parent === group.id,
+      );
+      const right = Math.max(...children.map((child) => child.x + child.width)) + padding;
+      const bottom = Math.max(...children.map((child) => child.y + child.height)) + padding;
+      return [Math.abs(right - group.width), Math.abs(bottom - group.height)].some(
+        (diff) => diff > 0 && diff < 1e-6,
+      );
+    });
+    expect(noisy.map((group) => group.id)).not.toEqual([]);
+  });
+
+  test('AC-20: without pos no group is grown', async () => {
+    const result = await compiled(floatNoiseDiagram(), { direction: 'down' });
+    expect(result.groups).toHaveLength(3);
+    expect(result.groups.filter((group) => group.grown).map((group) => group.id)).toEqual([]);
+    expect(result.nodes.filter((node) => node.overridden)).toEqual([]);
+  });
+
+  test('AC-20: every edge, including the one ending at a group, keeps its points', async () => {
+    const result = await compiled(floatNoiseDiagram(), { direction: 'down' });
+    expect(result.edges).toHaveLength(6);
+    expect(result.edges.filter((edge) => edge.points === undefined).map((edge) => edge.id)).toEqual(
+      [],
+    );
+  });
+});
