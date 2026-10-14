@@ -207,6 +207,8 @@ function fileLines(sha: string, ...paths: string[]): NonNullable<CommitChange['l
     '--format=',
     '-U0',
     '--no-color',
+    '--text', // .gitattributes (`-diff`, `binary`) must not hide the lines
+    '--no-textconv',
     '-M',
     sha,
     '--',
