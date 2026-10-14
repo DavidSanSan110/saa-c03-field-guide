@@ -193,7 +193,7 @@ function FlowEdgeView({ data }: EdgeProps<FlowEdgeType>) {
           {flow.label === undefined ? null : (
             <div
               className="dl-edge-label"
-              style={{ transform: broken ? `${at} translateY(-1.6rem)` : at }}
+              style={{ transform: `${at} translateY(${broken ? '-1.6rem' : '-1.4rem'})` }}
             >
               {flow.label}
             </div>

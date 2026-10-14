@@ -242,7 +242,6 @@
 }
 .dl-card[data-state='failed'] .dl-card__icon {
   opacity: 0.5;
-  filter: grayscale(0.7);
 }
 .dl-card[data-state='failed'] .dl-card__label {
   color: var(--dl-muted);
@@ -375,6 +374,8 @@
   height: 30px;
 }
 .dl-group__label {
+  padding: 0 0.3rem;
+  background: var(--dl-bg);
   line-height: 1.2;
 }
 

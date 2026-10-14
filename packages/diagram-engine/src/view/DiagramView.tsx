@@ -224,6 +224,7 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
       End: { type: 'goto', step: view.total - 1 },
       ' ': { type: 'toggle' },
       k: { type: 'toggle' },
+      K: { type: 'toggle' },
     };
     const action = actions[event.key];
     if (action === undefined) return;
