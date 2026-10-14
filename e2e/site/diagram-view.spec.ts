@@ -1430,3 +1430,63 @@ test.describe('build output', () => {
     expect(readFileSync(join(dist, 'd1', 'index.html'), 'utf8')).not.toContain('astro-island');
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC-30 only the text fallback is indexed
+// ---------------------------------------------------------------------------
+
+test.describe('search indexing', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-30: every diagram island sits inside a data-pagefind-ignore element', async ({
+    page,
+  }) => {
+    await page.goto(FIXTURE_PATH);
+
+    const islands = await page.locator('astro-island').evaluateAll((elements) =>
+      elements.map((element) => ({
+        inDiagram: element.closest('figure[data-diagram]') !== null,
+        ignored: element.closest('[data-pagefind-ignore]') !== null,
+      })),
+    );
+
+    const diagramIslands = islands.filter((island) => island.inDiagram);
+    expect(diagramIslands).toHaveLength(2);
+    expect(diagramIslands.every((island) => island.ignored)).toBe(true);
+  });
+
+  test('AC-30: the "Steps as text" details is not inside a data-pagefind-ignore element', async ({
+    page,
+  }) => {
+    await page.goto(FIXTURE_PATH);
+
+    const details = await page
+      .locator('figure[data-diagram] details')
+      .evaluateAll((elements) =>
+        elements.map((element) => element.closest('[data-pagefind-ignore]') !== null),
+      );
+
+    expect(details).toHaveLength(2);
+    expect(details.every((ignored) => !ignored)).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-31 K (Shift+k) toggles like k
+// ---------------------------------------------------------------------------
+
+test.describe('keyboard with Caps Lock or Shift', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-31: K (Shift+k) toggles playing like k', async ({ page }) => {
+    const { main } = await openFixture(page, { both: false });
+    await main.root.focus();
+
+    await page.keyboard.press('Shift+K');
+    await expect(main.root).toHaveAttribute('data-playing', 'true');
+    await expectStep(main, 0);
+
+    await page.keyboard.press('Shift+K');
+    await expect(main.root).toHaveAttribute('data-playing', 'false');
+  });
+});
