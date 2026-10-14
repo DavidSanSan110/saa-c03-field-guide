@@ -854,3 +854,390 @@ describe('checkNoMerges', () => {
     expect(checkNoMerges([])).toEqual([]);
   });
 });
+
+// ---- Spec 008: package.json renames and the guardrails script ---------------------------------
+
+/** An `R` change that carries the diff lines the CLI collects for it. */
+function renamedWithLines(
+  oldPath: string,
+  path: string,
+  added: string[] = [],
+  removed: string[] = [],
+): CommitChange {
+  return {
+    path,
+    status: 'R',
+    oldPath,
+    added: added.length,
+    removed: removed.length,
+    lines: { added, removed },
+  };
+}
+
+describe('isTestControlLine: the guardrails script', () => {
+  test.each([
+    '"guardrails": "tsx tools/guardrails/src/cli.ts",',
+    '  "guardrails": "echo ok"',
+    '"guardrails:ci": "tsx x.ts"',
+  ])('AC-1: %s is a test-control line', (line) => {
+    expect(isTestControlLine(line)).toBe(true);
+  });
+
+  test.each([
+    '"name": "@field-guide/guardrails",',
+    '"@field-guide/guardrails": "workspace:*",',
+    '"guardrail": "x"',
+    '"preguardrails": "x"',
+    '"lint:guardrails": "x"',
+  ])('AC-1: %s is not a test-control line', (line) => {
+    expect(isTestControlLine(line)).toBe(false);
+  });
+
+  test.each([
+    ['"test": "vitest run",'],
+    ['"e2e:ci": "playwright test"'],
+    ['"coverage": "vitest run --coverage",'],
+    ['"x": "vitest run --passWithNoTests"'],
+  ])('AC-1: the spec 005 line %s is still a test-control line', (line) => {
+    expect(isTestControlLine(line)).toBe(true);
+  });
+
+  test.each(['"lint": "eslint .",', '"version": "1.2.0",', '"vitest": "^5.0.4",'])(
+    'AC-1: the spec 005 line %s is still not a test-control line',
+    (line) => {
+      expect(isTestControlLine(line)).toBe(false);
+    },
+  );
+});
+
+describe('checkTestControl: a package.json moved to another package.json', () => {
+  const OLD = 'packages/a/package.json';
+  const NEW = 'packages/b/package.json';
+
+  test('AC-2: a pure move without lines gives none', () => {
+    const violations = checkTestControl([
+      commit(SHA_A, 'refactor: move a to b', change(NEW, 'R', 0, 0, OLD)),
+    ]);
+    expect(violations).toEqual([]);
+  });
+
+  test('AC-2: a pure move with empty lines gives none', () => {
+    const violations = checkTestControl([
+      commit(SHA_A, 'refactor: move a to b', renamedWithLines(OLD, NEW)),
+    ]);
+    expect(violations).toEqual([]);
+  });
+
+  test('AC-2: a move that removes the test script gives one test-lock violation for the new path', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'refactor: move a to b',
+        renamedWithLines(OLD, NEW, [], ['"test": "vitest run",']),
+      ),
+    ]);
+    expect(files(violations)).toEqual([NEW]);
+    expect(ruleIds(violations)).toEqual(['test-lock']);
+  });
+
+  test('AC-2: a move with only dependency and name lines changed gives none', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'refactor: move a to b',
+        renamedWithLines(
+          OLD,
+          NEW,
+          ['"name": "@field-guide/b",', '"left-pad": "^1.1.0"'],
+          ['"name": "@field-guide/a",', '"left-pad": "^1.0.0"'],
+        ),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+
+  test('AC-2: a move from the root package.json into a directory reports the new path', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'refactor: move the root package',
+        renamedWithLines('package.json', NEW, ['"e2e": "playwright test --pass-with-no-tests"']),
+      ),
+    ]);
+    expect(files(violations)).toEqual([NEW]);
+  });
+
+  test('AC-2: a move in a test commit gives none even if a test script changes', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'test: move a to b and drop a script',
+        renamedWithLines(OLD, NEW, [], ['"test": "vitest run",']),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+});
+
+describe('checkTestControl: a package.json renamed away', () => {
+  const OLD = 'package.json';
+  const NEW = 'package.json.off';
+
+  test.each([
+    ['a test script', ['"test": "vitest run",']],
+    ['a coverage script', ['"coverage": "vitest run --coverage",']],
+    ['a pass-with-no-tests flag', ['"e2e": "playwright test --pass-with-no-tests"']],
+    ['the guardrails script', ['"guardrails": "tsx tools/guardrails/src/cli.ts"']],
+  ])(
+    'AC-3: a feat commit renaming it away with %s removed gives one violation for the old path',
+    (_n, removed) => {
+      const violations = checkTestControl([
+        commit(SHA_A, 'feat: disable the package', renamedWithLines(OLD, NEW, [], removed)),
+      ]);
+      expect(files(violations)).toEqual([OLD]);
+      expect(ruleIds(violations)).toEqual(['test-lock']);
+    },
+  );
+
+  test('AC-3: the message names the short sha, the subject and test-control', () => {
+    const subject = 'feat: disable the package';
+    const [violation] = checkTestControl([
+      commit(SHA_C, subject, renamedWithLines(OLD, NEW, [], ['"test": "vitest run",'])),
+    ]);
+    expect(violation).toBeDefined();
+    expect(violation?.file).toBe(OLD);
+    expect(violation?.message).toContain(short(SHA_C));
+    expect(violation?.message).toContain(subject);
+    expect(violation?.message).toContain('test-control');
+  });
+
+  test('AC-3: a nested package.json renamed away is reported with its old path', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'feat: disable the package',
+        renamedWithLines(
+          'packages/a/package.json',
+          'packages/a/package.json.off',
+          [],
+          ['"test": "vitest run",'],
+        ),
+      ),
+    ]);
+    expect(files(violations)).toEqual(['packages/a/package.json']);
+  });
+
+  test('AC-3: only non-test-control lines give none', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'feat: disable the package',
+        renamedWithLines(
+          OLD,
+          NEW,
+          [],
+          ['"name": "sample",', '"lint": "eslint .",', '"left-pad": "^1.0.0"'],
+        ),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+
+  test('AC-3: no lines at all gives none', () => {
+    const violations = checkTestControl([
+      commit(SHA_A, 'feat: disable the package', change(NEW, 'R', 0, 0, OLD)),
+    ]);
+    expect(violations).toEqual([]);
+  });
+
+  test('AC-3: a test commit renaming it away gives none', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'test: disable the package',
+        renamedWithLines(OLD, NEW, [], ['"test": "vitest run",']),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+
+  test('AC-3: test-control lines in a rename between two non-package.json files are not line-checked', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'feat: rename a file',
+        renamedWithLines('src/a.json', 'src/b.json', ['"test": "x",'], ['"guardrails": "y",']),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+});
+
+describe('checkTestControl: a package.json renamed in', () => {
+  test('AC-4: a feat commit renaming package.json.off to package.json with a test script added gives one violation', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'feat: enable the package',
+        renamedWithLines('package.json.off', 'package.json', ['"test": "vitest run",']),
+      ),
+    ]);
+    expect(files(violations)).toEqual(['package.json']);
+    expect(ruleIds(violations)).toEqual(['test-lock']);
+  });
+
+  test('AC-4: a nested package.json renamed in is reported with its new path', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'feat: enable the package',
+        renamedWithLines('packages/c/package.json.off', 'packages/c/package.json', [
+          '"e2e": "playwright test",',
+        ]),
+      ),
+    ]);
+    expect(files(violations)).toEqual(['packages/c/package.json']);
+  });
+
+  test('AC-4: only non-test-control lines give none', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'feat: enable the package',
+        renamedWithLines('package.json.off', 'package.json', [
+          '"name": "sample",',
+          '"lint": "eslint ."',
+        ]),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+
+  test('AC-4: a test commit renaming it in gives none', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'test: enable the package',
+        renamedWithLines('package.json.off', 'package.json', ['"test": "vitest run",']),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+});
+
+describe('checkTestControl: the guardrails script in package.json', () => {
+  const edit = (subject: string): Violation[] =>
+    checkTestControl([
+      commit(
+        SHA_A,
+        subject,
+        withLines(
+          'package.json',
+          ['"guardrails": "echo ok"'],
+          ['"guardrails": "tsx tools/guardrails/src/cli.ts"'],
+        ),
+      ),
+    ]);
+
+  test('AC-5: a feat commit changing the guardrails script gives one test-lock violation for package.json', () => {
+    const violations = edit('feat: silence the guardrails');
+    expect(files(violations)).toEqual(['package.json']);
+    expect(ruleIds(violations)).toEqual(['test-lock']);
+  });
+
+  test('AC-5: the message names the short sha, the subject and test-control', () => {
+    const subject = 'feat: silence the guardrails';
+    const [violation] = checkTestControl([
+      commit(SHA_B, subject, withLines('package.json', ['"guardrails": "echo ok"'])),
+    ]);
+    expect(violation).toBeDefined();
+    expect(violation?.message).toContain(short(SHA_B));
+    expect(violation?.message).toContain(subject);
+    expect(violation?.message).toContain('test-control');
+  });
+
+  test('AC-5: a test commit changing the guardrails script gives none', () => {
+    expect(edit('test(guardrails): change the entry point')).toEqual([]);
+  });
+
+  test('AC-5: adding a guardrails:ci script in a nested package.json is flagged with its path', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'chore: add a script',
+        withLines('packages/x/package.json', ['"guardrails:ci": "echo ok"']),
+      ),
+    ]);
+    expect(files(violations)).toEqual(['packages/x/package.json']);
+  });
+
+  test('AC-5: adding the guardrails workspace dependency gives none', () => {
+    const violations = checkTestControl([
+      commit(
+        SHA_A,
+        'chore: depend on guardrails',
+        withLines('packages/x/package.json', ['"@field-guide/guardrails": "workspace:*",']),
+      ),
+    ]);
+    expect(violations).toEqual([]);
+  });
+});
+
+// ---- Spec 008, review round 1: package.json lines that hide a script change -------------------
+
+describe('isTestControlLine: script keys anywhere in the line or written as escapes', () => {
+  test.each([
+    '"scripts": { "guardrails": "echo ok" },',
+    '{"scripts":{"test":"echo ok"}}',
+    '"scripts": {"e2e:ci": "x"}',
+    '"guardrails": "echo ok"',
+    '"test": "x"',
+    '"name": "\\u0041"',
+  ])('AC-11: %s is a test-control line', (line) => {
+    expect(isTestControlLine(line)).toBe(true);
+  });
+
+  test.each([
+    '"lint:guardrails": "x"',
+    '"preguardrails": "x"',
+    '"@field-guide/guardrails": "workspace:*",',
+    '"scripts": { "lint": "eslint ." },',
+    '"description": "two\\nlines"',
+  ])('AC-11: %s is not a test-control line', (line) => {
+    expect(isTestControlLine(line)).toBe(false);
+  });
+
+  test.each([
+    ['lower-case hex', '"guardr\\u0061ils": "echo ok"'],
+    ['upper-case hex', '"\\u0067uardrails": "echo ok"'],
+    ['a test key', '"te\\u0073t": "echo ok"'],
+    ['a minified line', '{"scripts":{"guardr\\u0061ils":"echo ok"}}'],
+  ])('AC-11: a line with a \\u escape (%s) is a test-control line', (_name, line) => {
+    expect(isTestControlLine(line)).toBe(true);
+  });
+
+  test.each(['"pretest": "x"', '"description": "tab\\there"', '"description": "quote \\" inside"'])(
+    'AC-11: %s (no \\u escape, no script key) is not a test-control line',
+    (line) => {
+      expect(isTestControlLine(line)).toBe(false);
+    },
+  );
+});
+
+// ---- Spec 008, review round 2: a key split from its colon -------------------------------------
+
+describe('isTestControlLine: a line that starts with a colon', () => {
+  test.each(['    : "echo ok", "coverage"', ': "echo ok"', '\t:"x"'])(
+    'AC-13: %j is a test-control line',
+    (line) => {
+      expect(isTestControlLine(line)).toBe(true);
+    },
+  );
+
+  test.each(['"name": "test"', '"keywords": ["test", "e2e"],', '"lint": "eslint ."'])(
+    'AC-13: %s is not a test-control line',
+    (line) => {
+      expect(isTestControlLine(line)).toBe(false);
+    },
+  );
+});

@@ -8,7 +8,7 @@ export interface CommitChange {
   oldPath?: string;
   added: number;
   removed: number;
-  /** Diff lines without the +/- prefix; the CLI fills it for package.json files only. */
+  /** Diff lines without the +/- prefix; the CLI fills it for changes touching a package.json (new or old path). */
   lines?: { added: string[]; removed: string[] };
 }
 
@@ -91,8 +91,19 @@ const RUNNER_CONFIG_NAME =
 const SETUP_FILE_NAME =
   /^(.+\.setup|setuptests|setup-tests|test-setup|global-setup|global-teardown)\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
 const TEST_DIR_SETUP_NAME = /^setup\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
-const TEST_CONTROL_LINE =
-  /pass-with-no-tests|passwithnotests|^\s*"(test|coverage|e2e)(:[^"]*)?"\s*:/i;
+const TEST_CONTROL_LINE = new RegExp(
+  [
+    'pass-with-no-tests|passwithnotests',
+    // A script key anywhere in the line (not only at its start: `"scripts": { "test": "x" }`).
+    // The opening quote must come right before the name, so `"pretest"` or `"lint:test"` are not keys.
+    String.raw`"(test|coverage|e2e|guardrails)(:[^"]*)?"\s*:`,
+    // JSON decodes `"t\u0065st"` to `test`: an escape could hide a key, and package.json needs none.
+    String.raw`\\u[0-9a-f]{4}`,
+    // JSON allows the colon on the line after its key, and the last duplicate key wins.
+    String.raw`^\s*:`,
+  ].join('|'),
+  'i',
+);
 
 /** True for files that decide which tests run and how strictly (runner configs, setup files, mocks). */
 export function isTestControlPath(path: string): boolean {
@@ -117,12 +128,17 @@ export function isTestControlLine(line: string): boolean {
   return TEST_CONTROL_LINE.test(line);
 }
 
-/** The file a change puts under test control: a test-control path, or a package.json with such lines. */
+/**
+ * The file a change puts under test control: a test-control path, or a package.json with such lines.
+ * A package.json counts under its new path, or under its old one if it was renamed to another name.
+ */
 function touchedControlFile({ path, oldPath, lines }: CommitChange): string | undefined {
   if (isTestControlPath(path)) return path;
   if (oldPath !== undefined && isTestControlPath(oldPath)) return oldPath;
+  const file = isPackageJson(path) ? path : oldPath;
+  if (file === undefined || !isPackageJson(file)) return undefined;
   const changed = [...(lines?.added ?? []), ...(lines?.removed ?? [])];
-  return isPackageJson(path) && changed.some(isTestControlLine) ? path : undefined;
+  return changed.some(isTestControlLine) ? file : undefined;
 }
 
 /** Rules 3 and 4 of spec 005: non-test commits must not change test-control files or lines. */

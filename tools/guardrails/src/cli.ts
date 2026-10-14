@@ -196,17 +196,23 @@ function parseNumstat(tokens: string[]): { added: number; removed: number }[] {
   return entries;
 }
 
-/** The added and removed lines of one file in one commit (`git show -U0`), without the +/- prefix. */
-function fileLines(sha: string, path: string): NonNullable<CommitChange['lines']> {
+/**
+ * The added and removed lines of the given paths in one commit (`git show -U0`), without the +/-
+ * prefix. Only the paths given are visible to git: a rename is seen as such when both are listed.
+ */
+function fileLines(sha: string, ...paths: string[]): NonNullable<CommitChange['lines']> {
   const diff = git([
     '--literal-pathspecs',
     'show',
     '--format=',
     '-U0',
     '--no-color',
+    '--text', // .gitattributes (`-diff`, `binary`) must not hide the lines
+    '--no-textconv',
+    '-M',
     sha,
     '--',
-    path,
+    ...paths,
   ]).toString('utf8');
   const lines: NonNullable<CommitChange['lines']> = { added: [], removed: [] };
   let inHunk = false; // the +++/--- headers come before the first hunk, so they are skipped
@@ -217,6 +223,27 @@ function fileLines(sha: string, path: string): NonNullable<CommitChange['lines']
     else if (inHunk && line.startsWith('-')) lines.removed.push(line.slice(1));
   }
   return lines;
+}
+
+function fileName(path: string): string | undefined {
+  return path.split('/').pop();
+}
+
+/**
+ * The package.json lines of a change. A rename is read as a rename only if both file names are
+ * exactly `package.json` (a case-only rename takes the manifest away); otherwise the package.json
+ * side alone, i.e. as a deletion or an addition.
+ */
+function packageJsonLines(
+  sha: string,
+  { path, oldPath }: Omit<CommitChange, 'added' | 'removed'>,
+): CommitChange['lines'] {
+  if (oldPath !== undefined && isPackageJson(oldPath)) {
+    return fileName(oldPath) === 'package.json' && fileName(path) === 'package.json'
+      ? fileLines(sha, oldPath, path)
+      : fileLines(sha, oldPath);
+  }
+  return isPackageJson(path) ? fileLines(sha, path) : undefined;
 }
 
 function commitInfo(sha: string): CommitInfo {
@@ -231,7 +258,8 @@ function commitInfo(sha: string): CommitInfo {
       removed: entry.status === 'A' ? 0 : counts.removed,
     };
     // Counts cannot tell which package.json lines changed, so the test-control check needs them.
-    return isPackageJson(entry.path) ? { ...change, lines: fileLines(sha, entry.path) } : change;
+    const lines = packageJsonLines(sha, entry);
+    return lines === undefined ? change : { ...change, lines };
   });
   const subject = git(['log', '-1', '--format=%s', sha]).toString('utf8').trim();
   return { sha, subject, changes };

@@ -1081,3 +1081,285 @@ describe('guardrails no-merges --base <ref>', () => {
     expect(run.status).toBe(2);
   });
 });
+
+// ---- Spec 008: package.json renames and the guardrails script ---------------------------------
+
+const GUARDRAILS_SCRIPT = '    "guardrails": "tsx tools/guardrails/src/cli.ts",\n';
+
+/** PACKAGE_JSON with a root-style `guardrails` script next to the other scripts. */
+const GUARDRAILS_PACKAGE_JSON = PACKAGE_JSON.replace(
+  '    "lint"',
+  `${GUARDRAILS_SCRIPT}    "lint"`,
+);
+
+/**
+ * A repository whose base holds `packages/a/package.json` (test and e2e scripts), a disabled
+ * `packages/c/package.json.off` with a test script, and a root package.json with a guardrails
+ * script, plus a feature branch that is checked out and still empty.
+ */
+function makeMoveRepo(): { dir: string; base: string } {
+  const dir = makeTempRepo();
+  write(dir, 'README.md', '# Seed\n');
+  write(dir, 'package.json', GUARDRAILS_PACKAGE_JSON);
+  write(dir, 'packages/a/package.json', PACKAGE_JSON);
+  write(
+    dir,
+    'packages/c/package.json.off',
+    PACKAGE_JSON.replace('"name": "sample"', '"name": "disabled"'),
+  );
+  const base = commitWith(dir, 'chore: seed');
+  git(dir, ['checkout', '--quiet', '-b', 'feature']);
+  return { dir, base };
+}
+
+function expectLockOk(run: Run): void {
+  expect(run.output).not.toContain('✖');
+  expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+  expect(run.status).toBe(0);
+}
+
+describe('guardrails test-lock --base <ref> and package.json renames', () => {
+  test('AC-6: a refactor commit moving a package directory unchanged exits 0 with the ok line', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a', 'packages/b']);
+    commitWith(dir, 'refactor: move a to b');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-6: a refactor commit moving it and removing its test script exits 1 naming the new path', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a', 'packages/b']);
+    write(dir, 'packages/b/package.json', PACKAGE_JSON.replace('    "test": "vitest run",\n', ''));
+    commitWith(dir, 'refactor: move a to b');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ packages\/b\/package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-6: a refactor commit moving it and changing only its name exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a', 'packages/b']);
+    write(dir, 'packages/b/package.json', PACKAGE_JSON.replace('"sample"', '"moved"'));
+    commitWith(dir, 'refactor: move and rename a');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-6: a feat commit renaming package.json away exits 1 naming the old path', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a/package.json', 'packages/a/package.json.off']);
+    commitWith(dir, 'feat: disable a');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ packages\/a\/package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-6: a test commit renaming package.json away exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a/package.json', 'packages/a/package.json.off']);
+    commitWith(dir, 'test: disable a');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-6: a feat commit renaming package.json.off to package.json exits 1 naming the new path', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/c/package.json.off', 'packages/c/package.json']);
+    commitWith(dir, 'feat: enable c');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ packages\/c\/package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-6: a feat commit renaming package.json.off to another name without scripts changing exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/c/package.json.off', 'packages/c/package.json.bak']);
+    commitWith(dir, 'feat: park c');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+});
+
+describe('guardrails test-lock --base <ref> and the guardrails script', () => {
+  test('AC-7: a feat commit changing the root guardrails script to echo ok exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(
+      dir,
+      'package.json',
+      GUARDRAILS_PACKAGE_JSON.replace('"tsx tools/guardrails/src/cli.ts"', '"echo ok"'),
+    );
+    commitWith(dir, 'feat: silence the guardrails');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-7: a test commit changing the root guardrails script exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    write(
+      dir,
+      'package.json',
+      GUARDRAILS_PACKAGE_JSON.replace('"tsx tools/guardrails/src/cli.ts"', '"echo ok"'),
+    );
+    commitWith(dir, 'test(guardrails): change the entry point');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-7: a chore(deps) commit bumping a dependency next to a guardrails script exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', GUARDRAILS_PACKAGE_JSON.replace('^1.0.0', '^1.1.0'));
+    commitWith(dir, 'chore(deps): bump left-pad');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-7: a feat commit removing the guardrails script exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', PACKAGE_JSON);
+    commitWith(dir, 'feat: drop the guardrails script');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+});
+
+// ---- Spec 008, review round 1: hidden package.json script changes -----------------------------
+
+const ECHO_OK_PACKAGE_JSON = GUARDRAILS_PACKAGE_JSON.replace(
+  '"tsx tools/guardrails/src/cli.ts"',
+  '"echo ok"',
+);
+
+describe('guardrails test-lock --base <ref> and .gitattributes', () => {
+  test('AC-10: a chore commit adding "package.json -diff" and setting the guardrails script to echo ok exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, '.gitattributes', 'package.json -diff\n');
+    write(dir, 'package.json', ECHO_OK_PACKAGE_JSON);
+    commitWith(dir, 'chore: tidy the repository');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-10: with "package.json binary" already in the base, a feat commit changing the test script exits 1', () => {
+    const { dir } = makeMoveRepo();
+    write(dir, '.gitattributes', 'package.json binary\n');
+    const base = commitWith(dir, 'chore: mark package.json as binary');
+    write(dir, 'package.json', GUARDRAILS_PACKAGE_JSON.replace('"vitest run"', '"echo skipped"'));
+    commitWith(dir, 'feat: speed up the tests');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-10: with "package.json -diff" in the base, a chore(deps) bump still exits 0', () => {
+    const { dir } = makeMoveRepo();
+    write(dir, '.gitattributes', 'package.json -diff\n');
+    const base = commitWith(dir, 'chore: hide package.json diffs');
+    write(dir, 'package.json', GUARDRAILS_PACKAGE_JSON.replace('^1.0.0', '^1.1.0'));
+    commitWith(dir, 'chore(deps): bump left-pad');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+});
+
+describe('guardrails test-lock --base <ref> and scripts written on one line', () => {
+  const minified = (guardrails: string): string =>
+    JSON.stringify({
+      name: 'sample',
+      scripts: { test: 'vitest run', guardrails },
+      dependencies: { 'left-pad': '^1.0.0' },
+    }) + '\n';
+
+  test('AC-11: a feat commit rewriting the root scripts onto one line with guardrails set to echo ok exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', minified('echo ok'));
+    commitWith(dir, 'feat: compact package.json');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-11: a feat commit changing the guardrails script inside an already one-line package.json exits 1', () => {
+    const { dir } = makeMoveRepo();
+    write(dir, 'package.json', minified('tsx tools/guardrails/src/cli.ts'));
+    const base = commitWith(dir, 'chore: compact package.json');
+    write(dir, 'package.json', minified('echo ok'));
+    commitWith(dir, 'feat: silence the guardrails');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-11: a test commit changing the guardrails script inside a one-line package.json exits 0', () => {
+    const { dir } = makeMoveRepo();
+    write(dir, 'package.json', minified('tsx tools/guardrails/src/cli.ts'));
+    const base = commitWith(dir, 'chore: compact package.json');
+    write(dir, 'package.json', minified('echo ok'));
+    commitWith(dir, 'test(guardrails): change the entry point');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+});
+
+describe('guardrails test-lock --base <ref> and a case-only package.json rename', () => {
+  /** Renames packages/a/package.json to PACKAGE.JSON in the index through a temporary name. */
+  function renameToUpperCase(dir: string, subject: string): void {
+    git(dir, ['mv', 'packages/a/package.json', 'packages/a/tmp.json']);
+    git(dir, ['mv', 'packages/a/tmp.json', 'packages/a/PACKAGE.JSON']);
+    commitWith(dir, subject);
+    // The scenario is only meaningful if git records the case change as a pure rename.
+    expect(gitOut(dir, ['show', '--format=', '--name-status', '-M', 'HEAD'])).toMatch(
+      /^R100\s+packages\/a\/package\.json\s+packages\/a\/PACKAGE\.JSON$/m,
+    );
+  }
+
+  test('AC-12: a refactor commit renaming package.json to PACKAGE.JSON exits 1 with a [test-lock] line under packages/a/', () => {
+    const { dir, base } = makeMoveRepo();
+    renameToUpperCase(dir, 'refactor: shout the manifest');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ packages\/a\/\S+ \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-12: a test commit doing the same exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    renameToUpperCase(dir, 'test: shout the manifest');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+});
+
+// ---- Spec 008, review round 2: a key split from its colon -------------------------------------
+
+describe('guardrails test-lock --base <ref> and keys split from their colon', () => {
+  /** The root package.json with a second `scripts` object whose values start the next line. */
+  const SPLIT_SCRIPTS = [
+    '  },',
+    '  "scripts": {',
+    '    "guardrails"',
+    '    : "echo ok", "coverage"',
+    '    : "echo ok", "lint"',
+    '    : "eslint ."',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+
+  function withSplitScripts(): string {
+    const text = GUARDRAILS_PACKAGE_JSON.replace(/ {2}\}\n\}\n$/, SPLIT_SCRIPTS);
+    // The fixture is only meaningful if the replacement happened and the JSON is still valid.
+    expect(text).toContain('    : "echo ok", "coverage"\n');
+    expect(() => JSON.parse(text) as unknown).not.toThrow();
+    return text;
+  }
+
+  test('AC-13: a feat commit appending a second scripts object with split keys exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', withSplitScripts());
+    commitWith(dir, 'feat: add more scripts');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-13: a test commit doing the same exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', withSplitScripts());
+    commitWith(dir, 'test(guardrails): add more scripts');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+});

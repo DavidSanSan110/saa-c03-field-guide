@@ -299,3 +299,37 @@ describe('ci.yml: the no-merges step', () => {
     expect(condition).not.toContain('tests-approved');
   });
 });
+
+// ---- Spec 008: the guardrails steps in ci.yml go through pnpm guardrails ----------------------
+
+/** The `verify` job steps of ci.yml whose command mentions `guardrails`. */
+function guardrailsSteps(): Dict[] {
+  const ci = loadWorkflows().find((workflow) => workflow.name === 'ci.yml');
+  if (ci === undefined) throw new Error('.github/workflows/ci.yml is missing');
+  const verify = jobsOf(parseWorkflow(ci)).find(([id]) => id === 'verify');
+  if (verify === undefined) throw new Error('ci.yml has no verify job');
+  const steps = verify[1]['steps'];
+  if (!Array.isArray(steps)) throw new Error('the verify job has no steps');
+  return (steps as unknown[]).filter(
+    (step): step is Dict =>
+      isDict(step) && typeof step['run'] === 'string' && /guardrails/.test(step['run']),
+  );
+}
+
+describe('ci.yml: every guardrails step goes through the pnpm guardrails script', () => {
+  test('AC-8: the verify job has at least one step that mentions guardrails', () => {
+    expect(guardrailsSteps().length).toBeGreaterThan(0);
+  });
+
+  test('AC-8: every such step invokes it as pnpm guardrails <command>', () => {
+    for (const step of guardrailsSteps()) {
+      expect(String(step['run'])).toMatch(/\bpnpm guardrails [a-z-]+/);
+    }
+  });
+
+  test('AC-8: no such step runs tools/guardrails/src/cli.ts directly', () => {
+    for (const step of guardrailsSteps()) {
+      expect(String(step['run'])).not.toContain('tools/guardrails/src/cli.ts');
+    }
+  });
+});
