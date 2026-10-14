@@ -7,6 +7,7 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import type { Diagram, DiagramScenario } from '../../packages/schema/src/index.ts';
 import { viewFixture, viewFixtureMini } from '../fixtures/view-fixture.ts';
+import { viewFixtureStates } from '../fixtures/view-fixture.ts';
 import { DESKTOP_VIEWPORT, pixel7 } from './support.ts';
 
 const FIXTURE_PATH = '/fixtures/diagram/';
@@ -1463,7 +1464,7 @@ test.describe('search indexing', () => {
     );
 
     const diagramIslands = islands.filter((island) => island.inDiagram);
-    expect(diagramIslands).toHaveLength(2);
+    expect(diagramIslands.length).toBeGreaterThanOrEqual(2);
     expect(diagramIslands.every((island) => island.ignored)).toBe(true);
   });
 
@@ -1478,7 +1479,7 @@ test.describe('search indexing', () => {
         elements.map((element) => element.closest('[data-pagefind-ignore]') !== null),
       );
 
-    expect(details).toHaveLength(2);
+    expect(details.length).toBeGreaterThanOrEqual(2);
     expect(details.every((ignored) => !ignored)).toBe(true);
   });
 });
@@ -1500,5 +1501,423 @@ test.describe('keyboard with Caps Lock or Shift', () => {
 
     await page.keyboard.press('Shift+K');
     await expect(main.root).toHaveAttribute('data-playing', 'false');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 2 helpers
+// ---------------------------------------------------------------------------
+
+/** Opens the fixture page and hydrates the third figure, `view-fixture-states`. */
+async function openStates(page: Page): Promise<Island> {
+  await page.goto(FIXTURE_PATH);
+  const states = islandOf(page, viewFixtureStates.id);
+  await expect(states.figure, 'the fixture page has the states diagram').toHaveCount(1);
+  await states.figure.scrollIntoViewIfNeeded();
+  await expect(states.root).toHaveAttribute('data-hydrated', 'true');
+  return states;
+}
+
+/** Opens the fixture page and hydrates every figure; returns how many there are. */
+async function hydrateAllFigures(page: Page): Promise<number> {
+  await page.goto(FIXTURE_PATH);
+  const figures = page.locator('figure[data-diagram]');
+  const count = await figures.count();
+  for (let index = 0; index < count; index += 1) {
+    const figure = figures.nth(index);
+    await figure.scrollIntoViewIfNeeded();
+    await expect(figure.locator('[data-diagram-view]')).toHaveAttribute('data-hydrated', 'true');
+  }
+  await page.evaluate(() => {
+    window.scrollTo(0, 0);
+  });
+  return count;
+}
+
+interface StrokeLook {
+  dash: string;
+  stroke: string;
+  width: number;
+}
+
+/** The computed stroke of the visible line of an edge (its first painted, non-marker path). */
+async function strokeOf(island: Island, edgeId: string): Promise<StrokeLook> {
+  return edge(island, edgeId)
+    .first()
+    .evaluate((element) => {
+      const candidates = element.matches('path')
+        ? [element]
+        : Array.from(element.querySelectorAll('path'));
+      const painted = candidates
+        .filter((path) => path.closest('marker') === null)
+        .map((path) => getComputedStyle(path))
+        .filter(
+          (style) =>
+            style.stroke !== 'none' &&
+            style.stroke !== 'rgba(0, 0, 0, 0)' &&
+            style.stroke !== 'transparent',
+        );
+      const style = painted[0];
+      if (style === undefined) throw new Error('the edge has no painted path');
+      return {
+        dash: style.strokeDasharray,
+        stroke: style.stroke,
+        width: Number.parseFloat(style.strokeWidth),
+      };
+    });
+}
+
+interface ListItem {
+  text: string;
+  children: ListItem[];
+}
+
+interface StructureBlock {
+  /** One entry per top-level list of the block: its name and its nested items. */
+  lists: { name: string; items: ListItem[] }[];
+}
+
+/** Reads the nested lists of a `[data-diagram-structure]` block as plain data. */
+async function readStructure(block: Locator): Promise<StructureBlock> {
+  await expect(block).toHaveCount(1);
+  return block.evaluate((root) => {
+    const clean = (text: string) => text.replace(/\s+/g, ' ').trim();
+    const itemOf = (li: Element): ListItem => {
+      const copy = li.cloneNode(true) as Element;
+      copy.querySelectorAll('ul, ol').forEach((nested) => {
+        nested.remove();
+      });
+      const nested = Array.from(li.children).filter((child) => child.matches('ul, ol'));
+      return {
+        text: clean(copy.textContent ?? ''),
+        children: nested.flatMap((list) =>
+          Array.from(list.children)
+            .filter((child) => child.matches('li'))
+            .map(itemOf),
+        ),
+      };
+    };
+    const nameOf = (list: Element): string => {
+      const label = list.getAttribute('aria-label');
+      if (label) return clean(label);
+      const labelledBy = list.getAttribute('aria-labelledby');
+      if (labelledBy) {
+        return clean(
+          labelledBy
+            .split(/\s+/)
+            .map((id) => document.getElementById(id)?.textContent ?? '')
+            .join(' '),
+        );
+      }
+      return clean(list.previousElementSibling?.textContent ?? '');
+    };
+    const topLists = Array.from(root.querySelectorAll('ul')).filter(
+      (list) => list.parentElement?.closest('li') == null,
+    );
+    return {
+      lists: topLists.map((list) => ({
+        name: nameOf(list),
+        items: Array.from(list.children)
+          .filter((child) => child.matches('li'))
+          .map(itemOf),
+      })),
+    };
+  });
+}
+
+const VIEW_FIXTURE_ELEMENTS: ListItem[] = [
+  {
+    text: 'eu-west-1 (Region)',
+    children: [
+      {
+        text: 'Key management (Group)',
+        children: [{ text: 'KMS key', children: [] }],
+      },
+      { text: 'S3 bucket', children: [] },
+      { text: 'CloudTrail', children: [] },
+    ],
+  },
+  { text: 'Client (IAM principal)', children: [] },
+];
+
+const VIEW_FIXTURE_CONNECTIONS = [
+  'Client → S3 bucket',
+  'S3 bucket → KMS key: Data key request',
+  'KMS key → CloudTrail',
+];
+
+// ---------------------------------------------------------------------------
+// AC-35 states that get a look on every element
+// ---------------------------------------------------------------------------
+
+test.describe('states with a look on every element', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-35: an edge set highlighted is drawn solid, in another colour than an idle edge', async ({
+    page,
+  }) => {
+    const states = await openStates(page);
+
+    await goToStep(states, 0);
+
+    await expect(edge(states, 'lit')).toHaveAttribute('data-state', 'highlighted');
+    const lit = await strokeOf(states, 'lit');
+    const rest = await strokeOf(states, 'rest');
+    expect(lit.dash).toBe('none');
+    expect(rest.dash).not.toBe('none');
+    expect(lit.stroke).not.toBe(rest.stroke);
+  });
+
+  test('AC-35: the highlighted edge keeps that look on the next step', async ({ page }) => {
+    const states = await openStates(page);
+
+    await goToStep(states, 1);
+
+    await expect(edge(states, 'lit')).toHaveAttribute('data-state', 'highlighted');
+    await expect(edge(states, 'lit')).toHaveAttribute('data-active', 'false');
+    const lit = await strokeOf(states, 'lit');
+    const rest = await strokeOf(states, 'rest');
+    expect(lit.dash).toBe('none');
+    expect(lit.stroke).not.toBe(rest.stroke);
+  });
+
+  test('AC-35: an edge set appearing is visible with data-state appearing', async ({ page }) => {
+    const states = await openStates(page);
+
+    await goToStep(states, 1);
+
+    await expect(edge(states, 'fade')).toHaveAttribute('data-state', 'appearing');
+    await expect(edge(states, 'fade')).toBeVisible();
+  });
+
+  test('AC-35: an edge set failed has data-state broken and shows the cross', async ({ page }) => {
+    const states = await openStates(page);
+
+    await goToStep(states, 2);
+
+    await expect(edge(states, 'bad')).toHaveAttribute('data-state', 'broken');
+    await expect(states.root.getByText('✕')).toBeVisible();
+  });
+
+  test('AC-35: a node set broken has data-state failed and a visible failed pill', async ({
+    page,
+  }) => {
+    const states = await openStates(page);
+
+    await goToStep(states, 3);
+
+    await expect(nodeCard(states, 'keys')).toHaveAttribute('data-state', 'failed');
+    await expect(nodeCard(states, 'keys').getByText('failed', { exact: true })).toBeVisible();
+  });
+
+  test('AC-35: a group set broken has data-state failed and a failed pill in its header', async ({
+    page,
+  }) => {
+    const states = await openStates(page);
+
+    await goToStep(states, 4);
+
+    await expect(groupBox(states, 'zone')).toHaveAttribute('data-state', 'failed');
+    await expect(groupHead(states, 'zone').getByText('failed', { exact: true })).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-36 the canvas is hidden from assistive technology
+// ---------------------------------------------------------------------------
+
+test.describe('hidden canvas', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-36: in every figure the react-flow element is inside an aria-hidden element', async ({
+    page,
+  }) => {
+    const count = await hydrateAllFigures(page);
+
+    const hidden = await page.locator('figure[data-diagram]').evaluateAll((figures) =>
+      figures.map((figure) => {
+        const flow = figure.querySelector('.react-flow');
+        return flow !== null && flow.closest('[aria-hidden="true"]') !== null;
+      }),
+    );
+
+    expect(count).toBeGreaterThanOrEqual(2);
+    expect(hidden).toEqual(Array.from({ length: count }, () => true));
+  });
+
+  test('AC-36: there is no react-flow attribution element', async ({ page }) => {
+    await hydrateAllFigures(page);
+
+    await expect(page.locator('.react-flow__attribution')).toHaveCount(0);
+  });
+
+  test('AC-36: each figure has a visible React Flow link outside any aria-hidden element', async ({
+    page,
+  }) => {
+    const count = await hydrateAllFigures(page);
+
+    for (let index = 0; index < count; index += 1) {
+      const figure = page.locator('figure[data-diagram]').nth(index);
+      // getByRole skips aria-hidden subtrees: finding the link proves it is exposed.
+      const link = figure.getByRole('link', { name: 'React Flow', exact: true });
+      await expect(link).toHaveCount(1);
+      await expect(link).toBeVisible();
+      await expect(link).toHaveAttribute('href', 'https://reactflow.dev');
+      expect(await link.evaluate((element) => element.closest('[aria-hidden="true"]'))).toBeNull();
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-37 the text structure replaces the canvas for assistive technology
+// ---------------------------------------------------------------------------
+
+test.describe('text structure', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-37: each figure has exactly one structure block, outside data-pagefind-ignore', async ({
+    page,
+  }) => {
+    const count = await hydrateAllFigures(page);
+
+    const blocks = await page.locator('figure[data-diagram]').evaluateAll((figures) =>
+      figures.map((figure) => {
+        const found = figure.querySelectorAll('[data-diagram-structure]');
+        return {
+          count: found.length,
+          ignored: found[0]?.closest('[data-pagefind-ignore]') != null,
+        };
+      }),
+    );
+
+    expect(blocks).toEqual(Array.from({ length: count }, () => ({ count: 1, ignored: false })));
+  });
+
+  test('AC-37: the block is visually hidden but present in the accessibility tree', async ({
+    page,
+  }) => {
+    const { main } = await openFixture(page);
+    const block = main.figure.locator('[data-diagram-structure]');
+
+    const look = await block.evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
+      return {
+        width: rect.width,
+        height: rect.height,
+        display: style.display,
+        visibility: style.visibility,
+        hiddenAncestor: element.closest('[aria-hidden="true"]') !== null,
+      };
+    });
+
+    expect(look.width).toBeLessThanOrEqual(2);
+    expect(look.height).toBeLessThanOrEqual(2);
+    expect(look.display).not.toBe('none');
+    expect(look.visibility).toBe('visible');
+    expect(look.hiddenAncestor).toBe(false);
+    // getByRole only finds accessible elements.
+    expect(await block.getByRole('list').count()).toBeGreaterThanOrEqual(2);
+  });
+
+  test('AC-37: the "Diagram elements" list mirrors the groups and nodes of view-fixture', async ({
+    page,
+  }) => {
+    const { main } = await openFixture(page);
+
+    const structure = await readStructure(main.figure.locator('[data-diagram-structure]'));
+
+    expect(structure.lists[0]?.name).toBe('Diagram elements');
+    expect(structure.lists[0]?.items).toEqual(VIEW_FIXTURE_ELEMENTS);
+  });
+
+  test('AC-37: the "Connections" list has one item per edge', async ({ page }) => {
+    const { main } = await openFixture(page);
+
+    const structure = await readStructure(main.figure.locator('[data-diagram-structure]'));
+
+    expect(structure.lists[1]?.name).toBe('Connections');
+    expect(structure.lists[1]?.items.map((item) => item.text)).toEqual(VIEW_FIXTURE_CONNECTIONS);
+  });
+
+  test('AC-37: view-fixture-mini lists its two nodes', async ({ page }) => {
+    const { mini } = await openFixture(page);
+
+    const structure = await readStructure(mini.figure.locator('[data-diagram-structure]'));
+
+    expect(structure.lists[0]?.items).toEqual([
+      { text: 'First bucket', children: [] },
+      { text: 'Second bucket', children: [] },
+    ]);
+  });
+});
+
+test.describe('text structure without JavaScript', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT, javaScriptEnabled: false });
+
+  test('AC-37: the same lists are in the page with JavaScript disabled', async ({ page }) => {
+    await page.goto(FIXTURE_PATH);
+    const block = islandOf(page, viewFixture.id).figure.locator('[data-diagram-structure]');
+    await expect(block).toHaveCount(1);
+
+    const structure = await readStructure(block);
+
+    expect(structure.lists[0]?.items).toEqual(VIEW_FIXTURE_ELEMENTS);
+    expect(structure.lists[1]?.items.map((item) => item.text)).toEqual(VIEW_FIXTURE_CONNECTIONS);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-38 the picture is there without JavaScript
+// ---------------------------------------------------------------------------
+
+test.describe('picture without JavaScript', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT, javaScriptEnabled: false });
+
+  test('AC-38: every node label and both group labels are visible', async ({ page }) => {
+    await page.goto(FIXTURE_PATH);
+    const main = islandOf(page, viewFixture.id);
+
+    for (const group of viewFixture.groups ?? []) {
+      await expect(groupHead(main, group.id)).toBeVisible();
+      await expect(groupHead(main, group.id)).toContainText(group.label);
+    }
+    for (const node of viewFixture.nodes) {
+      await expect(nodeCard(main, node.id)).toBeVisible();
+      await expect(nodeCard(main, node.id).getByText(node.label, { exact: true })).toBeVisible();
+    }
+  });
+
+  test('AC-38: the edges are drawn with non-empty paths', async ({ page }) => {
+    await page.goto(FIXTURE_PATH);
+    const main = islandOf(page, viewFixture.id);
+
+    for (const { id } of viewFixture.edges ?? []) {
+      await expect(edge(main, id)).toHaveCount(1);
+      const lengths = await edge(main, id)
+        .first()
+        .evaluate((element) => {
+          const candidates = element.matches('path')
+            ? [element]
+            : Array.from(element.querySelectorAll('path'));
+          return candidates
+            .filter((path) => path.closest('marker') === null)
+            .map((path) => ({ d: path.getAttribute('d') ?? '', length: path.getTotalLength() }));
+        });
+      expect(
+        lengths.some((path) => path.d.trim() !== '' && path.length > 0),
+        id,
+      ).toBe(true);
+    }
+  });
+
+  test('AC-38: the controls bar and the tablist are not visible', async ({ page }) => {
+    await page.goto(FIXTURE_PATH);
+    const main = islandOf(page, viewFixture.id);
+
+    await expect(
+      main.figure.getByRole('button', { name: 'Play', exact: true, includeHidden: true }),
+    ).toBeHidden();
+    await expect(main.figure.getByRole('tablist', { includeHidden: true })).toBeHidden();
   });
 });

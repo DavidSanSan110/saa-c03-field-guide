@@ -117,3 +117,59 @@ export const viewFixtureMini: Diagram = {
     },
   ],
 };
+
+/**
+ * One scenario that sets every state an element has no separate look for (AC-35):
+ * an edge `highlighted` (then still highlighted on the next step), an edge `appearing`,
+ * an edge `failed`, a node `broken` and a group `broken`. The edge `rest` is never touched.
+ */
+export const viewFixtureStates: Diagram = {
+  id: 'view-fixture-states',
+  title: 'View fixture states',
+  groups: [{ id: 'zone', label: 'Zone A', kind: 'az' }],
+  nodes: [
+    { id: 'source', icon: 'user', label: 'Source' },
+    { id: 'store', icon: 'simple-storage-service', label: 'Store', group: 'zone' },
+    { id: 'keys', icon: 'key-management-service', label: 'Keys' },
+    { id: 'log', icon: 'cloudtrail', label: 'Log' },
+  ],
+  edges: [
+    { id: 'lit', from: 'source', to: 'store' },
+    { id: 'fade', from: 'store', to: 'keys' },
+    { id: 'bad', from: 'keys', to: 'log' },
+    { id: 'rest', from: 'source', to: 'log' },
+  ],
+  scenarios: [
+    {
+      id: 'states',
+      label: 'States',
+      steps: [
+        {
+          node: 'source',
+          caption: 'The first link is highlighted.',
+          state: { lit: 'highlighted' },
+        },
+        {
+          edge: 'fade',
+          caption: 'The second link appears.',
+          state: { fade: 'appearing' },
+        },
+        {
+          edge: 'bad',
+          caption: 'The third link is marked as failed.',
+          state: { bad: 'failed' },
+        },
+        {
+          node: 'keys',
+          caption: 'The keys node is marked as broken.',
+          state: { keys: 'broken' },
+        },
+        {
+          group: 'zone',
+          caption: 'The zone is marked as broken.',
+          state: { zone: 'broken' },
+        },
+      ],
+    },
+  ],
+};

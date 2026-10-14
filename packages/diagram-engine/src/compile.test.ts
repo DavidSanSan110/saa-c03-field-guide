@@ -1378,3 +1378,92 @@ describe('AC-20: float noise never marks a group grown', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// Amendment (spec 012 review round 2): applyPos: false ignores every pos (AC-21)
+// ---------------------------------------------------------------------------
+
+describe('AC-21: applyPos false ignores every pos', () => {
+  /** The nested fixture with pos on a node inside a subnet and on a top-level node. */
+  function posDiagram(): Diagram {
+    return withPos(nestedDiagram(), {
+      'web-a': { x: 500, y: 400 },
+      user: { x: 60, y: 40 },
+    });
+  }
+
+  /** `compile(d')` for the same diagram without any pos, but carrying the input diagram. */
+  async function withoutPos(options: CompileOptions, input: Diagram): Promise<CompiledDiagram> {
+    const plain = await compile(nestedDiagram(), options);
+    return { ...plain, diagram: input };
+  }
+
+  test('AC-21: the guard: the fixture really has a pos effect when pos is applied', async () => {
+    const result = await compiled(posDiagram());
+    expect(result.nodes.filter((node) => node.overridden).map((node) => node.id)).toEqual([
+      'user',
+      'web-a',
+    ]);
+    expect(result.groups.some((group) => group.grown)).toBe(true);
+  });
+
+  test.each(DIRECTIONS)(
+    'AC-21: applyPos false deep-equals the compile of the diagram without pos (direction %s)',
+    async (direction) => {
+      const input = posDiagram();
+
+      const result = await compile(input, { direction, applyPos: false });
+
+      expect(result).toStrictEqual(await withoutPos({ direction }, input));
+    },
+  );
+
+  test.each(DIRECTIONS)(
+    'AC-21: with applyPos false no node is overridden, no group grown and every edge has points (direction %s)',
+    async (direction) => {
+      const result = await compiled(posDiagram(), { direction, applyPos: false });
+
+      expect(result.nodes.filter((node) => node.overridden)).toEqual([]);
+      expect(result.groups.filter((group) => group.grown)).toEqual([]);
+      expect(result.edges.filter((edge) => edge.points === undefined)).toEqual([]);
+    },
+  );
+
+  test('AC-21: the diagram field is the input with its pos, unchanged', async () => {
+    const input = posDiagram();
+
+    const result = await compile(input, { applyPos: false });
+
+    expect(result.diagram).toStrictEqual(posDiagram());
+    expect(result.diagram.nodes.find((node) => node.id === 'web-a')?.pos).toEqual({
+      x: 500,
+      y: 400,
+    });
+  });
+
+  test('AC-21: a frozen input is not mutated', async () => {
+    const input = deepFreeze(posDiagram());
+
+    const result = await compile(input, { applyPos: false });
+
+    expect(result.nodes.some((node) => node.overridden)).toBe(false);
+    expect(input).toStrictEqual(posDiagram());
+  });
+
+  test.each(DIRECTIONS)(
+    'AC-21: applyPos true and applyPos undefined deep-equal compile(d) (direction %s)',
+    async (direction) => {
+      const input = posDiagram();
+      const plain = await compile(input, { direction });
+
+      expect(await compile(input, { direction, applyPos: true })).toStrictEqual(plain);
+      expect(
+        await compile(input, { direction, applyPos: undefined } as unknown as CompileOptions),
+      ).toStrictEqual(plain);
+    },
+  );
+
+  test('AC-21: applyPos is not one of the COMPILE_DEFAULTS', () => {
+    expect(Object.keys(COMPILE_DEFAULTS)).not.toContain('applyPos');
+  });
+});

@@ -4,9 +4,11 @@
 import StarlightPage from '../../apps/site/node_modules/@astrojs/starlight/dist/components/StarlightPage.astro';
 import Diagram from '../../apps/site/src/components/Diagram.astro';
 import { viewFixture, viewFixtureMini } from './view-fixture.ts';
+import { viewFixtureStates } from './view-fixture.ts';
 ---
 
 <StarlightPage frontmatter={{ title: 'Diagram view fixtures', pagefind: false }}>
   <Diagram diagram={viewFixture} />
   <Diagram diagram={viewFixtureMini} />
+  <Diagram diagram={viewFixtureStates} />
 </StarlightPage>

@@ -27,9 +27,11 @@ export interface CompileOptions {
   nodeSpacing?: number;
   /** Default 72: between layers. */
   layerSpacing?: number;
+  /** Default true; false ignores every `pos` (the layout is ELK's alone). */
+  applyPos?: boolean;
 }
 
-type Settings = Required<CompileOptions>;
+type Settings = Required<Omit<CompileOptions, 'applyPos'>>;
 
 /** Float noise from the layout is not growth. */
 const GROW_EPSILON = 1e-6;

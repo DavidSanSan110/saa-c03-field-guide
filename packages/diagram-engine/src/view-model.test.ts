@@ -20,6 +20,8 @@ import {
   textFallback,
   toFlowModel,
 } from './view-model.ts';
+import { ELEMENT_STATES } from '@field-guide/schema';
+import { GROUP_KIND_NAMES, displayState, textStructure } from './view-model.ts';
 
 // elkjs loads lazily on the first compile and can take a while on a cold machine.
 vi.setConfig({ testTimeout: 60_000 });
@@ -1206,4 +1208,256 @@ test('the fixtures of this file are valid diagrams', () => {
   expect(validateDiagram(flowDiagram()).ok).toBe(true);
   // initPlayer is part of the public player: the first scenario is the default.
   expect(initPlayer(flowDiagram()).scenario).toBe('main');
+});
+
+// ---------------------------------------------------------------------------
+// AC-33 displayState (spec 012, review round 2)
+// ---------------------------------------------------------------------------
+
+describe('AC-33: displayState normalises the states an element has no look for', () => {
+  const KINDS = ['group', 'node', 'edge'] as const;
+
+  test('AC-33: an edge failed is shown as broken', () => {
+    expect(displayState('edge', 'failed')).toBe('broken');
+  });
+
+  test('AC-33: a node or group broken is shown as failed', () => {
+    expect(displayState('node', 'broken')).toBe('failed');
+    expect(displayState('group', 'broken')).toBe('failed');
+  });
+
+  test('AC-33: every other (kind, state) pair is returned unchanged', () => {
+    for (const kind of KINDS) {
+      for (const state of ELEMENT_STATES) {
+        const mapped =
+          (kind === 'edge' && state === 'failed') || (kind !== 'edge' && state === 'broken');
+        if (!mapped) expect(displayState(kind, state), `${kind} ${state}`).toBe(state);
+      }
+    }
+  });
+
+  test('AC-33: an edge broken and a node or group failed stay as they are', () => {
+    expect(displayState('edge', 'broken')).toBe('broken');
+    expect(displayState('node', 'failed')).toBe('failed');
+    expect(displayState('group', 'failed')).toBe('failed');
+  });
+});
+
+describe('AC-33: toFlowModel applies displayState', () => {
+  /** flowDiagram with a scenario that sets the "wrong" state on every kind of element. */
+  function mixedStates(): Diagram {
+    return {
+      ...flowDiagram(),
+      scenarios: [
+        {
+          id: 'mixed',
+          label: 'Mixed',
+          steps: [
+            {
+              node: 's3',
+              caption: 'x',
+              state: {
+                gen: 'failed',
+                put: 'broken',
+                kms: 'broken',
+                client: 'broken',
+                keys: 'broken',
+                region: 'failed',
+                s3: 'failed',
+                audit: 'highlighted',
+              },
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  test('AC-33: an edge failed is reported as broken, an edge broken stays broken', () => {
+    const diagram = mixedStates();
+    const model = toFlowModel(flowCompiled(diagram), viewAt(diagram, 'mixed', 0));
+
+    expect(model.edges.find((edge) => edge.id === 'gen')?.state).toBe('broken');
+    expect(model.edges.find((edge) => edge.id === 'put')?.state).toBe('broken');
+    expect(model.edges.find((edge) => edge.id === 'audit')?.state).toBe('highlighted');
+  });
+
+  test('AC-33: a node broken is reported as failed', () => {
+    const diagram = mixedStates();
+    const model = toFlowModel(flowCompiled(diagram), viewAt(diagram, 'mixed', 0));
+
+    expect(model.nodes.find((node) => node.id === 'kms')?.state).toBe('failed');
+    expect(model.nodes.find((node) => node.id === 'client')?.state).toBe('failed');
+    expect(model.nodes.find((node) => node.id === 's3')?.state).toBe('failed');
+  });
+
+  test('AC-33: a group broken is reported as failed', () => {
+    const diagram = mixedStates();
+    const model = toFlowModel(flowCompiled(diagram), viewAt(diagram, 'mixed', 0));
+
+    expect(model.groups.find((group) => group.id === 'keys')?.state).toBe('failed');
+    expect(model.groups.find((group) => group.id === 'region')?.state).toBe('failed');
+  });
+
+  test('AC-33: no edge state is failed and no node or group state is broken', () => {
+    const diagram = mixedStates();
+    const model = toFlowModel(flowCompiled(diagram), viewAt(diagram, 'mixed', 0));
+
+    expect(model.edges.map((edge) => edge.state)).not.toContain('failed');
+    expect(model.nodes.map((node) => node.state)).not.toContain('broken');
+    expect(model.groups.map((group) => group.state)).not.toContain('broken');
+  });
+
+  test('AC-33: hidden still cascades (the normalisation does not undo it)', () => {
+    const diagram = flowDiagram();
+    const model = toFlowModel(flowCompiled(diagram), viewAt(diagram, 'hidden-keys', -1));
+
+    expect(model.nodes.find((node) => node.id === 'kms')?.state).toBe('hidden');
+    expect(model.edges.find((edge) => edge.id === 'gen')?.state).toBe('hidden');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-34 textStructure and GROUP_KIND_NAMES
+// ---------------------------------------------------------------------------
+
+describe('AC-34: textStructure', () => {
+  /**
+   * Top-level groups: region (vpc › public subnet › web, db; spare; gateway) and office.
+   * Top-level nodes: user (with sub) and logs.
+   */
+  function structureDiagram(): Diagram {
+    return {
+      id: 'structure',
+      title: 'Structure',
+      groups: [
+        { id: 'region', label: 'eu-west-1', kind: 'region' },
+        { id: 'vpc', label: 'VPC', kind: 'vpc', parent: 'region' },
+        { id: 'subnet', label: 'Public a', kind: 'public-subnet', parent: 'vpc' },
+        { id: 'spare', label: 'Spare', kind: 'generic', parent: 'region' },
+        { id: 'office', label: 'Office', kind: 'on-premises' },
+      ],
+      nodes: [
+        { id: 'user', icon: 'user', label: 'Client', sub: 'IAM principal' },
+        { id: 'gateway', icon: 'internet-gateway', label: 'Gateway', group: 'region' },
+        { id: 'web', icon: 'ec2', label: 'Web', group: 'subnet' },
+        { id: 'db', icon: 'rds', label: 'Database', sub: 'Multi-AZ', group: 'subnet' },
+        { id: 'logs', icon: 'cloudtrail', label: 'Logs' },
+      ],
+      edges: [
+        { id: 'e1', from: 'user', to: 'web', label: 'HTTPS' },
+        { id: 'e2', from: 'web', to: 'db' },
+        { id: 'e3', from: 'gateway', to: 'vpc' },
+        { id: 'e4', from: 'db', to: 'user', label: 'Reply' },
+      ],
+      scenarios: [{ id: 's', label: 'S', steps: [{ node: 'user', caption: 'x' }] }],
+    };
+  }
+
+  test('AC-34: the fixture is a valid diagram', () => {
+    expect(validateDiagram(structureDiagram()).ok).toBe(true);
+  });
+
+  test('AC-34: the top level lists the groups, then the nodes, in source order', () => {
+    const { elements } = textStructure(structureDiagram());
+
+    expect(elements.map((item) => item.text)).toEqual([
+      'eu-west-1 (Region)',
+      'Office (On-premises)',
+      'Client (IAM principal)',
+      'Logs',
+    ]);
+  });
+
+  test('AC-34: a group has its child groups first, then its nodes, nested to any depth', () => {
+    const { elements } = textStructure(structureDiagram());
+
+    expect(elements[0]).toEqual({
+      text: 'eu-west-1 (Region)',
+      children: [
+        {
+          text: 'VPC (VPC)',
+          children: [
+            {
+              text: 'Public a (Public subnet)',
+              children: [
+                { text: 'Web', children: [] },
+                { text: 'Database (Multi-AZ)', children: [] },
+              ],
+            },
+          ],
+        },
+        { text: 'Spare (Group)', children: [] },
+        { text: 'Gateway', children: [] },
+      ],
+    });
+  });
+
+  test('AC-34: a node with a sub reads label (sub); one without just the label; both have no children', () => {
+    const { elements } = textStructure(structureDiagram());
+
+    expect(elements[2]).toEqual({ text: 'Client (IAM principal)', children: [] });
+    expect(elements[3]).toEqual({ text: 'Logs', children: [] });
+  });
+
+  test('AC-34: an empty group has no children', () => {
+    const { elements } = textStructure(structureDiagram());
+
+    expect(elements[1]).toEqual({ text: 'Office (On-premises)', children: [] });
+  });
+
+  test('AC-34: connections are one per edge in source order, with labels and without suffixes', () => {
+    const { connections } = textStructure(structureDiagram());
+
+    expect(connections).toEqual([
+      'Client → Web: HTTPS',
+      'Web → Database',
+      'Gateway → VPC',
+      'Database → Client: Reply',
+    ]);
+  });
+
+  test('AC-34: a diagram without groups or edges has only nodes and no connections', () => {
+    const diagram: Diagram = {
+      id: 'plain',
+      title: 'Plain',
+      nodes: [
+        { id: 'a', icon: 'user', label: 'A' },
+        { id: 'b', icon: 'user', label: 'B', sub: 'Second' },
+      ],
+      scenarios: [{ id: 's', label: 'S', steps: [{ node: 'a', caption: 'x' }] }],
+    };
+
+    expect(textStructure(diagram)).toEqual({
+      elements: [
+        { text: 'A', children: [] },
+        { text: 'B (Second)', children: [] },
+      ],
+      connections: [],
+    });
+  });
+
+  test('AC-34: the root exports textStructure, displayState and GROUP_KIND_NAMES', () => {
+    expect(typeof engineRoot.textStructure).toBe('function');
+    expect(typeof engineRoot.displayState).toBe('function');
+    expect(engineRoot.GROUP_KIND_NAMES).toBe(GROUP_KIND_NAMES);
+  });
+});
+
+describe('AC-34: GROUP_KIND_NAMES', () => {
+  test('AC-34: it has the 11 display names of the spec', () => {
+    expect(GROUP_KIND_NAMES).toEqual({
+      cloud: 'AWS Cloud',
+      account: 'AWS account',
+      region: 'Region',
+      az: 'Availability Zone',
+      vpc: 'VPC',
+      'public-subnet': 'Public subnet',
+      'private-subnet': 'Private subnet',
+      'auto-scaling-group': 'Auto Scaling group',
+      'security-group': 'Security group',
+      'on-premises': 'On-premises',
+      generic: 'Group',
+    });
+  });
 });

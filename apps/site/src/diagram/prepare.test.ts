@@ -4,6 +4,7 @@ import { validateDiagram } from '@field-guide/schema';
 import type { Diagram, DiagramGroup } from '@field-guide/schema';
 import { describe, expect, test, vi } from 'vitest';
 import { viewFixture, viewFixtureMini } from '../../../../e2e/fixtures/view-fixture.ts';
+import { viewFixtureStates } from '../../../../e2e/fixtures/view-fixture.ts';
 import { GROUP_ICON_KINDS, prepareDiagram } from './prepare.ts';
 
 // elkjs loads lazily on the first compile and can take a while on a cold machine.
@@ -102,7 +103,9 @@ describe('AC-11: prepareDiagram resolves the props of a valid diagram', () => {
     expect(props.wide.direction).toBe('right');
     expect(props.compact.direction).toBe('down');
     expect(props.wide).toEqual(await compile(viewFixture));
-    expect(props.compact).toEqual(await compile(viewFixture, { direction: 'down' }));
+    expect(props.compact).toEqual(
+      await compile(viewFixture, { direction: 'down', applyPos: false }),
+    );
   });
 
   test('AC-11: id and title come from the diagram', async () => {
@@ -327,5 +330,59 @@ describe('AC-13: missing icon files reject', () => {
     const { props } = await prepareDiagram(viewFixture, filesOf(...fixtureFiles));
 
     expect(Object.keys(props.groupIcons)).not.toContain('vpc');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AC-32 pos only applies to the wide layout (spec 012, review round 2)
+// ---------------------------------------------------------------------------
+
+describe('AC-32: the compact layout ignores pos', () => {
+  test('AC-32: the fixture has a node with pos, which the wide layout applies', async () => {
+    const { props } = await prepareDiagram(viewFixture, filesOf(...fixtureFiles));
+
+    expect(props.wide.nodes.find((node) => node.id === 'trail')?.overridden).toBe(true);
+  });
+
+  test('AC-32: props.compact is compile(d, { direction: down, applyPos: false })', async () => {
+    const { props } = await prepareDiagram(viewFixture, filesOf(...fixtureFiles));
+
+    expect(props.compact).toEqual(
+      await compile(viewFixture, { direction: 'down', applyPos: false }),
+    );
+  });
+
+  test('AC-32: props.wide is compile(d)', async () => {
+    const { props } = await prepareDiagram(viewFixture, filesOf(...fixtureFiles));
+
+    expect(props.wide).toEqual(await compile(viewFixture));
+  });
+
+  test('AC-32: in props.compact no node is overridden and no group is grown', async () => {
+    const { props } = await prepareDiagram(viewFixture, filesOf(...fixtureFiles));
+
+    expect(props.compact.nodes.filter((node) => node.overridden)).toEqual([]);
+    expect(props.compact.groups.filter((group) => group.grown)).toEqual([]);
+  });
+
+  test('AC-32: in props.compact every edge has points', async () => {
+    const { props } = await prepareDiagram(viewFixture, filesOf(...fixtureFiles));
+
+    expect(props.compact.edges.map((edge) => edge.id)).toEqual(['put', 'gen', 'audit']);
+    expect(props.compact.edges.filter((edge) => edge.points === undefined)).toEqual([]);
+  });
+
+  test('AC-32: the diagram handed to the island still carries its pos', async () => {
+    const { props } = await prepareDiagram(viewFixture, filesOf(...fixtureFiles));
+
+    expect(props.compact.diagram).toEqual(viewFixture);
+  });
+});
+
+describe('the states fixture', () => {
+  test('AC-35: view-fixture-states is a valid diagram with one scenario', () => {
+    expect(validateDiagram(viewFixtureStates).ok).toBe(true);
+    expect(viewFixtureStates.id).toBe('view-fixture-states');
+    expect(viewFixtureStates.scenarios).toHaveLength(1);
   });
 });

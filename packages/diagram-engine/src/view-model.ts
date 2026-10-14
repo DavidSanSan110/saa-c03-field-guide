@@ -339,3 +339,25 @@ export function textFallback(d: Diagram): FallbackScenario[] {
     })),
   }));
 }
+
+export interface StructureItem {
+  text: string;
+  children: StructureItem[];
+}
+
+export interface DiagramStructure {
+  elements: StructureItem[];
+  connections: string[];
+}
+
+/** Interface stub (spec 012, review round 2): no names yet. */
+export const GROUP_KIND_NAMES = Object.freeze({}) as Readonly<Record<GroupKind, string>>;
+
+/* eslint-disable @typescript-eslint/no-unused-vars -- interface stubs: the implementation comes after the tests */
+export function textStructure(d: Diagram): DiagramStructure {
+  throw new Error('not implemented');
+}
+
+export function displayState(kind: 'group' | 'node' | 'edge', state: ElementState): ElementState {
+  throw new Error('not implemented');
+}
