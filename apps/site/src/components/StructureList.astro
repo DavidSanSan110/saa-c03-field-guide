@@ -1,0 +1,23 @@
+---
+// The items of one level of a diagram's text structure (spec 012), nested to any depth.
+import type { StructureItem } from '@field-guide/diagram-engine';
+
+interface Props {
+  items: StructureItem[];
+}
+
+const { items } = Astro.props;
+---
+
+{
+  items.map((item) => (
+    <li>
+      {item.text}
+      {item.children.length > 0 && (
+        <ul>
+          <Astro.self items={item.children} />
+        </ul>
+      )}
+    </li>
+  ))
+}
