@@ -1,7 +1,7 @@
 // Diagram files loader and folder check (spec 013). Pure Node, no Astro imports; runs at build and in tests.
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse } from 'yaml';
+import { parseAllDocuments } from 'yaml';
 import { prepareDiagram } from './prepare.ts';
 
 /** Max caption length for diagram files (the schema allows 300; files keep captions short for narrow screens). */
@@ -16,7 +16,8 @@ function messageOf(error: unknown): string {
 
 /** Reads and parses `<dir>/<id>.yaml`; throws an Error whose message names the problem. */
 export function readDiagramFile(dir: string, id: string): unknown {
-  if (!SLUG.test(id)) throw new Error(`Diagram id '${id}' is not a lowercase slug`);
+  if (typeof id !== 'string' || !SLUG.test(id))
+    throw new Error(`Diagram id '${id}' is not a lowercase slug`);
   const name = `${id}.yaml`;
 
   let text: string;
@@ -29,14 +30,18 @@ export function readDiagramFile(dir: string, id: string): unknown {
     throw new Error(`Diagram file '${name}' cannot be read: ${messageOf(error)}`, { cause: error });
   }
 
-  let data: unknown;
-  try {
-    data = parse(text);
-  } catch (error) {
-    throw new Error(`Diagram file '${name}' is not valid YAML: ${messageOf(error)}`, {
-      cause: error,
-    });
+  // Silent: the parser collects warnings instead of printing them; any error or warning makes the file invalid.
+  // Only the first line of its message is kept (the rest is a code frame).
+  const docs = parseAllDocuments(text, { logLevel: 'silent' });
+  const problem =
+    docs.flatMap((doc) => doc.errors)[0] ??
+    docs.flatMap((doc) => doc.warnings)[0] ??
+    (docs.length > 1 ? new Error('Source contains multiple documents') : undefined);
+  if (problem) {
+    const firstLine = problem.message.split(/\r?\n/)[0] ?? '';
+    throw new Error(`Diagram file '${name}' is not valid YAML: ${firstLine}`, { cause: problem });
   }
+  const data: unknown = docs[0]?.toJS() ?? null;
 
   const fileId =
     typeof data === 'object' && data !== null ? (data as { id?: unknown }).id : undefined;
