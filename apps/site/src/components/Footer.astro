@@ -4,11 +4,11 @@ import Default from '@astrojs/starlight/components/Footer.astro';
 const repoBlobUrl = 'https://github.com/DavidSanSan110/saa-c03-field-guide/blob/main';
 ---
 
-<Default {...Astro.props}><slot /></Default>
-<footer class="site-footer">
+<Default />
+<footer class="site-footer" data-pagefind-ignore>
   <p>Not affiliated with, endorsed by or sponsored by Amazon Web Services, Inc.</p>
   <p>
-    Licensed <a href={`${repoBlobUrl}/LICENSE`}>MIT</a> (code) and
+    Licensed <a href={`${repoBlobUrl}/LICENSE`}>MIT</a> (code) and{' '}
     <a href={`${repoBlobUrl}/LICENSE-CONTENT.md`}>CC BY-SA 4.0</a> (content).
   </p>
 </footer>
