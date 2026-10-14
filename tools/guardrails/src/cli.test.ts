@@ -1081,3 +1081,140 @@ describe('guardrails no-merges --base <ref>', () => {
     expect(run.status).toBe(2);
   });
 });
+
+// ---- Spec 008: package.json renames and the guardrails script ---------------------------------
+
+const GUARDRAILS_SCRIPT = '    "guardrails": "tsx tools/guardrails/src/cli.ts",\n';
+
+/** PACKAGE_JSON with a root-style `guardrails` script next to the other scripts. */
+const GUARDRAILS_PACKAGE_JSON = PACKAGE_JSON.replace(
+  '    "lint"',
+  `${GUARDRAILS_SCRIPT}    "lint"`,
+);
+
+/**
+ * A repository whose base holds `packages/a/package.json` (test and e2e scripts), a disabled
+ * `packages/c/package.json.off` with a test script, and a root package.json with a guardrails
+ * script, plus a feature branch that is checked out and still empty.
+ */
+function makeMoveRepo(): { dir: string; base: string } {
+  const dir = makeTempRepo();
+  write(dir, 'README.md', '# Seed\n');
+  write(dir, 'package.json', GUARDRAILS_PACKAGE_JSON);
+  write(dir, 'packages/a/package.json', PACKAGE_JSON);
+  write(
+    dir,
+    'packages/c/package.json.off',
+    PACKAGE_JSON.replace('"name": "sample"', '"name": "disabled"'),
+  );
+  const base = commitWith(dir, 'chore: seed');
+  git(dir, ['checkout', '--quiet', '-b', 'feature']);
+  return { dir, base };
+}
+
+function expectLockOk(run: Run): void {
+  expect(run.output).not.toContain('✖');
+  expect(run.stdout).toContain('✔ guardrails: test-lock ok');
+  expect(run.status).toBe(0);
+}
+
+describe('guardrails test-lock --base <ref> and package.json renames', () => {
+  test('AC-6: a refactor commit moving a package directory unchanged exits 0 with the ok line', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a', 'packages/b']);
+    commitWith(dir, 'refactor: move a to b');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-6: a refactor commit moving it and removing its test script exits 1 naming the new path', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a', 'packages/b']);
+    write(dir, 'packages/b/package.json', PACKAGE_JSON.replace('    "test": "vitest run",\n', ''));
+    commitWith(dir, 'refactor: move a to b');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ packages\/b\/package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-6: a refactor commit moving it and changing only its name exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a', 'packages/b']);
+    write(dir, 'packages/b/package.json', PACKAGE_JSON.replace('"sample"', '"moved"'));
+    commitWith(dir, 'refactor: move and rename a');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-6: a feat commit renaming package.json away exits 1 naming the old path', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a/package.json', 'packages/a/package.json.off']);
+    commitWith(dir, 'feat: disable a');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ packages\/a\/package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-6: a test commit renaming package.json away exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/a/package.json', 'packages/a/package.json.off']);
+    commitWith(dir, 'test: disable a');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-6: a feat commit renaming package.json.off to package.json exits 1 naming the new path', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/c/package.json.off', 'packages/c/package.json']);
+    commitWith(dir, 'feat: enable c');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ packages\/c\/package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-6: a feat commit renaming package.json.off to another name without scripts changing exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    git(dir, ['mv', 'packages/c/package.json.off', 'packages/c/package.json.bak']);
+    commitWith(dir, 'feat: park c');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+});
+
+describe('guardrails test-lock --base <ref> and the guardrails script', () => {
+  test('AC-7: a feat commit changing the root guardrails script to echo ok exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(
+      dir,
+      'package.json',
+      GUARDRAILS_PACKAGE_JSON.replace('"tsx tools/guardrails/src/cli.ts"', '"echo ok"'),
+    );
+    commitWith(dir, 'feat: silence the guardrails');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-7: a test commit changing the root guardrails script exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    write(
+      dir,
+      'package.json',
+      GUARDRAILS_PACKAGE_JSON.replace('"tsx tools/guardrails/src/cli.ts"', '"echo ok"'),
+    );
+    commitWith(dir, 'test(guardrails): change the entry point');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-7: a chore(deps) commit bumping a dependency next to a guardrails script exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', GUARDRAILS_PACKAGE_JSON.replace('^1.0.0', '^1.1.0'));
+    commitWith(dir, 'chore(deps): bump left-pad');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+
+  test('AC-7: a feat commit removing the guardrails script exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', PACKAGE_JSON);
+    commitWith(dir, 'feat: drop the guardrails script');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+});
