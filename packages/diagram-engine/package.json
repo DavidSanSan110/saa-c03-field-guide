@@ -5,7 +5,8 @@
   "type": "module",
   "description": "Animated diagram engine: layout compiler and scenario player (pure).",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./compile": "./src/compile.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
