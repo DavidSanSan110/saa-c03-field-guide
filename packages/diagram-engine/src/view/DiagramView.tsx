@@ -1,6 +1,6 @@
 // The diagram island (spec 012): React Flow canvas, controls, scenario tabs, step log and caption.
-import { ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
-import type { Edge, Node } from '@xyflow/react';
+import { Position, ReactFlow, ReactFlowProvider, useReactFlow } from '@xyflow/react';
+import type { Edge, Node, NodeHandle } from '@xyflow/react';
 import {
   useEffect,
   useId,
@@ -9,10 +9,12 @@ import {
   useReducer,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent,
   type ReactNode,
 } from 'react';
 import '@xyflow/react/dist/base.css';
+import type { Box } from '../graph.ts';
 import type { PlayerAction } from '../player.ts';
 import { initPlayer, playerReducer, viewPlayer } from '../player.ts';
 import {
@@ -23,8 +25,8 @@ import {
   toFlowModel,
 } from '../view-model.ts';
 import type { FlowModel, LogLine } from '../view-model.ts';
-import { GroupHeaders, edgeTypes, nodeTypes } from './canvas.tsx';
-import type { CardType, FlowEdgeType, GroupType } from './canvas.tsx';
+import { edgeTypes, nodeTypes } from './canvas.tsx';
+import type { CardType, FlowEdgeType, GroupType, HeadType } from './canvas.tsx';
 import type { DiagramViewProps, IconSource } from './types.ts';
 import './view.css';
 
@@ -43,8 +45,20 @@ const readOnly = {
   domAttributes: { 'aria-roledescription': undefined },
 } as const;
 
+/** Where an edge starts and ends on a node: server-rendered edges need handles before anything is measured. */
+function handlesOf(width: number, height: number): NodeHandle[] {
+  return [
+    { type: 'target', position: Position.Left, x: 0, y: height / 2 },
+    { type: 'source', position: Position.Right, x: width, y: height / 2 },
+  ];
+}
+
+const HEAD_HEIGHT = 30;
+const GROUP_BORDER = 1.5;
+
 function flowNodes(
   model: FlowModel,
+  boxes: Record<string, Box>,
   icons: Record<string, IconSource>,
   groupIcons: Record<string, IconSource>,
   compact: boolean,
@@ -56,6 +70,7 @@ function flowNodes(
     ...(flow.parentId === undefined ? {} : { parentId: flow.parentId }),
     width: flow.width,
     height: flow.height,
+    handles: handlesOf(flow.width, flow.height),
     data: { flow, icon: groupIcons[flow.kind] },
     ...readOnly,
   }));
@@ -66,10 +81,28 @@ function flowNodes(
     ...(flow.parentId === undefined ? {} : { parentId: flow.parentId }),
     width: flow.width,
     height: flow.height,
+    handles: handlesOf(flow.width, flow.height),
     data: { flow, icon: icons[flow.icon], compact },
     ...readOnly,
   }));
-  return [...groups, ...cards];
+  // The group headers are nodes of their own above the edges (an edge never runs over a label).
+  const heads = model.groups.flatMap((flow): HeadType[] => {
+    const box = boxes[flow.id];
+    if (box === undefined) return [];
+    return [
+      {
+        id: `head:${flow.id}`,
+        type: 'head',
+        position: { x: box.x + GROUP_BORDER, y: box.y + GROUP_BORDER },
+        width: box.width - 2 * GROUP_BORDER,
+        height: HEAD_HEIGHT,
+        zIndex: 1001,
+        data: { flow, icon: groupIcons[flow.kind] },
+        ...readOnly,
+      },
+    ];
+  });
+  return [...groups, ...cards, ...heads];
 }
 
 function flowEdges(model: FlowModel): Edge[] {
@@ -156,8 +189,8 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
   const model = useMemo(() => toFlowModel(compiled, view), [compiled, view]);
   const boxes = useMemo(() => absoluteBoxes(compiled), [compiled]);
   const nodes = useMemo(
-    () => flowNodes(model, icons, groupIcons, layout === 'compact'),
-    [model, icons, groupIcons, layout],
+    () => flowNodes(model, boxes, icons, groupIcons, layout === 'compact'),
+    [model, boxes, icons, groupIcons, layout],
   );
   const edges = useMemo(() => flowEdges(model), [model]);
   const lines = useMemo(
@@ -170,7 +203,6 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
     const root = rootRef.current;
     if (root === null) return;
     setWidth(root.getBoundingClientRect().width);
-    setHydrated(true);
     const observer = new ResizeObserver(([entry]) => {
       if (entry !== undefined) setWidth(entry.contentRect.width);
     });
@@ -190,7 +222,10 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         frame = requestAnimationFrame(() => {
-          void fitRef.current({ padding: FIT_PADDING });
+          // Until the first fit the server picture (scaled by CSS) stays; then the island is live.
+          void fitRef.current({ padding: FIT_PADDING }).then(() => {
+            setHydrated(true);
+          });
         });
       });
     };
@@ -316,41 +351,58 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
         ref={canvasRef}
         className="dl-canvas"
         data-layout={layout}
-        style={{ aspectRatio: `${String(compiled.width)} / ${String(compiled.height)}` }}
+        style={
+          {
+            aspectRatio: `${String(compiled.width)} / ${String(compiled.height)}`,
+            '--dl-w': `${String(compiled.width)}px`,
+            '--dl-h': `${String(compiled.height)}px`,
+          } as CSSProperties
+        }
         {...(hasTabs
           ? { role: 'tabpanel', id: panelId, 'aria-labelledby': tabId(view.scenario.id) }
           : {})}
       >
-        <ReactFlow
-          id={`dl-${uid}`}
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          fitView
-          fitViewOptions={{ padding: FIT_PADDING }}
-          minZoom={0.1}
-          maxZoom={1.5}
-          nodesDraggable={false}
-          nodesConnectable={false}
-          nodesFocusable={false}
-          edgesFocusable={false}
-          edgesReconnectable={false}
-          elementsSelectable={false}
-          autoPanOnNodeFocus={false}
-          panOnDrag={false}
-          panOnScroll={false}
-          zoomOnScroll={false}
-          zoomOnPinch={false}
-          zoomOnDoubleClick={false}
-          preventScrolling={false}
-          disableKeyboardA11y
-          deleteKeyCode={null}
-          selectionKeyCode={null}
-          multiSelectionKeyCode={null}
+        {/* React Flow hard-codes role="application"; the canvas is hidden from assistive technology and
+            the text structure and the live region replace it. */}
+        <div className="dl-flow" aria-hidden="true">
+          <ReactFlow
+            id={`dl-${uid}`}
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            fitView
+            fitViewOptions={{ padding: FIT_PADDING }}
+            minZoom={0.1}
+            maxZoom={1.5}
+            nodesDraggable={false}
+            nodesConnectable={false}
+            nodesFocusable={false}
+            edgesFocusable={false}
+            edgesReconnectable={false}
+            elementsSelectable={false}
+            autoPanOnNodeFocus={false}
+            panOnDrag={false}
+            panOnScroll={false}
+            zoomOnScroll={false}
+            zoomOnPinch={false}
+            zoomOnDoubleClick={false}
+            preventScrolling={false}
+            disableKeyboardA11y
+            deleteKeyCode={null}
+            selectionKeyCode={null}
+            multiSelectionKeyCode={null}
+            proOptions={{ hideAttribution: true }}
+          />
+        </div>
+        <a
+          className="dl-attribution"
+          href="https://reactflow.dev"
+          target="_blank"
+          rel="noopener noreferrer"
         >
-          <GroupHeaders groups={model.groups} boxes={boxes} groupIcons={groupIcons} />
-        </ReactFlow>
+          React Flow
+        </a>
       </div>
 
       <div className="dl-bar">
@@ -441,8 +493,26 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
 
 /** An animated, accessible diagram: one scenario player over a layout compiled at build time. */
 export function DiagramView(props: DiagramViewProps) {
+  // The initial store is what the server renders: the wide layout at step -1, sized from the compiled layout.
+  const [initial] = useState(() => {
+    const diagram = props.wide.diagram;
+    const model = toFlowModel(props.wide, viewPlayer(diagram, initPlayer(diagram)));
+    return {
+      nodes: flowNodes(model, absoluteBoxes(props.wide), props.icons, props.groupIcons, false),
+      edges: flowEdges(model),
+    };
+  });
   return (
-    <ReactFlowProvider>
+    <ReactFlowProvider
+      initialNodes={initial.nodes}
+      initialEdges={initial.edges}
+      initialWidth={props.wide.width}
+      initialHeight={props.wide.height}
+      fitView
+      initialFitViewOptions={{ padding: FIT_PADDING }}
+      initialMinZoom={0.1}
+      initialMaxZoom={1.5}
+    >
       <Island {...props} />
     </ReactFlowProvider>
   );

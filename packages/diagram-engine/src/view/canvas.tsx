@@ -4,7 +4,6 @@ import {
   EdgeLabelRenderer,
   Handle,
   Position,
-  ViewportPortal,
   type Edge,
   type EdgeProps,
   type Node,
@@ -13,11 +12,12 @@ import {
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react';
 import { useEffect, useId } from 'react';
 import { edgePath, pathMidpoint } from '../view-model.ts';
-import type { Box } from '../graph.ts';
 import type { FlowEdge, FlowGroup, FlowNode } from '../view-model.ts';
 import type { IconSource } from './types.ts';
 
 const PACKET_SECONDS = 1.5;
+/** Room around an edge's line, in canvas units. */
+const EDGE_PAD = 4;
 
 export interface CardData extends Record<string, unknown> {
   flow: FlowNode;
@@ -33,6 +33,7 @@ export interface EdgeData extends Record<string, unknown> {
 }
 export type CardType = Node<CardData, 'card'>;
 export type GroupType = Node<GroupData, 'group'>;
+export type HeadType = Node<GroupData, 'head'>;
 export type FlowEdgeType = Edge<EdgeData, 'flow'>;
 
 /** The icon image; with a dark variant both are rendered and the CSS picks one by theme. */
@@ -103,38 +104,23 @@ function GroupNode({ data }: NodeProps<GroupType>) {
   );
 }
 
-/** The group headers (icon and label), in a layer above the edges so an edge never crosses a label. */
-export function GroupHeaders({
-  groups,
-  boxes,
-  groupIcons,
-}: {
-  groups: FlowGroup[];
-  boxes: Record<string, Box>;
-  groupIcons: Record<string, IconSource>;
-}) {
+/**
+ * The header of a group (icon, label, `failed` pill): a node of its own, above the edges, so that an edge
+ * crossing the group never runs over its label. Being a node it is also part of the server render.
+ */
+function HeadNode({ data }: NodeProps<HeadType>) {
+  const { flow, icon } = data;
   return (
-    <ViewportPortal>
-      {groups.map((group) => {
-        const box = boxes[group.id];
-        if (box === undefined || group.state === 'hidden') return null;
-        return (
-          <div
-            key={group.id}
-            className="dl-group-head"
-            data-group-head={group.id}
-            data-kind={group.kind}
-            style={{ left: box.x + 1.5, top: box.y + 1.5 }}
-          >
-            <IconImage source={groupIcons[group.kind]} />
-            <span className="dl-group__label">{group.label}</span>
-            {group.state === 'failed' ? (
-              <span className="dl-pill dl-pill--failed">failed</span>
-            ) : null}
-          </div>
-        );
-      })}
-    </ViewportPortal>
+    <div
+      className="dl-group-head"
+      data-group-head={flow.id}
+      data-kind={flow.kind}
+      data-state={flow.state}
+    >
+      <IconImage source={icon} />
+      <span className="dl-group__label">{flow.label}</span>
+      {flow.state === 'failed' ? <span className="dl-pill dl-pill--failed">failed</span> : null}
+    </div>
   );
 }
 
@@ -189,9 +175,25 @@ function FlowEdgeView({ data }: EdgeProps<FlowEdgeType>) {
   if (data === undefined) return null;
   const { flow } = data;
   const broken = flow.state === 'broken';
-  const kind = broken ? 'broken' : flow.status;
+  // The active look wins over the persistent states, a broken edge over everything.
+  const kind = broken
+    ? 'broken'
+    : flow.status === 'active'
+      ? 'active'
+      : flow.state === 'highlighted'
+        ? 'highlighted'
+        : flow.status;
+  const appearing = flow.state === 'appearing' ? ' dl-edge--appearing' : '';
   const path = edgePath(flow.points);
   const middle = pathMidpoint(flow.points);
+  const xs = flow.points.map((point) => point.x);
+  const ys = flow.points.map((point) => point.y);
+  const bounds = {
+    x: Math.min(...xs) - EDGE_PAD,
+    y: Math.min(...ys) - EDGE_PAD,
+    width: Math.max(...xs) - Math.min(...xs) + 2 * EDGE_PAD,
+    height: Math.max(...ys) - Math.min(...ys) + 2 * EDGE_PAD,
+  };
   const at = `translate(-50%, -50%) translate(${middle.x}px, ${middle.y}px)`;
   const shown = flow.state !== 'hidden';
   return (
@@ -201,7 +203,7 @@ function FlowEdgeView({ data }: EdgeProps<FlowEdgeType>) {
         data-state={flow.state}
         data-active={String(flow.status === 'active')}
         data-status={flow.status}
-        className={`dl-edge dl-edge--${kind}`}
+        className={`dl-edge dl-edge--${kind}${appearing}`}
       >
         <defs>
           <marker
@@ -217,6 +219,15 @@ function FlowEdgeView({ data }: EdgeProps<FlowEdgeType>) {
             <path d="M0,0 L10,5 L0,10 z" className="dl-edge__arrow" />
           </marker>
         </defs>
+        {/* A straight horizontal or vertical line has an empty bounding box: this gives the edge an area. */}
+        <rect
+          x={bounds.x}
+          y={bounds.y}
+          width={bounds.width}
+          height={bounds.height}
+          fill="none"
+          stroke="none"
+        />
         <path className="dl-edge__line" d={path} fill="none" markerEnd={`url(#${markerId})`} />
       </g>
       {shown ? (
@@ -248,5 +259,5 @@ function FlowEdgeView({ data }: EdgeProps<FlowEdgeType>) {
   );
 }
 
-export const nodeTypes = { card: CardNode, group: GroupNode };
+export const nodeTypes = { card: CardNode, group: GroupNode, head: HeadNode };
 export const edgeTypes = { flow: FlowEdgeView };

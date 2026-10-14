@@ -61,6 +61,7 @@
 
 /* ---------- frame ---------- */
 .dl {
+  position: relative;
   margin: 1.25rem 0 2rem;
   border: 1px solid var(--dl-frame);
   border-radius: 0.75rem;
@@ -120,6 +121,8 @@
 /* ---------- canvas ---------- */
 .dl-canvas {
   position: relative;
+  /* Lets the server-rendered picture size itself from the container (see below). */
+  container-type: size;
   width: 100%;
   min-height: 14rem;
   max-height: 32rem;
@@ -129,8 +132,30 @@
 .dl-canvas[data-layout='compact'] {
   max-height: 75svh;
 }
+.dl-flow {
+  position: absolute;
+  inset: 0;
+}
 .dl .react-flow {
   background: transparent;
+}
+/* Before hydration there is no script to fit the view: the server-rendered picture is scaled to the
+   container with CSS alone (tan(atan2(a, b)) is the unitless ratio a / b). */
+.dl-view:not([data-hydrated]) .react-flow__viewport {
+  --dl-s: calc(0.92 * min(tan(atan2(100cqw, var(--dl-w))), tan(atan2(100cqh, var(--dl-h)))));
+  transform-origin: 0 0;
+  transform: translate(
+      calc((100cqw - var(--dl-w) * var(--dl-s)) / 2),
+      calc((100cqh - var(--dl-h) * var(--dl-s)) / 2)
+    )
+    scale(var(--dl-s)) !important;
+}
+/* The controls only exist once the island is live: no dead buttons. */
+.dl-view:not([data-hydrated]) .dl-tabs {
+  visibility: hidden;
+}
+.dl-view:not([data-hydrated]) :is(.dl-bar, .dl-log) {
+  display: none;
 }
 .dl .react-flow__renderer,
 .dl .react-flow__pane {
@@ -150,13 +175,14 @@
 .dl .react-flow__edgelabel-renderer {
   z-index: 1002;
 }
-.dl .react-flow__attribution {
-  margin: 0;
+/* React Flow's own attribution is off (its wrapper is aria-hidden); this link takes its place. */
+.dl-attribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
   padding: 2px 8px;
-  background: transparent;
   font-size: 10px;
-}
-.dl .react-flow__attribution a {
   color: var(--dl-muted);
   text-decoration: none;
 }
@@ -360,15 +386,10 @@
   --dl-gc: var(--dl-danger);
   --dl-gs: solid;
 }
-/* The group header is drawn in a layer above the edges: React Flow draws the edges between a group's
+/* The group header is a node of its own, above the edges: React Flow draws the edges between a group's
    children above the group itself, so a label inside the box would be crossed by them. */
-.dl .react-flow__viewport-portal {
-  z-index: 1001;
-  pointer-events: none;
-}
 .dl-group-head {
   --dl-gf: transparent;
-  position: absolute;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -419,6 +440,25 @@
 .dl-edge--active .dl-edge__arrow {
   fill: var(--dl-edge-active);
 }
+.dl-edge--highlighted .dl-edge__line {
+  stroke: var(--dl-edge-active);
+  stroke-width: 2.5;
+  stroke-dasharray: none;
+}
+.dl-edge--highlighted .dl-edge__arrow {
+  fill: var(--dl-edge-active);
+}
+.dl-edge--appearing {
+  animation: dl-fade 0.5s ease-out;
+}
+.dl-edge--appearing .dl-edge__line {
+  stroke: var(--dl-accent);
+  stroke-dasharray: 5 4;
+}
+.dl-edge--active.dl-edge--appearing .dl-edge__line {
+  stroke: var(--dl-edge-active);
+  stroke-dasharray: 8 6;
+}
 .dl-edge--broken .dl-edge__line {
   stroke: var(--dl-danger);
   stroke-width: 2;
@@ -426,6 +466,14 @@
 }
 .dl-edge--broken .dl-edge__arrow {
   fill: var(--dl-danger);
+}
+@keyframes dl-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 @keyframes dl-dash {
   to {
@@ -640,6 +688,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .dl-edge--active .dl-edge__line,
+  .dl-edge--appearing,
   .dl-card[data-state='appearing'],
   .dl-group[data-state='appearing'] {
     animation: none;
