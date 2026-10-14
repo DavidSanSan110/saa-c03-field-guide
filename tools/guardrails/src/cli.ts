@@ -225,16 +225,23 @@ function fileLines(sha: string, ...paths: string[]): NonNullable<CommitChange['l
   return lines;
 }
 
+function fileName(path: string): string | undefined {
+  return path.split('/').pop();
+}
+
 /**
- * The package.json lines of a change. A rename is read as a rename only if both paths are a
- * package.json; otherwise the package.json side alone, i.e. as a deletion or an addition.
+ * The package.json lines of a change. A rename is read as a rename only if both file names are
+ * exactly `package.json` (a case-only rename takes the manifest away); otherwise the package.json
+ * side alone, i.e. as a deletion or an addition.
  */
 function packageJsonLines(
   sha: string,
   { path, oldPath }: Omit<CommitChange, 'added' | 'removed'>,
 ): CommitChange['lines'] {
   if (oldPath !== undefined && isPackageJson(oldPath)) {
-    return isPackageJson(path) ? fileLines(sha, oldPath, path) : fileLines(sha, oldPath);
+    return fileName(oldPath) === 'package.json' && fileName(path) === 'package.json'
+      ? fileLines(sha, oldPath, path)
+      : fileLines(sha, oldPath);
   }
   return isPackageJson(path) ? fileLines(sha, path) : undefined;
 }
