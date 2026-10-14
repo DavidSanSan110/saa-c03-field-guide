@@ -1,0 +1,106 @@
+# S3 server-side encryption with KMS keys (SSE-KMS): envelope encryption, step by step.
+# Sources: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingKMSEncryption.html
+#          https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-key.html
+id: s3-sse-kms-upload
+title: S3 encryption with SSE-KMS
+description: How S3 and KMS encrypt and decrypt an object with a data key (envelope encryption).
+groups:
+  - { id: region, label: eu-west-1, kind: region }
+nodes:
+  - { id: client, icon: user, label: Client, sub: IAM principal }
+  - {
+      id: s3,
+      icon: simple-storage-service,
+      label: S3 bucket,
+      sub: SSE-KMS by default,
+      group: region,
+    }
+  - { id: kms, icon: key-management-service, label: KMS key, sub: Customer managed, group: region }
+  - { id: trail, icon: cloudtrail, label: CloudTrail, sub: KMS events, group: region }
+edges:
+  - { id: put, from: client, to: s3 }
+  - { id: gen, from: s3, to: kms }
+  - { id: audit, from: kms, to: trail }
+scenarios:
+  - id: upload
+    label: Upload
+    steps:
+      - edge: put
+        packet: PutObject
+        caption: 'PutObject over HTTPS, with the header x-amz-server-side-encryption: aws:kms or a bucket that defaults to SSE-KMS.'
+      - edge: gen
+        packet: GenerateDataKey
+        caption: S3 asks KMS for a data key. The caller needs kms:GenerateDataKey on the key, and the call counts toward the KMS quota.
+        metrics: { KMS requests: '+1' }
+      - edge: gen
+        reverse: true
+        packet: Data key
+        caption: KMS returns the data key twice, in plaintext and encrypted under the KMS key.
+      - edge: audit
+        packet: GenerateDataKey
+        caption: CloudTrail logs the key use (who used which KMS key, and when). This audit trail is a reason to pick SSE-KMS.
+      - node: s3
+        caption: S3 encrypts the object with the plaintext data key and deletes it. The encrypted data key is stored with the object.
+        state: { s3: highlighted }
+  - id: download
+    label: Download
+    steps:
+      - edge: put
+        packet: GetObject
+        caption: GetObject over HTTPS, with no encryption headers. S3 knows the key from the object's metadata.
+      - edge: gen
+        packet: Decrypt
+        caption: S3 sends the encrypted data key to KMS. The caller needs kms:Decrypt on the KMS key.
+        metrics: { KMS requests: '+1' }
+      - edge: gen
+        reverse: true
+        packet: Data key
+        caption: KMS decrypts the data key and returns it. The KMS key itself never leaves KMS.
+      - edge: audit
+        packet: Decrypt
+        caption: The Decrypt call is logged in CloudTrail too, so reads of the data can be audited as well.
+      - edge: put
+        reverse: true
+        packet: Object
+        caption: S3 decrypts the object with the data key, deletes that key and returns the object over HTTPS.
+  - id: denied
+    label: No KMS permission
+    steps:
+      - edge: put
+        packet: PutObject
+        caption: The caller is allowed s3:PutObject, but not kms:GenerateDataKey on the bucket's KMS key.
+      - edge: gen
+        packet: GenerateDataKey
+        caption: S3 asks KMS for a data key with the caller's permissions, and KMS refuses.
+        state: { gen: broken }
+      - edge: put
+        reverse: true
+        packet: 403 AccessDenied
+        caption: 'S3 returns Access Denied and stores nothing: with SSE-KMS, S3 permissions alone are not enough.'
+        state: { put: broken }
+  - id: bucket-key
+    label: With an S3 Bucket Key
+    steps:
+      - edge: put
+        packet: PutObject
+        caption: The bucket has S3 Bucket Keys turned on. This is the caller's first upload in a while.
+      - edge: gen
+        packet: GenerateDataKey
+        caption: S3 asks KMS for a short-lived bucket-level key instead of a key for this one object.
+        metrics: { KMS requests: '+1' }
+      - edge: gen
+        reverse: true
+        packet: Bucket key
+        caption: KMS returns the bucket key, and S3 keeps it for a limited time.
+      - edge: audit
+        packet: GenerateDataKey
+        caption: The CloudTrail event shows the bucket ARN instead of the object ARN.
+      - node: s3
+        caption: S3 makes a unique data key for the object from the bucket key and encrypts the object with it.
+        state: { s3: highlighted }
+      - edge: put
+        packet: PutObject
+        caption: More uploads from the same caller get their data keys from the bucket key, with no call to KMS.
+        metrics: { KMS requests: '+0' }
+      - node: s3
+        caption: Fewer calls to KMS cut KMS request costs by up to 99% and keep you further from the KMS quota.
