@@ -510,19 +510,19 @@ test.describe('playing', () => {
     await expect(main.root).toHaveAttribute('data-playing', 'false');
   });
 
-  test('AC-17: stepping by hand while playing restarts the 3600 ms timer', async ({ page }) => {
+  test('AC-17: stepping by hand while playing pauses', async ({ page }) => {
     const main = await openWithClock(page);
     await main.toggle.click();
     await page.clock.runFor(STEP_MS - 600);
     await expectStep(main, 0);
 
     await main.forward.click();
-    await expectStep(main, 1);
-    await page.clock.runFor(STEP_MS - 600);
-    await expectStep(main, 1);
-    await page.clock.runFor(600);
 
-    await expectStep(main, 2);
+    await expectStep(main, 1);
+    await expect(main.root).toHaveAttribute('data-playing', 'false');
+    await expect(main.toggle).toHaveText('Play');
+    await page.clock.runFor(STEP_MS);
+    await expectStep(main, 1);
   });
 });
 
@@ -736,6 +736,8 @@ test.describe('metric pills', () => {
     await expect(captionRegion(main).locator('[data-metric]')).toHaveCount(0);
     await goToStep(main, 0);
     await expect(captionRegion(main).locator('[data-metric]')).toHaveCount(0);
+    await main.reset.click();
+    await expectStep(main, -1);
     await goToStep(main, 2);
     await expect(captionRegion(main).locator('[data-metric]')).toHaveCount(0);
   });
