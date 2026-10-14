@@ -31,6 +31,9 @@ export interface CompileOptions {
 
 type Settings = Required<CompileOptions>;
 
+/** Float noise from the layout is not growth. */
+const GROW_EPSILON = 1e-6;
+
 export const COMPILE_DEFAULTS: Readonly<Settings> = Object.freeze({
   direction: 'right',
   nodeWidth: 136,
@@ -65,6 +68,14 @@ function buildTree(diagram: Diagram): Tree {
   return tree;
 }
 
+/** Each container reads its own spacing options, so groups need them too. */
+function spacingOptions(settings: Settings): Record<string, string> {
+  return {
+    'elk.spacing.nodeNode': String(settings.nodeSpacing),
+    'elk.layered.spacing.nodeNodeBetweenLayers': String(settings.layerSpacing),
+  };
+}
+
 function elkChildren(parent: string | undefined, tree: Tree, settings: Settings): ElkNode[] {
   const groups = (tree.groups.get(parent) ?? []).map((group) => elkGroup(group, tree, settings));
   const nodes = (tree.nodes.get(parent) ?? []).map((node) => ({
@@ -84,6 +95,7 @@ function elkGroup(group: DiagramGroup, tree: Tree, settings: Settings): ElkNode 
   return {
     id: group.id,
     layoutOptions: {
+      ...spacingOptions(settings),
       'elk.padding': `[top=${String(header + padding)},left=${String(padding)},bottom=${String(padding)},right=${String(padding)}]`,
     },
     children,
@@ -101,8 +113,7 @@ function elkGraph(diagram: Diagram, tree: Tree, settings: Settings): ElkNode {
       'elk.json.edgeCoords': 'ROOT',
       'elk.json.shapeCoords': 'PARENT',
       'elk.padding': '[top=0,left=0,bottom=0,right=0]',
-      'elk.spacing.nodeNode': String(settings.nodeSpacing),
-      'elk.layered.spacing.nodeNodeBetweenLayers': String(settings.layerSpacing),
+      ...spacingOptions(settings),
     },
     children: elkChildren(undefined, tree, settings),
     edges: (diagram.edges ?? []).map((edge) => ({
@@ -202,13 +213,26 @@ function buildNode(node: DiagramNode, boxes: Map<string, Box>, settings: Setting
   };
 }
 
-/** Grows each group to the right and down until it contains its children, children first. */
+/** Ids of the groups enclosing an overridden node. */
+function overriddenAncestors(groups: CompiledGroup[], nodes: CompiledNode[]): Set<string> {
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  const ancestors = new Set<string>();
+  for (const node of nodes) {
+    if (!node.overridden) continue;
+    for (let id = node.parent; id !== undefined; id = byId.get(id)?.parent) ancestors.add(id);
+  }
+  return ancestors;
+}
+
+/** Grows those groups to the right and down until they contain their children, children first. */
 function growGroups(groups: CompiledGroup[], nodes: CompiledNode[], padding: number): void {
+  const ancestors = overriddenAncestors(groups, nodes);
   for (const group of [...groups].reverse()) {
+    if (!ancestors.has(group.id)) continue;
     const children = [...groups, ...nodes].filter((child) => child.parent === group.id);
     const width = Math.max(...children.map((child) => child.x + child.width)) + padding;
     const height = Math.max(...children.map((child) => child.y + child.height)) + padding;
-    if (children.length > 0 && (width > group.width || height > group.height)) {
+    if (width > group.width + GROW_EPSILON || height > group.height + GROW_EPSILON) {
       group.width = Math.max(group.width, width);
       group.height = Math.max(group.height, height);
       group.grown = true;
@@ -235,7 +259,8 @@ export async function compile(
   diagram: Diagram,
   options: CompileOptions = {},
 ): Promise<CompiledDiagram> {
-  const settings: Settings = { ...COMPILE_DEFAULTS, ...options };
+  const given = Object.entries(options).filter(([, value]) => value !== undefined);
+  const settings: Settings = { ...COMPILE_DEFAULTS, ...Object.fromEntries(given) };
   const tree = buildTree(diagram);
   const laidOut = await layout(diagram, tree, settings);
 
