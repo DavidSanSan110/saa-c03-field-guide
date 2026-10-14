@@ -75,7 +75,7 @@ export async function prepareDiagram(
   return {
     props: {
       wide: await compile(diagram),
-      compact: await compile(diagram, { direction: 'down' }),
+      compact: await compile(diagram, { direction: 'down', applyPos: false }),
       icons,
       groupIcons,
     },
