@@ -1182,3 +1182,44 @@ describe('checkTestControl: the guardrails script in package.json', () => {
     expect(violations).toEqual([]);
   });
 });
+
+// ---- Spec 008, review round 1: package.json lines that hide a script change -------------------
+
+describe('isTestControlLine: script keys anywhere in the line or written as escapes', () => {
+  test.each([
+    '"scripts": { "guardrails": "echo ok" },',
+    '{"scripts":{"test":"echo ok"}}',
+    '"scripts": {"e2e:ci": "x"}',
+    '"guardrails": "echo ok"',
+    '"test": "x"',
+    '"name": "\\u0041"',
+  ])('AC-11: %s is a test-control line', (line) => {
+    expect(isTestControlLine(line)).toBe(true);
+  });
+
+  test.each([
+    '"lint:guardrails": "x"',
+    '"preguardrails": "x"',
+    '"@field-guide/guardrails": "workspace:*",',
+    '"scripts": { "lint": "eslint ." },',
+    '"description": "two\\nlines"',
+  ])('AC-11: %s is not a test-control line', (line) => {
+    expect(isTestControlLine(line)).toBe(false);
+  });
+
+  test.each([
+    ['lower-case hex', '"guardr\\u0061ils": "echo ok"'],
+    ['upper-case hex', '"\\u0067uardrails": "echo ok"'],
+    ['a test key', '"te\\u0073t": "echo ok"'],
+    ['a minified line', '{"scripts":{"guardr\\u0061ils":"echo ok"}}'],
+  ])('AC-11: a line with a \\u escape (%s) is a test-control line', (_name, line) => {
+    expect(isTestControlLine(line)).toBe(true);
+  });
+
+  test.each(['"pretest": "x"', '"description": "tab\\there"', '"description": "quote \\" inside"'])(
+    'AC-11: %s (no \\u escape, no script key) is not a test-control line',
+    (line) => {
+      expect(isTestControlLine(line)).toBe(false);
+    },
+  );
+});
