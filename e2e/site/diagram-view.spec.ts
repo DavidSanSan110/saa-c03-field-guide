@@ -102,6 +102,10 @@ async function selectScenario(island: Island, label: string, id: string): Promis
   await expect(island.root).toHaveAttribute('data-scenario', id);
 }
 
+function groupHead(island: Island, id: string): Locator {
+  return island.root.locator(`[data-group-head="${id}"]`);
+}
+
 function nodeCard(island: Island, id: string): Locator {
   return island.root.locator(`[data-node-id="${id}"]`);
 }
@@ -236,7 +240,15 @@ test.describe('rendering on desktop', () => {
 
     for (const group of viewFixture.groups ?? []) {
       await expect(groupBox(main, group.id)).toBeVisible();
-      await expect(groupBox(main, group.id).getByText(group.label, { exact: true })).toBeVisible();
+      const head = groupHead(main, group.id);
+      await expect(head).toBeVisible();
+      await expect(head).toContainText(group.label);
+      const headRect = await rectOf(head);
+      const boxRect = await rectOf(groupBox(main, group.id));
+      expect(headRect.x).toBeGreaterThanOrEqual(boxRect.x - 1);
+      expect(headRect.y).toBeGreaterThanOrEqual(boxRect.y - 1);
+      expect(headRect.x).toBeLessThanOrEqual(boxRect.x + boxRect.width + 1);
+      expect(headRect.y).toBeLessThanOrEqual(boxRect.y + boxRect.height + 1);
     }
     for (const node of viewFixture.nodes) {
       await expect(nodeCard(main, node.id)).toBeVisible();
