@@ -1239,3 +1239,56 @@ describe('AC-14: package root exports', () => {
     expect(schemaRoot.diagramSchema.safeParse(exampleDiagram).success).toBe(true);
   });
 });
+
+describe('AC-15: an own __proto__ key in state, initial or metrics is rejected, not dropped', () => {
+  test('AC-15: rejects a step state with an own __proto__ key', () => {
+    expectRejected(
+      make((d) => {
+        stepAt(d, 0).state = bad(JSON.parse('{"__proto__":"failed"}'));
+      }),
+      'state',
+    );
+  });
+
+  test('AC-15: rejects a scenario initial with an own __proto__ key', () => {
+    expectRejected(
+      make((d) => {
+        at(d.scenarios).initial = bad(JSON.parse('{"__proto__":"failed"}'));
+      }),
+      'initial',
+    );
+  });
+
+  test('AC-15: rejects metrics with an own __proto__ key among three entries', () => {
+    expectRejected(
+      make((d) => {
+        stepAt(d, 0).metrics = bad(JSON.parse('{"__proto__":"x","a":1,"b":2,"c":3}'));
+      }),
+      'metrics',
+    );
+  });
+
+  test('AC-15: rejects metrics whose only entry is an own __proto__ key', () => {
+    expectRejected(
+      make((d) => {
+        stepAt(d, 0).metrics = bad(JSON.parse('{"__proto__":"x"}'));
+      }),
+      'metrics',
+    );
+  });
+});
+
+describe('AC-16: a parent chain that runs into a cycle it is not part of', () => {
+  test('AC-16: rejects x -> p -> q -> p and returns', () => {
+    const data = make((d) => {
+      d.groups = [
+        { ...group('x'), parent: 'p' },
+        { ...group('p'), parent: 'q' },
+        { ...group('q'), parent: 'p' },
+      ];
+      for (const n of d.nodes) delete n.group;
+    });
+    expect(() => validateDiagram(data)).not.toThrow();
+    expectRejected(data, 'groups');
+  });
+});
