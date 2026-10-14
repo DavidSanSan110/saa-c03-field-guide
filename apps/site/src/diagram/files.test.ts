@@ -663,3 +663,83 @@ describe('readDiagramFile: ids that are not strings', () => {
     expect(messageOf(() => readDiagramFile(dir, id))).toContain('not a lowercase slug');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review round 2 (AC-22)
+// ---------------------------------------------------------------------------
+
+/** Anchors a..i, each a list of nine aliases to the previous one: 9^8 leaves when expanded. */
+function billionLaughs(): string {
+  const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i'];
+  const lines = ['a: &a [lol, lol, lol, lol, lol, lol, lol, lol, lol]'];
+  for (let index = 1; index < names.length; index += 1) {
+    const previous = `*${names[index - 1]}`;
+    lines.push(`${names[index]}: &${names[index]} [${Array(9).fill(previous).join(', ')}]`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+describe('readDiagramFile and checkDiagramFiles: errors raised when converting to data', () => {
+  const cases: [string, string, string][] = [
+    ['an unresolved alias', 'alias', 'a: *nope\n'],
+    ['a nested-alias "billion laughs" file', 'laughs', billionLaughs()],
+  ];
+
+  test.each(cases)(
+    "AC-22: %s throws a message with the file name and 'not valid YAML'",
+    (_name, id, text) => {
+      const { dir } = makeFolder();
+      write(dir, `${id}.yaml`, text);
+
+      const message = messageOf(() => readDiagramFile(dir, id));
+
+      expect(message).toContain(`${id}.yaml`);
+      expect(message).toContain('not valid YAML');
+    },
+  );
+
+  test.each(cases)('AC-22: the message for %s has no line break', (_name, id, text) => {
+    const { dir } = makeFolder();
+    write(dir, `${id}.yaml`, text);
+
+    expect(isMultiLine(messageOf(() => readDiagramFile(dir, id)))).toBe(false);
+  });
+
+  test.each(cases)(
+    'AC-22: checkDiagramFiles reports %s as one line starting with the file name',
+    async (_name, id, text) => {
+      const { dir } = makeFolder();
+      write(dir, `${id}.yaml`, text);
+
+      const problems = await checkDiagramFiles(dir, iconsOf());
+
+      expect(problems).toHaveLength(1);
+      expect(problems[0]?.startsWith(`${id}.yaml: `)).toBe(true);
+      expect(problems[0]).toContain('not valid YAML');
+      expect(isMultiLine(problems[0] ?? '')).toBe(false);
+    },
+  );
+
+  test('AC-22: both files are reported together, each on its own line, in name order', async () => {
+    const { dir } = makeFolder();
+    write(dir, 'laughs.yaml', billionLaughs());
+    write(dir, 'alias.yaml', 'a: *nope\n');
+    write(dir, 'ok.yaml', diagramYaml('ok'));
+
+    const problems = await checkDiagramFiles(dir, iconsOf());
+
+    expect(problems).toHaveLength(2);
+    expect(problems[0]?.startsWith('alias.yaml: ')).toBe(true);
+    expect(problems[1]?.startsWith('laughs.yaml: ')).toBe(true);
+  });
+
+  test('AC-22: the billion-laughs file is rejected quickly instead of being expanded', () => {
+    const { dir } = makeFolder();
+    write(dir, 'laughs.yaml', billionLaughs());
+    const started = performance.now();
+
+    messageOf(() => readDiagramFile(dir, 'laughs'));
+
+    expect(performance.now() - started).toBeLessThan(2_000);
+  });
+});
