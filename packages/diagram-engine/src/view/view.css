@@ -360,16 +360,8 @@
   --dl-gc: var(--dl-danger);
   --dl-gs: solid;
 }
-/* The header is drawn twice: an invisible placeholder inside the group box (aria-hidden, so the box still
-   holds its label) and the visible one in a layer above the edges (React Flow draws the edges between a
-   group's children above the group itself, so a label inside the box would be crossed by them). */
-.dl-group__header {
-  opacity: 0;
-  height: 30px;
-  padding-left: 38px;
-  font-size: 12px;
-  font-weight: 600;
-}
+/* The group header is drawn in a layer above the edges: React Flow draws the edges between a group's
+   children above the group itself, so a label inside the box would be crossed by them. */
 .dl .react-flow__viewport-portal {
   z-index: 1001;
   pointer-events: none;

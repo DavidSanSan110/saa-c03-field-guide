@@ -98,12 +98,7 @@ function GroupNode({ data }: NodeProps<GroupType>) {
         data-kind={flow.kind}
         data-state={flow.state}
         data-active={String(flow.active)}
-      >
-        {/* Invisible placeholder of the header: the visible one is GroupHeaders, drawn above the edges. */}
-        <div className="dl-group__header" aria-hidden="true">
-          <span className="dl-group__label">{flow.label}</span>
-        </div>
-      </div>
+      />
     </>
   );
 }
@@ -127,6 +122,7 @@ export function GroupHeaders({
           <div
             key={group.id}
             className="dl-group-head"
+            data-group-head={group.id}
             data-kind={group.kind}
             style={{ left: box.x + 1.5, top: box.y + 1.5 }}
           >
