@@ -1,0 +1,13 @@
+---
+import { domains } from '@field-guide/schema';
+---
+
+<ul>
+  {
+    domains.map((domain) => (
+      <li>
+        <a href={`/${domain.slug}/`}>Domain {domain.id}: {domain.title}</a> ({domain.weight}%)
+      </li>
+    ))
+  }
+</ul>

@@ -1,0 +1,21 @@
+---
+import { taskPath, tasksByDomain } from '@field-guide/schema';
+
+interface Props {
+  domain: number;
+}
+
+const { domain } = Astro.props;
+---
+
+<ul>
+  {
+    tasksByDomain(domain).map((task) => (
+      <li>
+        <a href={taskPath(task.id)}>
+          {task.id} {task.title}
+        </a>
+      </li>
+    ))
+  }
+</ul>
