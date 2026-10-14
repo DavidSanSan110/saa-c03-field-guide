@@ -6,7 +6,8 @@
   "description": "Animated diagram engine: layout compiler and scenario player (pure).",
   "exports": {
     ".": "./src/index.ts",
-    "./compile": "./src/compile.ts"
+    "./compile": "./src/compile.ts",
+    "./view": "./src/view/index.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"

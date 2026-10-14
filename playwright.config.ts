@@ -16,5 +16,7 @@ export default defineConfig({
     url: baseURL,
     reuseExistingServer: !process.env['CI'],
     timeout: 180_000,
+    // Injects the /fixtures/diagram/ route of spec 012 into the built site.
+    env: { FIELD_GUIDE_FIXTURES: '1' },
   },
 });
