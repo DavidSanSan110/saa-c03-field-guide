@@ -92,7 +92,7 @@ const SETUP_FILE_NAME =
   /^(.+\.setup|setuptests|setup-tests|test-setup|global-setup|global-teardown)\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
 const TEST_DIR_SETUP_NAME = /^setup\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
 const TEST_CONTROL_LINE =
-  /pass-with-no-tests|passwithnotests|^\s*"(test|coverage|e2e)(:[^"]*)?"\s*:/i;
+  /pass-with-no-tests|passwithnotests|^\s*"(test|coverage|e2e|guardrails)(:[^"]*)?"\s*:/i;
 
 /** True for files that decide which tests run and how strictly (runner configs, setup files, mocks). */
 export function isTestControlPath(path: string): boolean {
