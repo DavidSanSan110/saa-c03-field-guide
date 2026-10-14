@@ -1,0 +1,633 @@
+/* Diagram island (spec 012): the approved B' look. Colours are custom properties on `.dl`,
+   light by default and dark under Starlight's `:root[data-theme='dark']`. */
+
+/* ---------- palette ---------- */
+.dl {
+  --dl-bg: #f2f3f3;
+  --dl-dots: #c6ccd2;
+  --dl-frame: #d5dbdb;
+  --dl-fg: #16191f;
+  --dl-muted: #5f6b7a;
+  --dl-edge: #7d8998;
+  --dl-edge-done: #5f6b7a;
+  --dl-edge-active: #ec7211;
+  --dl-card-bg: #ffffff;
+  --dl-card-border: #d5dbdb;
+  --dl-card-shadow: 0 1px 2px rgb(0 28 36 / 0.12), 0 4px 12px rgb(0 28 36 / 0.06);
+  --dl-ring: #ec7211;
+  --dl-ring-glow: rgb(255 153 0 / 0.22);
+  --dl-packet-bg: #232f3e;
+  --dl-packet-fg: #ffffff;
+  --dl-packet-dot: #ff9900;
+  --dl-bar-bg: #ffffff;
+  --dl-btn-bg: #ffffff;
+  --dl-btn-border: #aab7b8;
+  --dl-accent: #ec7211;
+  --dl-accent-text: #a14a00;
+  --dl-play-bg: #ff9900;
+  --dl-play-fg: #16191f;
+  --dl-danger: #d13212;
+  --dl-log-bg: #16191f;
+  --dl-log-fg: #d5dbdb;
+  --dl-log-dim: #9aa6b2;
+  --dl-log-current: #ffb547;
+  --dl-metric-bg: rgb(255 153 0 / 0.16);
+  --dl-metric-fg: #ffb547;
+}
+:root[data-theme='dark'] .dl {
+  --dl-bg: #0b1220;
+  --dl-dots: #233044;
+  --dl-frame: #233044;
+  --dl-fg: #e6edf3;
+  --dl-muted: #9aa8b8;
+  --dl-edge: #4a5b73;
+  --dl-edge-done: #8ea0b5;
+  --dl-edge-active: #ff9900;
+  --dl-card-bg: #141d2e;
+  --dl-card-border: #2a3a52;
+  --dl-card-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 6px 16px rgb(0 0 0 / 0.3);
+  --dl-ring: #ff9900;
+  --dl-packet-bg: #ff9900;
+  --dl-packet-fg: #0b1220;
+  --dl-packet-dot: #0b1220;
+  --dl-bar-bg: #0f1828;
+  --dl-btn-bg: #141d2e;
+  --dl-btn-border: #3a4a62;
+  --dl-accent-text: #ffb547;
+  --dl-danger: #f0654a;
+  --dl-log-bg: #060b14;
+  --dl-log-dim: #8394a8;
+}
+
+/* ---------- frame ---------- */
+.dl {
+  margin: 1.25rem 0 2rem;
+  border: 1px solid var(--dl-frame);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: var(--dl-bg);
+  color: var(--dl-fg);
+  font-family: var(--sl-font, system-ui, sans-serif);
+}
+.dl-view {
+  background: var(--dl-bg);
+}
+.dl-view:focus-visible {
+  outline: 2px solid var(--dl-accent);
+  outline-offset: -2px;
+}
+.dl-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ---------- scenario tabs ---------- */
+.dl-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.4rem 0.75rem 0;
+  border-bottom: 1px solid var(--dl-frame);
+  background: var(--dl-bar-bg);
+}
+.dl-tabs [role='tab'] {
+  padding: 0.45rem 0.8rem;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--dl-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dl-tabs [role='tab'][aria-selected='true'] {
+  color: var(--dl-fg);
+  font-weight: 600;
+  border-bottom-color: var(--dl-accent);
+}
+.dl-tabs [role='tab']:focus-visible {
+  outline: 2px solid var(--dl-accent);
+  outline-offset: -2px;
+}
+
+/* ---------- canvas ---------- */
+.dl-canvas {
+  position: relative;
+  width: 100%;
+  min-height: 14rem;
+  max-height: 32rem;
+  background-image: radial-gradient(var(--dl-dots) 1px, transparent 1px);
+  background-size: 16px 16px;
+}
+.dl-canvas[data-layout='compact'] {
+  max-height: 75svh;
+}
+.dl .react-flow {
+  background: transparent;
+}
+.dl .react-flow__renderer,
+.dl .react-flow__pane {
+  cursor: default;
+  /* d3-zoom disables touch panning inline; the page must scroll over the canvas. */
+  touch-action: pan-y pinch-zoom !important;
+}
+.dl .react-flow__handle {
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  min-width: 0;
+  min-height: 0;
+  border: 0;
+  pointer-events: none;
+}
+.dl .react-flow__edgelabel-renderer {
+  z-index: 1002;
+}
+.dl .react-flow__attribution {
+  margin: 0;
+  padding: 2px 8px;
+  background: transparent;
+  font-size: 10px;
+}
+.dl .react-flow__attribution a {
+  color: var(--dl-muted);
+  text-decoration: none;
+}
+
+/* ---------- cards ---------- */
+.dl-card {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  text-align: center;
+  color: var(--dl-fg);
+  background: var(--dl-card-bg);
+  border: 1px solid var(--dl-card-border);
+  border-radius: 0.65rem;
+  box-shadow: var(--dl-card-shadow);
+  transition:
+    border-color 0.25s,
+    box-shadow 0.25s;
+}
+.dl-card__icon {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+.dl-card__icon img {
+  display: block;
+  width: 40px;
+  height: 40px;
+}
+.dl-card__label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.dl-card__sub {
+  display: block;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--dl-muted);
+}
+.dl-canvas[data-layout='compact'] .dl-card__label {
+  font-size: 16px;
+}
+
+.dl-only-dark {
+  display: none !important;
+}
+:root[data-theme='dark'] .dl-only-dark {
+  display: block !important;
+}
+:root[data-theme='dark'] .dl-only-light {
+  display: none !important;
+}
+
+/* ---------- element states (cards and groups) ---------- */
+.dl [data-state='hidden'] {
+  display: none;
+}
+.dl-card[data-active='true'],
+.dl-card[data-state='highlighted'],
+.dl-group[data-active='true'],
+.dl-group[data-state='highlighted'] {
+  border-color: var(--dl-ring);
+  box-shadow:
+    0 0 0 3px var(--dl-ring-glow),
+    var(--dl-card-shadow);
+}
+.dl-group[data-active='true'],
+.dl-group[data-state='highlighted'] {
+  box-shadow: 0 0 0 3px var(--dl-ring-glow);
+}
+.dl-card[data-state='failed'],
+.dl-group[data-state='failed'] {
+  border-color: var(--dl-danger);
+}
+.dl-card[data-state='failed'] .dl-card__icon {
+  opacity: 0.5;
+  filter: grayscale(0.7);
+}
+.dl-card[data-state='failed'] .dl-card__label {
+  color: var(--dl-muted);
+}
+.dl-card[data-state='appearing'],
+.dl-group[data-state='appearing'] {
+  outline: 2px dashed var(--dl-accent);
+  outline-offset: 2px;
+  animation: dl-appear 0.5s ease-out;
+}
+@keyframes dl-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.dl-pill {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.dl-pill--failed {
+  background: #d13212;
+  color: #ffffff;
+}
+.dl-card > .dl-pill {
+  position: absolute;
+  top: -0.55rem;
+  right: -0.4rem;
+}
+
+/* ---------- groups (AWS group conventions) ---------- */
+.dl-group {
+  --dl-gc: #7d8998;
+  --dl-gs: dashed;
+  --dl-gf: transparent;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 1.5px var(--dl-gs) var(--dl-gc);
+  background: var(--dl-gf);
+  color: var(--dl-fg);
+}
+.dl-group[data-kind='cloud'] {
+  --dl-gc: #242f3e;
+  --dl-gs: solid;
+}
+.dl-group[data-kind='account'] {
+  --dl-gc: #e7157b;
+  --dl-gs: solid;
+}
+.dl-group[data-kind='region'],
+.dl-group[data-kind='az'] {
+  --dl-gc: #00a4a6;
+}
+.dl-group[data-kind='vpc'] {
+  --dl-gc: #8c4fff;
+  --dl-gs: solid;
+}
+.dl-group[data-kind='public-subnet'] {
+  --dl-gs: none;
+  --dl-gf: #f2f6e8;
+}
+.dl-group[data-kind='private-subnet'] {
+  --dl-gs: none;
+  --dl-gf: #e6f6f7;
+}
+.dl-group[data-kind='auto-scaling-group'] {
+  --dl-gc: #ed7100;
+}
+.dl-group[data-kind='security-group'] {
+  --dl-gc: #dd344c;
+  --dl-gs: solid;
+}
+.dl-group[data-kind='on-premises'] {
+  --dl-gs: solid;
+}
+:root[data-theme='dark'] .dl-group[data-kind='cloud'] {
+  --dl-gc: #aab7c4;
+}
+:root[data-theme='dark'] .dl-group[data-kind='account'] {
+  --dl-gc: #ff4fa0;
+}
+:root[data-theme='dark'] .dl-group[data-kind='region'],
+:root[data-theme='dark'] .dl-group[data-kind='az'] {
+  --dl-gc: #01bfc0;
+}
+:root[data-theme='dark'] .dl-group[data-kind='vpc'] {
+  --dl-gc: #a97bff;
+}
+:root[data-theme='dark'] .dl-group[data-kind='public-subnet'] {
+  --dl-gf: rgb(122 161 16 / 0.16);
+}
+:root[data-theme='dark'] .dl-group[data-kind='private-subnet'] {
+  --dl-gf: rgb(1 191 192 / 0.14);
+}
+:root[data-theme='dark'] .dl-group[data-kind='auto-scaling-group'] {
+  --dl-gc: #ff9900;
+}
+:root[data-theme='dark'] .dl-group[data-kind='security-group'] {
+  --dl-gc: #ff6b7f;
+}
+:root[data-theme='dark'] .dl-group[data-kind='on-premises'],
+:root[data-theme='dark'] .dl-group[data-kind='generic'] {
+  --dl-gc: #9aa8b8;
+}
+.dl-group[data-state='failed'] {
+  --dl-gc: var(--dl-danger);
+  --dl-gs: solid;
+}
+.dl-group__header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 30px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dl-group__header img {
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+.dl-group__label {
+  line-height: 1.2;
+}
+
+/* ---------- edges ---------- */
+.dl-edge__line {
+  stroke: var(--dl-edge);
+  stroke-width: 1.5;
+  transition:
+    stroke 0.25s,
+    stroke-width 0.25s;
+}
+.dl-edge__arrow {
+  fill: var(--dl-edge-done);
+}
+.dl-edge--idle .dl-edge__line {
+  stroke-dasharray: 5 5;
+}
+.dl-edge--done .dl-edge__line {
+  stroke: var(--dl-edge-done);
+}
+.dl-edge--active .dl-edge__line {
+  stroke: var(--dl-edge-active);
+  stroke-width: 2.5;
+  stroke-dasharray: 8 6;
+  animation: dl-dash 0.6s linear infinite;
+  filter: drop-shadow(0 0 4px rgb(255 153 0 / 0.55));
+}
+.dl-edge--active .dl-edge__arrow {
+  fill: var(--dl-edge-active);
+}
+.dl-edge--broken .dl-edge__line {
+  stroke: var(--dl-danger);
+  stroke-width: 2;
+  stroke-dasharray: 6 5;
+}
+.dl-edge--broken .dl-edge__arrow {
+  fill: var(--dl-danger);
+}
+@keyframes dl-dash {
+  to {
+    stroke-dashoffset: -14;
+  }
+}
+.dl-edge-label,
+.dl-edge-cross {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.dl-edge-label {
+  padding: 0 0.3rem;
+  border-radius: 3px;
+  background: var(--dl-bg);
+  color: var(--dl-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+.dl-edge-cross {
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--dl-danger);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+/* ---------- packet ---------- */
+.dl-packet {
+  position: absolute;
+  left: 0;
+  top: 0;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.55rem 0.2rem 0.45rem;
+  border-radius: 999px;
+  background: var(--dl-packet-bg);
+  color: var(--dl-packet-fg);
+  font-family: var(--sl-font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+  offset-anchor: center;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.25);
+}
+.dl-packet__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dl-packet-dot);
+}
+
+/* ---------- control bar ---------- */
+.dl-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.6rem 0.9rem;
+  border-top: 1px solid var(--dl-frame);
+  background: var(--dl-bar-bg);
+}
+.dl-controls {
+  display: flex;
+  gap: 0.35rem;
+}
+.dl-controls button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-width: 2.25rem;
+  height: 2.1rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--dl-btn-border);
+  border-radius: 0.5rem;
+  background: var(--dl-btn-bg);
+  color: var(--dl-fg);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dl-controls svg {
+  fill: currentColor;
+}
+.dl-controls button[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: default;
+}
+.dl-controls button:focus-visible {
+  outline: 2px solid var(--dl-accent);
+  outline-offset: 1px;
+}
+.dl-controls .dl-play {
+  padding: 0 0.9rem;
+  border-color: var(--dl-play-bg);
+  background: var(--dl-play-bg);
+  color: var(--dl-play-fg);
+  font-weight: 600;
+}
+.dl-progress {
+  display: flex;
+  flex: 1;
+  gap: 0.3rem;
+  min-width: 6rem;
+}
+.dl-progress span {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--dl-frame);
+  transition: background 0.25s;
+}
+.dl-progress .is-done {
+  background: var(--dl-edge-done);
+}
+.dl-progress .is-current {
+  background: var(--dl-accent);
+}
+.dl-count {
+  font-size: 12px;
+  color: var(--dl-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- log and caption ---------- */
+.dl-log {
+  min-height: 6.5rem;
+  padding: 0.75rem 1rem 0.9rem;
+  background: var(--dl-log-bg);
+  color: var(--dl-log-fg);
+  font-size: 13px;
+}
+.dl-log__line {
+  margin: 0;
+  color: var(--dl-log-dim);
+  font-family: var(--sl-font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.dl-log__line code {
+  padding: 0;
+  background: none;
+  color: inherit;
+  font-size: inherit;
+  white-space: pre-wrap;
+}
+.dl-log__line.is-current {
+  color: var(--dl-log-current);
+}
+.dl-log__caption {
+  margin: 0.6rem 0 0;
+  min-height: 1.5em;
+  font-size: 14.5px;
+  line-height: 1.5;
+  color: var(--dl-log-fg);
+}
+.dl-metrics {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-left: 0.5rem;
+  vertical-align: 1px;
+}
+.dl-metric {
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--dl-metric-bg);
+  color: var(--dl-metric-fg);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dl-metric__k {
+  font-weight: 400;
+}
+
+/* ---------- text fallback (plain HTML next to the island) ---------- */
+.dl-text {
+  padding: 0.5rem 1rem 0.75rem;
+  border-top: 1px solid var(--dl-frame);
+  background: var(--dl-bar-bg);
+  font-size: 13px;
+  color: var(--dl-muted);
+}
+.dl-text summary {
+  cursor: pointer;
+}
+.dl-text p {
+  margin: 0.75rem 0 0;
+  font-weight: 600;
+  color: var(--dl-fg);
+}
+.dl-text ol {
+  margin: 0.25rem 0 0;
+  padding-left: 1.25rem;
+  color: var(--dl-fg);
+  line-height: 1.5;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dl-edge--active .dl-edge__line,
+  .dl-card[data-state='appearing'],
+  .dl-group[data-state='appearing'] {
+    animation: none;
+  }
+}
