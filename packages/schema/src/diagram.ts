@@ -91,7 +91,18 @@ const nonEmpty = z.string().refine((value) => value.trim().length > 0, {
 
 const slug = z.string().regex(SLUG_PATTERN, 'must be a lowercase slug');
 const elementState = z.enum(ELEMENT_STATES);
-const stateMap = z.record(z.string(), elementState);
+
+/** z.record silently drops an own `__proto__` key, so it is rejected on the raw input first. */
+const noProtoKey = z
+  .unknown()
+  .refine(
+    (value) => typeof value !== 'object' || value === null || !Object.hasOwn(value, '__proto__'),
+    {
+      message: "unknown key '__proto__'",
+    },
+  );
+
+const stateMap = noProtoKey.pipe(z.record(z.string(), elementState));
 
 const groupSchema = z.strictObject({
   id: slug,
@@ -116,8 +127,8 @@ const edgeSchema = z.strictObject({
   label: nonEmpty.exactOptional(),
 });
 
-const metricsSchema = z
-  .record(nonEmpty, z.union([nonEmpty, z.number()]))
+const metricsSchema = noProtoKey
+  .pipe(z.record(nonEmpty, z.union([nonEmpty, z.number()])))
   .refine(
     (metrics) => Object.keys(metrics).length >= 1 && Object.keys(metrics).length <= MAX_METRICS,
     {
