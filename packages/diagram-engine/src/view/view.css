@@ -136,11 +136,14 @@
   max-height: 75svh;
 }
 /* Before hydration a narrow island already reserves the compact layout's box (same clamps as after), so
-   the page does not move when the compact layout takes over. */
-@container dl-view (max-width: 559.98px) {
-  .dl-view:not([data-hydrated]) .dl-canvas {
-    aspect-ratio: var(--dl-caw) / var(--dl-cah);
-    max-height: 75svh;
+   the page does not move when the compact layout takes over. Without scripting nothing takes over, so the
+   wide ratio stays (no big empty box on a phone). */
+@media (scripting: enabled) {
+  @container dl-view (max-width: 559.98px) {
+    .dl-view:not([data-hydrated]) .dl-canvas {
+      aspect-ratio: var(--dl-caw) / var(--dl-cah);
+      max-height: 75svh;
+    }
   }
 }
 .dl-flow {
