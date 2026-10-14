@@ -903,3 +903,129 @@ describe('package root', () => {
     );
   });
 });
+
+describe('review round 1: goto with odd numbers', () => {
+  test('AC-16: goto rounds a fractional step down before clamping', () => {
+    const d = makeDiagram();
+    expect(playerReducer(d, initPlayer(d), goto(1.7)).step).toBe(1);
+    expect(playerReducer(d, pausedAt(d, 3), goto(-0.5)).step).toBe(-1);
+  });
+
+  test('AC-16: goto Infinity clamps to the last step', () => {
+    const d = makeDiagram();
+    expect(playerReducer(d, initPlayer(d), goto(Infinity)).step).toBe(LAST);
+  });
+
+  test('AC-16: goto -Infinity clamps to -1', () => {
+    const d = makeDiagram();
+    expect(playerReducer(d, pausedAt(d, 3), goto(-Infinity)).step).toBe(-1);
+  });
+
+  test('AC-16: goto NaN returns the same object', () => {
+    const d = makeDiagram();
+    const state = pausedAt(d, 2);
+    expect(playerReducer(d, state, goto(NaN))).toBe(state);
+  });
+});
+
+describe('review round 1: statesAt clamps its step', () => {
+  test('AC-17: a step below -1 gives the same states as -1', () => {
+    const d = makeDiagram();
+    expect(statesAt(d, 'main', -5)).toEqual(statesAt(d, 'main', -1));
+    expect(statesAt(d, 'main', -5)).toEqual(normalWith({ db: 'hidden' }));
+  });
+
+  test('AC-17: a step past the end gives the same states as the last step', () => {
+    const d = makeDiagram();
+    expect(statesAt(d, 'main', 99)).toEqual(statesAt(d, 'main', LAST));
+    expect(statesAt(d, 'second', 99)).toEqual(statesAt(d, 'second', 1));
+  });
+});
+
+describe('review round 1: nodes-only diagram', () => {
+  function makeNodesOnly(): Diagram {
+    return {
+      id: 'nodes-only',
+      title: 'Nodes only',
+      nodes: [
+        { id: 'a', icon: 'user', label: 'A' },
+        { id: 'b', icon: 'ec2', label: 'B' },
+      ],
+      scenarios: [
+        {
+          id: 'only',
+          label: 'Only',
+          steps: [
+            { node: 'a', caption: 'First', state: { a: 'highlighted' } },
+            { node: 'b', caption: 'Second' },
+          ],
+        },
+      ],
+    };
+  }
+
+  test('AC-18: the nodes-only diagram is valid and has no groups or edges keys', () => {
+    const d = makeNodesOnly();
+    expect(validateDiagram(d).ok).toBe(true);
+    expect('groups' in d).toBe(false);
+    expect('edges' in d).toBe(false);
+  });
+
+  test('AC-18: initPlayer, next and viewPlayer work and list exactly the node ids', () => {
+    const d = makeNodesOnly();
+    const initial = initPlayer(d);
+    expect(initial).toStrictEqual({ scenario: 'only', step: -1, playing: false, run: 0 });
+    const state = playerReducer(d, initial, next);
+    expect(state.step).toBe(0);
+    const view = viewPlayer(d, state);
+    expect(Object.keys(view.states).sort()).toEqual(['a', 'b']);
+    expect(view.states).toEqual({ a: 'highlighted', b: 'normal' });
+  });
+
+  test('AC-18: statesAt works on the nodes-only diagram', () => {
+    const d = makeNodesOnly();
+    expect(statesAt(d, 'only', -1)).toEqual({ a: 'normal', b: 'normal' });
+  });
+});
+
+describe('review round 1: replay at the last step', () => {
+  test('AC-19: play at step 0 of a 1-step scenario returns a new state with run + 1', () => {
+    const d = makeDiagram();
+    const atZero = run(d, initPlayer(d, 'single'), next);
+    expect(atZero).toStrictEqual({ scenario: 'single', step: 0, playing: false, run: 1 });
+    const replayed = playerReducer(d, atZero, play);
+    expect(replayed).not.toBe(atZero);
+    expect(replayed).toStrictEqual({ scenario: 'single', step: 0, playing: false, run: 2 });
+  });
+
+  test('AC-19: toggle at step 0 of a 1-step scenario also replays with run + 1', () => {
+    const d = makeDiagram();
+    const atZero = run(d, initPlayer(d, 'single'), next);
+    expect(playerReducer(d, atZero, toggle).run).toBe(atZero.run + 1);
+  });
+});
+
+describe('review round 1: unknown action', () => {
+  test('AC-20: an action with an unknown type returns the same state object', () => {
+    const d = makeDiagram();
+    const state = pausedAt(d, 2);
+    const unknownAction = { type: 'explode' } as unknown as PlayerAction;
+    expect(playerReducer(d, state, unknownAction)).toBe(state);
+  });
+
+  test('AC-20: an unknown action while playing returns the same state object', () => {
+    const d = makeDiagram();
+    const state = playingAt(d, 1);
+    const unknownAction = { type: 'rewind', step: 0 } as unknown as PlayerAction;
+    expect(playerReducer(d, state, unknownAction)).toBe(state);
+  });
+});
+
+describe('review round 1: packet without a label', () => {
+  test('AC-21: at an edge step without packet the packet is exactly { edge, reverse }', () => {
+    const d = makeDiagram();
+    const view = viewPlayer(d, pausedAt(d, LAST));
+    expect(view.packet).toStrictEqual({ edge: 'e-query', reverse: false });
+    expect(view.packet).not.toHaveProperty('label');
+  });
+});
