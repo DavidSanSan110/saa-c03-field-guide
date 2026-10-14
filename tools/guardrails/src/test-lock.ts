@@ -97,8 +97,10 @@ const TEST_CONTROL_LINE = new RegExp(
     // A script key anywhere in the line (not only at its start: `"scripts": { "test": "x" }`).
     // The opening quote must come right before the name, so `"pretest"` or `"lint:test"` are not keys.
     String.raw`"(test|coverage|e2e|guardrails)(:[^"]*)?"\s*:`,
-    // JSON decodes `"test"` to `test`: an escape could hide a key, and package.json needs none.
+    // JSON decodes `"t\u0065st"` to `test`: an escape could hide a key, and package.json needs none.
     String.raw`\\u[0-9a-f]{4}`,
+    // JSON allows the colon on the line after its key, and the last duplicate key wins.
+    String.raw`^\s*:`,
   ].join('|'),
   'i',
 );
