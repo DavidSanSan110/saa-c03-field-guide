@@ -215,7 +215,8 @@ function scenarioOf(d: Diagram, id: string): DiagramScenario | undefined {
 /** What the view draws for a compiled diagram at a player view. */
 export function toFlowModel(g: CompiledDiagram, view: PlayerView): FlowModel {
   const states = effectiveStates(g.diagram, view.states);
-  const stateOf = (id: string): ElementState => states[id] ?? 'normal';
+  const stateOf = (kind: 'group' | 'node' | 'edge', id: string): ElementState =>
+    displayState(kind, states[id] ?? 'normal');
   const boxes = absoluteBoxes(g);
   const isTarget = (kind: 'node' | 'group', id: string): boolean =>
     view.target?.kind === kind && view.target.id === id;
@@ -236,7 +237,7 @@ export function toFlowModel(g: CompiledDiagram, view: PlayerView): FlowModel {
       label: group.label,
       kind: group.kind,
       depth: group.depth,
-      state: stateOf(group.id),
+      state: stateOf('group', group.id),
       active: isTarget('group', group.id),
     })),
     nodes: g.nodes.map((node) => ({
@@ -249,7 +250,7 @@ export function toFlowModel(g: CompiledDiagram, view: PlayerView): FlowModel {
       label: node.label,
       ...(node.sub === undefined ? {} : { sub: node.sub }),
       icon: node.icon,
-      state: stateOf(node.id),
+      state: stateOf('node', node.id),
       active: isTarget('node', node.id),
     })),
     edges: g.edges.map((edge) => {
@@ -263,7 +264,7 @@ export function toFlowModel(g: CompiledDiagram, view: PlayerView): FlowModel {
         ...(edge.label === undefined ? {} : { label: edge.label }),
         points: edge.points ?? directLine(from, to),
         status: active ? 'active' : doneEdges.has(edge.id) ? 'done' : 'idle',
-        state: stateOf(edge.id),
+        state: stateOf('edge', edge.id),
         ...(active && view.packet !== undefined
           ? {
               packet: {
@@ -350,14 +351,51 @@ export interface DiagramStructure {
   connections: string[];
 }
 
-/** Interface stub (spec 012, review round 2): no names yet. */
-export const GROUP_KIND_NAMES = Object.freeze({}) as Readonly<Record<GroupKind, string>>;
+/** How a group kind is named in text (the text structure of a diagram). */
+export const GROUP_KIND_NAMES: Readonly<Record<GroupKind, string>> = Object.freeze({
+  cloud: 'AWS Cloud',
+  account: 'AWS account',
+  region: 'Region',
+  az: 'Availability Zone',
+  vpc: 'VPC',
+  'public-subnet': 'Public subnet',
+  'private-subnet': 'Private subnet',
+  'auto-scaling-group': 'Auto Scaling group',
+  'security-group': 'Security group',
+  'on-premises': 'On-premises',
+  generic: 'Group',
+});
 
-/* eslint-disable @typescript-eslint/no-unused-vars -- interface stubs: the implementation comes after the tests */
+/** The diagram as nested text for assistive technology: elements by containment, then the connections. */
 export function textStructure(d: Diagram): DiagramStructure {
-  throw new Error('not implemented');
+  const groups = d.groups ?? [];
+  const labels = new Map([...groups, ...d.nodes].map((element) => [element.id, element.label]));
+  const itemsIn = (parent: string | undefined): StructureItem[] => [
+    ...groups
+      .filter((group) => group.parent === parent)
+      .map((group) => ({
+        text: `${group.label} (${GROUP_KIND_NAMES[group.kind]})`,
+        children: itemsIn(group.id),
+      })),
+    ...d.nodes
+      .filter((node) => node.group === parent)
+      .map((node) => ({
+        text: node.sub === undefined ? node.label : `${node.label} (${node.sub})`,
+        children: [],
+      })),
+  ];
+  const labelOf = (id: string): string => labels.get(id) ?? id;
+  return {
+    elements: itemsIn(undefined),
+    connections: (d.edges ?? []).map((edge) => {
+      const route = `${labelOf(edge.from)} → ${labelOf(edge.to)}`;
+      return edge.label === undefined ? route : `${route}: ${edge.label}`;
+    }),
+  };
 }
 
+/** Every state has a look on every element: an edge that failed is shown as broken, a node or group that is broken as failed. */
 export function displayState(kind: 'group' | 'node' | 'edge', state: ElementState): ElementState {
-  throw new Error('not implemented');
+  if (kind === 'edge') return state === 'failed' ? 'broken' : state;
+  return state === 'broken' ? 'failed' : state;
 }
