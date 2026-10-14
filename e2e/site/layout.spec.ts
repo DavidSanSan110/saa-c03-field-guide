@@ -78,3 +78,21 @@ test.describe('404 page', () => {
     await expectFooter(page);
   });
 });
+
+const LICENCE_LINE = 'Licensed MIT (code) and CC BY-SA 4.0 (content).';
+
+test.describe('licence line', () => {
+  for (const { name, path } of [...LAYOUT_PAGES, NOT_FOUND_PAGE]) {
+    test(`AC-15: the footer licence line reads without run-together words on the ${name} (${path})`, async ({
+      page,
+    }) => {
+      await page.goto(path);
+
+      const footer = page.locator('footer', { hasText: DISCLAIMER_TEXT }).first();
+      const line = footer.getByText(/^Licensed/);
+      const text = ((await line.textContent()) ?? '').replace(/\s+/g, ' ').trim();
+
+      expect(text).toBe(LICENCE_LINE);
+    });
+  }
+});

@@ -161,3 +161,24 @@ test.describe('mobile navigation', () => {
     );
   });
 });
+
+test.describe('domain pages do not leak other domains', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  for (const domain of domains) {
+    test(`AC-8: the domain ${String(domain.id)} page links to no task of another domain`, async ({
+      page,
+    }) => {
+      await page.goto(`/d${String(domain.id)}/`);
+      await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+
+      const links = await readLinks(page.getByRole('main').locator('a:not(footer a)'));
+      const foreign = links.filter(
+        (link) =>
+          /^\/d[1-4]\/.+/.test(link.href) && !link.href.startsWith(`/d${String(domain.id)}/`),
+      );
+
+      expect(foreign).toEqual([]);
+    });
+  }
+});

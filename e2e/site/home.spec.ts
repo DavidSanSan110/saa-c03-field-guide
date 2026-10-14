@@ -48,3 +48,26 @@ test.describe('home page', () => {
     });
   }
 });
+
+test.describe('home page domain list', () => {
+  for (const [index, domain] of domains.entries()) {
+    const weight = weights[index] ?? '';
+
+    test(`AC-5: domain ${String(domain.id)} shows its own ${weight} weight next to its link`, async ({
+      page,
+    }) => {
+      await page.goto('/');
+
+      const item = page
+        .getByRole('main')
+        .getByRole('link', { name: domain.title })
+        .first()
+        .locator('xpath=ancestor::li[1]');
+
+      await expect(item).toContainText(weight);
+      for (const other of weights.filter((candidate) => candidate !== weight)) {
+        await expect(item).not.toContainText(other);
+      }
+    });
+  }
+});
