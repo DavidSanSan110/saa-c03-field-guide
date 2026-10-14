@@ -11,19 +11,22 @@ interface Props {
   diagram: unknown;
 }
 
-const { props, fallback, id } = await prepareDiagram(Astro.props.diagram, {
+// Taken before the await, so repeated diagrams get their ids in document order. One request object per
+// rendered page, so the ids stay unique even if a diagram is used twice.
+const input: unknown = Astro.props.diagram;
+const inputId = typeof input === 'object' && input !== null ? (input as { id?: unknown }).id : undefined;
+const uid = instanceId(Astro.request, typeof inputId === 'string' ? inputId : '(unknown)');
+
+const { props, fallback, id } = await prepareDiagram(input, {
   iconExists: (publicPath) => existsSync(join(__FIELD_GUIDE_PUBLIC_DIR__, publicPath)),
 });
-
-// One request object per rendered page: the ids stay unique even if a diagram is used twice.
-const uid = instanceId(Astro.request, id);
 
 const stepText = (step: { caption: string; metrics?: string }) =>
   step.metrics === undefined ? step.caption : `${step.caption} (${step.metrics})`;
 ---
 
 <figure class="dl not-content" data-diagram={id}>
-  <!-- Only the text fallback is searchable; the island holds the same words as UI chrome. -->
+  {/* Only the text fallback is searchable; the island holds the same words as UI chrome. */}
   <div data-pagefind-ignore>
     <DiagramView client:visible {...props} />
   </div>
