@@ -1,6 +1,39 @@
 ---
-// Animated diagram (spec 012). Interface stub: renders nothing yet.
+// An animated diagram (spec 012): the React island plus its text fallback. The diagram is compiled
+// here, at build time, so a broken diagram or a missing icon fails the build.
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { DiagramView } from '@field-guide/diagram-engine/view';
+import { prepareDiagram } from '../diagram/prepare.ts';
+
 interface Props {
   diagram: unknown;
 }
+
+const publicDir = join(process.cwd(), 'public');
+const { props, fallback, id } = await prepareDiagram(Astro.props.diagram, {
+  iconExists: (publicPath) => existsSync(join(publicDir, publicPath)),
+});
+
+const stepText = (step: { caption: string; metrics?: string }) =>
+  step.metrics === undefined ? step.caption : `${step.caption} (${step.metrics})`;
 ---
+
+<figure class="dl not-content" data-diagram={id}>
+  <DiagramView client:visible {...props} />
+  <details class="dl-text">
+    <summary>Steps as text</summary>
+    {
+      fallback.map((scenario) => (
+        <>
+          <p id={`${id}-${scenario.id}-label`}>{scenario.label}</p>
+          <ol aria-labelledby={`${id}-${scenario.id}-label`}>
+            {scenario.steps.map((step) => (
+              <li>{stepText(step)}</li>
+            ))}
+          </ol>
+        </>
+      ))
+    }
+  </details>
+</figure>

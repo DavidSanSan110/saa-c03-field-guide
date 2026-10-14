@@ -1,26 +1,12 @@
 // Build-time preparation of a diagram for the island (spec 012). Runs at build only.
 import { textFallback } from '@field-guide/diagram-engine';
-import type { CompiledDiagram, FallbackScenario } from '@field-guide/diagram-engine';
+import type { FallbackScenario } from '@field-guide/diagram-engine';
 import { compile } from '@field-guide/diagram-engine/compile';
+import type { DiagramViewProps, IconSource } from '@field-guide/diagram-engine/view';
 import { validateDiagram } from '@field-guide/schema';
 import type { GroupKind } from '@field-guide/schema';
 
-/** URLs under /diagram-icons/. */
-export interface IconSource {
-  light: string;
-  dark?: string;
-}
-
-export interface DiagramViewProps {
-  /** compile(d) */
-  wide: CompiledDiagram;
-  /** compile(d, { direction: 'down' }) */
-  compact: CompiledDiagram;
-  /** Every node icon slug the diagram uses. */
-  icons: Record<string, IconSource>;
-  /** Every group kind the diagram uses that has an icon. */
-  groupIcons: Record<string, IconSource>;
-}
+export type { DiagramViewProps, IconSource };
 
 /** The group kinds that have an icon file under `public/diagram-icons/groups/`. */
 export const GROUP_ICON_KINDS: readonly GroupKind[] = [

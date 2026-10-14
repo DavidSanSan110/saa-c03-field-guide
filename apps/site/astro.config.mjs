@@ -1,7 +1,27 @@
 // @ts-check
+import react from '@astrojs/react';
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
+import { fileURLToPath } from 'node:url';
+import { shouldInjectFixtures } from './src/diagram/fixtures-route.ts';
 import { buildSidebar } from './src/sidebar.ts';
+
+// The diagram view's test page (spec 012): only with FIELD_GUIDE_FIXTURES=1 or in dev, never in production.
+/** @type {import('astro').AstroIntegration} */
+const diagramFixtures = {
+  name: 'diagram-fixtures',
+  hooks: {
+    'astro:config:setup': ({ command, injectRoute }) => {
+      if (!shouldInjectFixtures(process.env, command)) return;
+      injectRoute({
+        pattern: '/fixtures/diagram/',
+        entrypoint: fileURLToPath(
+          new URL('../../e2e/fixtures/diagram-page.astro', import.meta.url),
+        ),
+      });
+    },
+  },
+};
 
 export default defineConfig({
   integrations: [
@@ -22,5 +42,7 @@ export default defineConfig({
         Footer: './src/components/Footer.astro',
       },
     }),
+    react(),
+    diagramFixtures,
   ],
 });
