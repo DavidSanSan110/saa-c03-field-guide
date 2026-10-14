@@ -1,0 +1,14 @@
+---
+// Test page for the diagram view (spec 012), injected as /fixtures/diagram/ when
+// FIELD_GUIDE_FIXTURES=1 or in dev. Never part of a production build.
+import StarlightPage from '../../apps/site/node_modules/@astrojs/starlight/dist/components/StarlightPage.astro';
+import Diagram from '../../apps/site/src/components/Diagram.astro';
+import { viewFixture, viewFixtureMini } from './view-fixture.ts';
+import { viewFixtureStates } from './view-fixture.ts';
+---
+
+<StarlightPage frontmatter={{ title: 'Diagram view fixtures', pagefind: false }}>
+  <Diagram diagram={viewFixture} />
+  <Diagram diagram={viewFixtureMini} />
+  <Diagram diagram={viewFixtureStates} />
+</StarlightPage>

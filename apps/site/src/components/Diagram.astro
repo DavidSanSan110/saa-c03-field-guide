@@ -1,0 +1,71 @@
+---
+// An animated diagram (spec 012): the React island plus its text fallback. The diagram is compiled
+// here, at build time, so a broken diagram or a missing icon fails the build.
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { textStructure } from '@field-guide/diagram-engine';
+import { DiagramView } from '@field-guide/diagram-engine/view';
+import { instanceId } from '../diagram/instance.ts';
+import { prepareDiagram } from '../diagram/prepare.ts';
+import StructureList from './StructureList.astro';
+
+interface Props {
+  diagram: unknown;
+}
+
+// Taken before the await, so repeated diagrams get their ids in document order. One request object per
+// rendered page, so the ids stay unique even if a diagram is used twice.
+const input: unknown = Astro.props.diagram;
+const inputId = typeof input === 'object' && input !== null ? (input as { id?: unknown }).id : undefined;
+const uid = instanceId(Astro.request, typeof inputId === 'string' ? inputId : '(unknown)');
+
+const { props, fallback, id } = await prepareDiagram(input, {
+  iconExists: (publicPath) => existsSync(join(__FIELD_GUIDE_PUBLIC_DIR__, publicPath)),
+});
+
+const structure = textStructure(props.wide.diagram);
+
+const stepText = (step: { caption: string; metrics?: string }) =>
+  step.metrics === undefined ? step.caption : `${step.caption} (${step.metrics})`;
+---
+
+<figure class="dl not-content" data-diagram={id}>
+  {/* The canvas is hidden from assistive technology: this block says what it shows. */}
+  <div class="dl-sr-only" data-diagram-structure>
+    <p id={`${uid}-elements`}>Diagram elements</p>
+    <ul aria-labelledby={`${uid}-elements`}>
+      <StructureList items={structure.elements} />
+    </ul>
+    {
+      structure.connections.length > 0 && (
+        <>
+          <p id={`${uid}-connections`}>Connections</p>
+          <ul aria-labelledby={`${uid}-connections`}>
+            {structure.connections.map((connection) => (
+              <li>{connection}</li>
+            ))}
+          </ul>
+        </>
+      )
+    }
+  </div>
+  {/* Only the text fallback is searchable; the island holds the same words as UI chrome. */}
+  <div data-pagefind-ignore>
+    <DiagramView client:visible {...props} />
+  </div>
+  <details class="dl-text">
+    <summary>Steps as text</summary>
+    {
+      fallback.map((scenario) => (
+        <>
+          <p id={`${uid}-${scenario.id}-label`}>{scenario.label}</p>
+          <ol aria-labelledby={`${uid}-${scenario.id}-label`}>
+            {scenario.steps.map((step) => (
+              <li>{stepText(step)}</li>
+            ))}
+          </ol>
+        </>
+      ))
+    }
+  </details>
+</figure>

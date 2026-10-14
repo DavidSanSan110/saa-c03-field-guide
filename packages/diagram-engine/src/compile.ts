@@ -27,9 +27,11 @@ export interface CompileOptions {
   nodeSpacing?: number;
   /** Default 72: between layers. */
   layerSpacing?: number;
+  /** Default true; false ignores every `pos` (the layout is ELK's alone). */
+  applyPos?: boolean;
 }
 
-type Settings = Required<CompileOptions>;
+type Settings = Required<Omit<CompileOptions, 'applyPos'>>;
 
 /** Float noise from the layout is not growth. */
 const GROW_EPSILON = 1e-6;
@@ -255,17 +257,27 @@ function buildEdge(
   };
 }
 
+/** The node without its manual position. */
+function withoutPos(node: DiagramNode): DiagramNode {
+  const copy = { ...node };
+  delete copy.pos;
+  return copy;
+}
+
 export async function compile(
   diagram: Diagram,
   options: CompileOptions = {},
 ): Promise<CompiledDiagram> {
-  const given = Object.entries(options).filter(([, value]) => value !== undefined);
+  const { applyPos = true, ...rest } = options;
+  const given = Object.entries(rest).filter(([, value]) => value !== undefined);
   const settings: Settings = { ...COMPILE_DEFAULTS, ...Object.fromEntries(given) };
-  const tree = buildTree(diagram);
-  const laidOut = await layout(diagram, tree, settings);
+  // Without pos the layout is ELK's alone: the overrides are dropped before anything reads them.
+  const placed = applyPos ? diagram : { ...diagram, nodes: diagram.nodes.map(withoutPos) };
+  const tree = buildTree(placed);
+  const laidOut = await layout(placed, tree, settings);
 
   const groups = buildGroups(tree, laidOut.boxes);
-  const nodes = diagram.nodes.map((node) => buildNode(node, laidOut.boxes, settings));
+  const nodes = placed.nodes.map((node) => buildNode(node, laidOut.boxes, settings));
   growGroups(groups, nodes, settings.groupPadding);
 
   const moved = new Set(
