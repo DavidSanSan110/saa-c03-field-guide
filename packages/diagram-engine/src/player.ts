@@ -62,16 +62,23 @@ function withStep(state: PlayerState, step: number, playing: boolean): PlayerSta
   return { scenario: state.scenario, step, playing, run };
 }
 
-/** Moves to a step (clamped to -1 … last) and pauses. */
-function stopAt(diagram: Diagram, state: PlayerState, step: number): PlayerState {
-  const last = scenarioOrFirst(diagram, state.scenario).steps.length - 1;
-  return withStep(state, Math.min(Math.max(step, -1), last), false);
+/** A step rounded down and clamped to -1 … last. */
+function clampStep(step: number, last: number): number {
+  return Math.min(Math.max(Math.floor(step), -1), last);
 }
 
-/** Starts playing; from before the first step or at the last one it begins at step 0. */
+/** Moves to a step (clamped to -1 … last) and pauses; NaN changes nothing. */
+function stopAt(diagram: Diagram, state: PlayerState, step: number): PlayerState {
+  if (Number.isNaN(step)) return state;
+  const last = scenarioOrFirst(diagram, state.scenario).steps.length - 1;
+  return withStep(state, clampStep(step, last), false);
+}
+
+/** Starts playing; from before the first step it begins at step 0, and at the last step it always replays. */
 function startPlaying(diagram: Diagram, state: PlayerState): PlayerState {
   const last = scenarioOrFirst(diagram, state.scenario).steps.length - 1;
-  const step = state.step === -1 || state.step === last ? 0 : state.step;
+  if (state.step === last) return { ...state, step: 0, playing: last > 0, run: state.run + 1 };
+  const step = Math.max(state.step, 0);
   return withStep(state, step, step < last);
 }
 
@@ -120,6 +127,8 @@ export function playerReducer(
       return stopAt(diagram, state, -1);
     case 'scenario':
       return switchScenario(diagram, state, action.id);
+    default:
+      return state;
   }
 }
 
@@ -165,12 +174,13 @@ export function statesAt(
   step: number,
 ): Record<string, ElementState> {
   const scenario = scenarioOrFirst(diagram, scenarioId);
+  const upTo = clampStep(step, scenario.steps.length - 1);
   const ids = [...(diagram.groups ?? []), ...diagram.nodes, ...(diagram.edges ?? [])].map(
     (element) => element.id,
   );
   const states: Record<string, ElementState> = {};
   for (const id of ids) states[id] = 'normal';
   Object.assign(states, scenario.initial);
-  for (const { state } of scenario.steps.slice(0, step + 1)) Object.assign(states, state);
+  for (const { state } of scenario.steps.slice(0, upTo + 1)) Object.assign(states, state);
   return states;
 }
