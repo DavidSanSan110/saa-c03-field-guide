@@ -1071,3 +1071,239 @@ describe('AC-15: the compiler is a separate entry point', () => {
     expect(packageJson.dependencies?.['elkjs']).toBe('0.12.0');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Review round 1: regression tests (AC-16 to AC-19)
+// ---------------------------------------------------------------------------
+
+/** Group g holding a chain a → b → c. */
+function groupChainDiagram(): Diagram {
+  return {
+    id: 'group-chain',
+    title: 'Chain inside a group',
+    groups: [{ id: 'g', label: 'Group', kind: 'generic' }],
+    nodes: [
+      { id: 'a', icon: 'ec2', label: 'A', group: 'g' },
+      { id: 'b', icon: 'ec2', label: 'B', group: 'g' },
+      { id: 'c', icon: 'ec2', label: 'C', group: 'g' },
+    ],
+    edges: [
+      { id: 'ab', from: 'a', to: 'b' },
+      { id: 'bc', from: 'b', to: 'c' },
+    ],
+    scenarios: scenarioFor('a'),
+  };
+}
+
+/** Group g holding a with two successors b and c (same layer, same group). */
+function groupForkDiagram(): Diagram {
+  return {
+    id: 'group-fork',
+    title: 'Fork inside a group',
+    groups: [{ id: 'g', label: 'Group', kind: 'generic' }],
+    nodes: [
+      { id: 'a', icon: 'ec2', label: 'A', group: 'g' },
+      { id: 'b', icon: 'ec2', label: 'B', group: 'g' },
+      { id: 'c', icon: 'ec2', label: 'C', group: 'g' },
+    ],
+    edges: [
+      { id: 'ab', from: 'a', to: 'b' },
+      { id: 'ac', from: 'a', to: 'c' },
+    ],
+    scenarios: scenarioFor('a'),
+  };
+}
+
+/** The AC-17 fixture: group g0 holding n0, n2, n3, n4; top-level n1; edges that loop and cross. */
+function fractionalDiagram(): Diagram {
+  return {
+    id: 'fractional',
+    title: 'Fractional coordinates',
+    groups: [{ id: 'g0', label: 'G0', kind: 'generic' }],
+    nodes: [
+      { id: 'n0', icon: 'ec2', label: 'N0', group: 'g0' },
+      { id: 'n1', icon: 'ec2', label: 'N1' },
+      { id: 'n2', icon: 'ec2', label: 'N2', group: 'g0' },
+      { id: 'n3', icon: 'ec2', label: 'N3', group: 'g0' },
+      { id: 'n4', icon: 'ec2', label: 'N4', group: 'g0' },
+    ],
+    edges: [
+      { id: 'e0', from: 'n4', to: 'n1' },
+      { id: 'e1', from: 'n2', to: 'n4' },
+      { id: 'e2', from: 'n4', to: 'n2' },
+      { id: 'e3', from: 'n0', to: 'n3' },
+      { id: 'e4', from: 'n0', to: 'n1' },
+      { id: 'to-g', from: 'n1', to: 'g0' },
+    ],
+    scenarios: scenarioFor('n0'),
+  };
+}
+
+/** The AC-18 fixture: two top-level groups with a back edge between their nodes. */
+function backEdgeDiagram(): Diagram {
+  return {
+    id: 'back-edge',
+    title: 'Back edge between groups',
+    groups: [
+      { id: 'g', label: 'G', kind: 'generic' },
+      { id: 'h', label: 'H', kind: 'generic' },
+    ],
+    nodes: [
+      { id: 'a', icon: 'ec2', label: 'A', group: 'g' },
+      { id: 'b', icon: 'ec2', label: 'B', group: 'h' },
+    ],
+    edges: [
+      { id: 'ab', from: 'a', to: 'b' },
+      { id: 'ba', from: 'b', to: 'a' },
+    ],
+    scenarios: scenarioFor('a'),
+  };
+}
+
+const SPACING_CASES: [string, CompileOptions][] = [
+  ['default options', {}],
+  ['nodeSpacing 200 and layerSpacing 300', { nodeSpacing: 200, layerSpacing: 300 }],
+];
+
+describe('AC-16: spacing applies inside groups', () => {
+  describe.each(SPACING_CASES)('AC-16: %s', (_name, options) => {
+    const layerSpacing = options.layerSpacing ?? 72;
+    const nodeSpacing = options.nodeSpacing ?? 48;
+    const nodeWidth = 136;
+    const nodeHeight = 104;
+
+    test('AC-16: a chain in a group keeps layerSpacing between layers (right)', async () => {
+      const result = await compiled(groupChainDiagram(), { ...options, direction: 'right' });
+      const [a, b, c] = ['a', 'b', 'c'].map((id) => getNode(result, id));
+      expect(b?.x).toBeGreaterThanOrEqual((a?.x ?? Infinity) + nodeWidth + layerSpacing - TOL);
+      expect(c?.x).toBeGreaterThanOrEqual((b?.x ?? Infinity) + nodeWidth + layerSpacing - TOL);
+    });
+
+    test('AC-16: a chain in a group keeps layerSpacing between layers (down)', async () => {
+      const result = await compiled(groupChainDiagram(), { ...options, direction: 'down' });
+      const [a, b, c] = ['a', 'b', 'c'].map((id) => getNode(result, id));
+      expect(b?.y).toBeGreaterThanOrEqual((a?.y ?? Infinity) + nodeHeight + layerSpacing - TOL);
+      expect(c?.y).toBeGreaterThanOrEqual((b?.y ?? Infinity) + nodeHeight + layerSpacing - TOL);
+    });
+
+    test('AC-16: two successors in a group keep nodeSpacing apart (right)', async () => {
+      const result = await compiled(groupForkDiagram(), { ...options, direction: 'right' });
+      const [b, c] = ['b', 'c'].map((id) => getNode(result, id));
+      const gap = Math.abs((b?.y ?? 0) - (c?.y ?? 0)) - nodeHeight;
+      expect(gap).toBeGreaterThanOrEqual(nodeSpacing - TOL);
+    });
+
+    test('AC-16: two successors in a group keep nodeSpacing apart (down)', async () => {
+      const result = await compiled(groupForkDiagram(), { ...options, direction: 'down' });
+      const [b, c] = ['b', 'c'].map((id) => getNode(result, id));
+      const gap = Math.abs((b?.x ?? 0) - (c?.x ?? 0)) - nodeWidth;
+      expect(gap).toBeGreaterThanOrEqual(nodeSpacing - TOL);
+    });
+  });
+});
+
+describe('AC-17: grown comes only from overrides', () => {
+  test.each(DIRECTIONS)('AC-17: without pos no group is grown (%s)', async (direction) => {
+    const result = await compiled(fractionalDiagram(), { direction });
+    expect(result.groups.filter((group) => group.grown).map((group) => group.id)).toEqual([]);
+    expect(result.nodes.filter((node) => node.overridden)).toEqual([]);
+  });
+
+  test.each(DIRECTIONS)(
+    'AC-17: without pos every edge keeps its points (%s)',
+    async (direction) => {
+      const result = await compiled(fractionalDiagram(), { direction });
+      expect(result.edges).toHaveLength(6);
+      expect(
+        result.edges.filter((edge) => edge.points === undefined).map((edge) => edge.id),
+      ).toEqual([]);
+    },
+  );
+
+  test.each(DIRECTIONS)(
+    'AC-17: a group that is not an ancestor of the overridden node is not grown (%s)',
+    async (direction) => {
+      const result = await compiled(withPos(fractionalDiagram(), { n1: { x: 900, y: 700 } }), {
+        direction,
+      });
+      expect(getNode(result, 'n1').overridden).toBe(true);
+      expect(getGroup(result, 'g0').grown).toBe(false);
+    },
+  );
+
+  test.each(DIRECTIONS)(
+    'AC-17: in the nested fixture only the ancestors of the overridden node are grown (%s)',
+    async (direction) => {
+      const result = await compiled(withPos(nestedDiagram(), { 'web-a': { x: 500, y: 400 } }), {
+        direction,
+      });
+      const grown = result.groups.filter((group) => group.grown).map((group) => group.id);
+      expect(grown.sort()).toEqual(['az-a', 'private-subnet-a', 'region', 'vpc']);
+    },
+  );
+});
+
+describe('AC-18: the canvas starts at 0 even with a back edge', () => {
+  function minimaOf(result: CompiledDiagram): { x: number; y: number } {
+    const topLevel = [...result.groups, ...result.nodes].filter(
+      (element) => element.parent === undefined,
+    );
+    const points = result.edges.flatMap((edge) => edge.points ?? []);
+    return {
+      x: Math.min(...topLevel.map((box) => box.x), ...points.map((point) => point.x)),
+      y: Math.min(...topLevel.map((box) => box.y), ...points.map((point) => point.y)),
+    };
+  }
+
+  test.each(DIRECTIONS)(
+    'AC-18: the smallest x and y over boxes and points are 0 (%s)',
+    async (direction) => {
+      const result = await compiled(backEdgeDiagram(), { direction });
+      expect(result.edges.every((edge) => edge.points !== undefined)).toBe(true);
+      const { x, y } = minimaOf(result);
+      expect(x).toBeCloseTo(0, 0);
+      expect(y).toBeCloseTo(0, 0);
+    },
+  );
+
+  test.each(DIRECTIONS)(
+    'AC-18: every box and point lies inside the canvas (%s)',
+    async (direction) => {
+      const result = await compiled(backEdgeDiagram(), { direction });
+      expect(canvasViolations(result)).toEqual([]);
+    },
+  );
+});
+
+describe('AC-19: options passed as undefined fall back to their defaults', () => {
+  const UNDEFINED_OPTIONS = {
+    direction: undefined,
+    nodeWidth: undefined,
+  } as unknown as CompileOptions;
+
+  test('AC-19: direction undefined gives right', async () => {
+    const result = await compile(chainDiagram(), UNDEFINED_OPTIONS);
+    expect(result.direction).toBe('right');
+    expect(getNode(result, 'b').x).toBeGreaterThan(getNode(result, 'a').x);
+  });
+
+  test('AC-19: nodeWidth undefined gives nodes 136 wide', async () => {
+    const result = await compile(chainDiagram(), UNDEFINED_OPTIONS);
+    for (const node of result.nodes) expect([node.id, node.width]).toEqual([node.id, 136]);
+  });
+
+  test('AC-19: every option undefined gives the same result as no options', async () => {
+    const allUndefined = Object.fromEntries(
+      Object.keys(COMPILE_DEFAULTS).map((key) => [key, undefined]),
+    ) as unknown as CompileOptions;
+    const withUndefined = await compile(nestedDiagram(), allUndefined);
+    expect(withUndefined).toStrictEqual(await compile(nestedDiagram()));
+  });
+
+  test('AC-19: an undefined option does not hide the others', async () => {
+    const mixed = { direction: undefined, nodeWidth: 100 } as unknown as CompileOptions;
+    const result = await compile(chainDiagram(), mixed);
+    expect(result.direction).toBe('right');
+    expect(getNode(result, 'a').width).toBe(100);
+  });
+});
