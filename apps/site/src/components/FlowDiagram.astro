@@ -1,0 +1,14 @@
+---
+// A guide page's diagram, by id (spec 013): reads diagrams/<id>.yaml and renders it with Diagram.astro.
+// A missing or broken file fails the build with the loader's or the validator's message.
+import { readDiagramFile } from '../diagram/files.ts';
+import Diagram from './Diagram.astro';
+
+interface Props {
+  id: string;
+}
+
+const data = readDiagramFile(__FIELD_GUIDE_DIAGRAMS_DIR__, Astro.props.id);
+---
+
+<Diagram diagram={data} />
