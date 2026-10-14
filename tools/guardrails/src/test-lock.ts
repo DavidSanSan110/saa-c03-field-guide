@@ -91,8 +91,17 @@ const RUNNER_CONFIG_NAME =
 const SETUP_FILE_NAME =
   /^(.+\.setup|setuptests|setup-tests|test-setup|global-setup|global-teardown)\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
 const TEST_DIR_SETUP_NAME = /^setup\.(js|jsx|mjs|cjs|ts|tsx|mts|cts)$/;
-const TEST_CONTROL_LINE =
-  /pass-with-no-tests|passwithnotests|^\s*"(test|coverage|e2e|guardrails)(:[^"]*)?"\s*:/i;
+const TEST_CONTROL_LINE = new RegExp(
+  [
+    'pass-with-no-tests|passwithnotests',
+    // A script key anywhere in the line (not only at its start: `"scripts": { "test": "x" }`).
+    // The opening quote must come right before the name, so `"pretest"` or `"lint:test"` are not keys.
+    String.raw`"(test|coverage|e2e|guardrails)(:[^"]*)?"\s*:`,
+    // JSON decodes `"test"` to `test`: an escape could hide a key, and package.json needs none.
+    String.raw`\\u[0-9a-f]{4}`,
+  ].join('|'),
+  'i',
+);
 
 /** True for files that decide which tests run and how strictly (runner configs, setup files, mocks). */
 export function isTestControlPath(path: string): boolean {
