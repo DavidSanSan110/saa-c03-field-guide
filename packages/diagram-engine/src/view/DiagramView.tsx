@@ -15,9 +15,15 @@ import {
 import '@xyflow/react/dist/base.css';
 import type { PlayerAction } from '../player.ts';
 import { initPlayer, playerReducer, viewPlayer } from '../player.ts';
-import { STEP_DURATION_MS, layoutFor, logLines, toFlowModel } from '../view-model.ts';
+import {
+  STEP_DURATION_MS,
+  layoutFor,
+  logLines,
+  absoluteBoxes,
+  toFlowModel,
+} from '../view-model.ts';
 import type { FlowModel, LogLine } from '../view-model.ts';
-import { edgeTypes, nodeTypes } from './canvas.tsx';
+import { GroupHeaders, edgeTypes, nodeTypes } from './canvas.tsx';
 import type { CardType, FlowEdgeType, GroupType } from './canvas.tsx';
 import type { DiagramViewProps, IconSource } from './types.ts';
 import './view.css';
@@ -148,6 +154,7 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
   const compiled = layout === 'compact' ? compact : wide;
   const view = useMemo(() => viewPlayer(diagram, state), [diagram, state]);
   const model = useMemo(() => toFlowModel(compiled, view), [compiled, view]);
+  const boxes = useMemo(() => absoluteBoxes(compiled), [compiled]);
   const nodes = useMemo(
     () => flowNodes(model, icons, groupIcons, layout === 'compact'),
     [model, icons, groupIcons, layout],
@@ -341,7 +348,9 @@ function Island({ wide, compact, icons, groupIcons }: DiagramViewProps) {
           deleteKeyCode={null}
           selectionKeyCode={null}
           multiSelectionKeyCode={null}
-        />
+        >
+          <GroupHeaders groups={model.groups} boxes={boxes} groupIcons={groupIcons} />
+        </ReactFlow>
       </div>
 
       <div className="dl-bar">

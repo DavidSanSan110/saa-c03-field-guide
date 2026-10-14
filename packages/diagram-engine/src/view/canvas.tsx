@@ -4,6 +4,7 @@ import {
   EdgeLabelRenderer,
   Handle,
   Position,
+  ViewportPortal,
   type Edge,
   type EdgeProps,
   type Node,
@@ -12,6 +13,7 @@ import {
 import { animate, motion, useMotionValue, useReducedMotion, useTransform } from 'motion/react';
 import { useEffect, useId } from 'react';
 import { edgePath, pathMidpoint } from '../view-model.ts';
+import type { Box } from '../graph.ts';
 import type { FlowEdge, FlowGroup, FlowNode } from '../view-model.ts';
 import type { IconSource } from './types.ts';
 
@@ -86,7 +88,7 @@ function CardNode({ data }: NodeProps<CardType>) {
 }
 
 function GroupNode({ data }: NodeProps<GroupType>) {
-  const { flow, icon } = data;
+  const { flow } = data;
   return (
     <>
       <Handles />
@@ -97,13 +99,46 @@ function GroupNode({ data }: NodeProps<GroupType>) {
         data-state={flow.state}
         data-active={String(flow.active)}
       >
-        <div className="dl-group__header">
-          <IconImage source={icon} />
+        {/* Invisible placeholder of the header: the visible one is GroupHeaders, drawn above the edges. */}
+        <div className="dl-group__header" aria-hidden="true">
           <span className="dl-group__label">{flow.label}</span>
-          {flow.state === 'failed' ? <span className="dl-pill dl-pill--failed">failed</span> : null}
         </div>
       </div>
     </>
+  );
+}
+
+/** The group headers (icon and label), in a layer above the edges so an edge never crosses a label. */
+export function GroupHeaders({
+  groups,
+  boxes,
+  groupIcons,
+}: {
+  groups: FlowGroup[];
+  boxes: Record<string, Box>;
+  groupIcons: Record<string, IconSource>;
+}) {
+  return (
+    <ViewportPortal>
+      {groups.map((group) => {
+        const box = boxes[group.id];
+        if (box === undefined || group.state === 'hidden') return null;
+        return (
+          <div
+            key={group.id}
+            className="dl-group-head"
+            data-kind={group.kind}
+            style={{ left: box.x + 1.5, top: box.y + 1.5 }}
+          >
+            <IconImage source={groupIcons[group.kind]} />
+            <span className="dl-group__label">{group.label}</span>
+            {group.state === 'failed' ? (
+              <span className="dl-pill dl-pill--failed">failed</span>
+            ) : null}
+          </div>
+        );
+      })}
+    </ViewportPortal>
   );
 }
 

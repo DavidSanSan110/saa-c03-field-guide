@@ -293,89 +293,110 @@
   background: var(--dl-gf);
   color: var(--dl-fg);
 }
-.dl-group[data-kind='cloud'] {
+:is(.dl-group, .dl-group-head)[data-kind='cloud'] {
   --dl-gc: #242f3e;
   --dl-gs: solid;
 }
-.dl-group[data-kind='account'] {
+:is(.dl-group, .dl-group-head)[data-kind='account'] {
   --dl-gc: #e7157b;
   --dl-gs: solid;
 }
-.dl-group[data-kind='region'],
-.dl-group[data-kind='az'] {
+:is(.dl-group, .dl-group-head)[data-kind='region'],
+:is(.dl-group, .dl-group-head)[data-kind='az'] {
   --dl-gc: #00a4a6;
 }
-.dl-group[data-kind='vpc'] {
+:is(.dl-group, .dl-group-head)[data-kind='vpc'] {
   --dl-gc: #8c4fff;
   --dl-gs: solid;
 }
-.dl-group[data-kind='public-subnet'] {
+:is(.dl-group, .dl-group-head)[data-kind='public-subnet'] {
   --dl-gs: none;
   --dl-gf: #f2f6e8;
 }
-.dl-group[data-kind='private-subnet'] {
+:is(.dl-group, .dl-group-head)[data-kind='private-subnet'] {
   --dl-gs: none;
   --dl-gf: #e6f6f7;
 }
-.dl-group[data-kind='auto-scaling-group'] {
+:is(.dl-group, .dl-group-head)[data-kind='auto-scaling-group'] {
   --dl-gc: #ed7100;
 }
-.dl-group[data-kind='security-group'] {
+:is(.dl-group, .dl-group-head)[data-kind='security-group'] {
   --dl-gc: #dd344c;
   --dl-gs: solid;
 }
-.dl-group[data-kind='on-premises'] {
+:is(.dl-group, .dl-group-head)[data-kind='on-premises'] {
   --dl-gs: solid;
 }
-:root[data-theme='dark'] .dl-group[data-kind='cloud'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='cloud'] {
   --dl-gc: #aab7c4;
 }
-:root[data-theme='dark'] .dl-group[data-kind='account'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='account'] {
   --dl-gc: #ff4fa0;
 }
-:root[data-theme='dark'] .dl-group[data-kind='region'],
-:root[data-theme='dark'] .dl-group[data-kind='az'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='region'],
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='az'] {
   --dl-gc: #01bfc0;
 }
-:root[data-theme='dark'] .dl-group[data-kind='vpc'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='vpc'] {
   --dl-gc: #a97bff;
 }
-:root[data-theme='dark'] .dl-group[data-kind='public-subnet'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='public-subnet'] {
   --dl-gf: rgb(122 161 16 / 0.16);
 }
-:root[data-theme='dark'] .dl-group[data-kind='private-subnet'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='private-subnet'] {
   --dl-gf: rgb(1 191 192 / 0.14);
 }
-:root[data-theme='dark'] .dl-group[data-kind='auto-scaling-group'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='auto-scaling-group'] {
   --dl-gc: #ff9900;
 }
-:root[data-theme='dark'] .dl-group[data-kind='security-group'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='security-group'] {
   --dl-gc: #ff6b7f;
 }
-:root[data-theme='dark'] .dl-group[data-kind='on-premises'],
-:root[data-theme='dark'] .dl-group[data-kind='generic'] {
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='on-premises'],
+:root[data-theme='dark'] :is(.dl-group, .dl-group-head)[data-kind='generic'] {
   --dl-gc: #9aa8b8;
 }
 .dl-group[data-state='failed'] {
   --dl-gc: var(--dl-danger);
   --dl-gs: solid;
 }
+/* The header is drawn twice: an invisible placeholder inside the group box (aria-hidden, so the box still
+   holds its label) and the visible one in a layer above the edges (React Flow draws the edges between a
+   group's children above the group itself, so a label inside the box would be crossed by them). */
 .dl-group__header {
+  opacity: 0;
+  height: 30px;
+  padding-left: 38px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.dl .react-flow__viewport-portal {
+  z-index: 1001;
+  pointer-events: none;
+}
+.dl-group-head {
+  --dl-gf: transparent;
+  position: absolute;
   display: flex;
   align-items: center;
   gap: 0.5rem;
   height: 30px;
   font-size: 12px;
   font-weight: 600;
+  color: var(--dl-fg);
+  pointer-events: none;
 }
-.dl-group__header img {
+.dl-group-head img {
   display: block;
   width: 30px;
   height: 30px;
 }
-.dl-group__label {
+/* The label background is the group's own fill over the canvas colour, so it never shows as a patch. */
+.dl-group-head .dl-group__label {
   padding: 0 0.3rem;
-  background: var(--dl-bg);
+  background: linear-gradient(var(--dl-gf), var(--dl-gf)), var(--dl-bg);
+}
+.dl-group__label {
   line-height: 1.2;
 }
 
