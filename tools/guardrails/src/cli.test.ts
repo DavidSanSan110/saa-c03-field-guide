@@ -1322,3 +1322,44 @@ describe('guardrails test-lock --base <ref> and a case-only package.json rename'
     expectLockOk(runCli(dir, ['test-lock', '--base', base]));
   });
 });
+
+// ---- Spec 008, review round 2: a key split from its colon -------------------------------------
+
+describe('guardrails test-lock --base <ref> and keys split from their colon', () => {
+  /** The root package.json with a second `scripts` object whose values start the next line. */
+  const SPLIT_SCRIPTS = [
+    '  },',
+    '  "scripts": {',
+    '    "guardrails"',
+    '    : "echo ok", "coverage"',
+    '    : "echo ok", "lint"',
+    '    : "eslint ."',
+    '  }',
+    '}',
+    '',
+  ].join('\n');
+
+  function withSplitScripts(): string {
+    const text = GUARDRAILS_PACKAGE_JSON.replace(/ {2}\}\n\}\n$/, SPLIT_SCRIPTS);
+    // The fixture is only meaningful if the replacement happened and the JSON is still valid.
+    expect(text).toContain('    : "echo ok", "coverage"\n');
+    expect(() => JSON.parse(text) as unknown).not.toThrow();
+    return text;
+  }
+
+  test('AC-13: a feat commit appending a second scripts object with split keys exits 1 naming package.json', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', withSplitScripts());
+    commitWith(dir, 'feat: add more scripts');
+    const run = runCli(dir, ['test-lock', '--base', base]);
+    expect(run.output).toMatch(/✖ package\.json \[test-lock\]/);
+    expect(run.status).toBe(1);
+  });
+
+  test('AC-13: a test commit doing the same exits 0', () => {
+    const { dir, base } = makeMoveRepo();
+    write(dir, 'package.json', withSplitScripts());
+    commitWith(dir, 'test(guardrails): add more scripts');
+    expectLockOk(runCli(dir, ['test-lock', '--base', base]));
+  });
+});

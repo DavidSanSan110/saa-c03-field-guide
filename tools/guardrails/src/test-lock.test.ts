@@ -1223,3 +1223,21 @@ describe('isTestControlLine: script keys anywhere in the line or written as esca
     },
   );
 });
+
+// ---- Spec 008, review round 2: a key split from its colon -------------------------------------
+
+describe('isTestControlLine: a line that starts with a colon', () => {
+  test.each(['    : "echo ok", "coverage"', ': "echo ok"', '\t:"x"'])(
+    'AC-13: %j is a test-control line',
+    (line) => {
+      expect(isTestControlLine(line)).toBe(true);
+    },
+  );
+
+  test.each(['"name": "test"', '"keywords": ["test", "e2e"],', '"lint": "eslint ."'])(
+    'AC-13: %s is not a test-control line',
+    (line) => {
+      expect(isTestControlLine(line)).toBe(false);
+    },
+  );
+});
