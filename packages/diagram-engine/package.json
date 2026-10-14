@@ -1,0 +1,16 @@
+{
+  "name": "@field-guide/diagram-engine",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Animated diagram engine: layout compiler and scenario player (pure).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@field-guide/schema": "workspace:*"
+  }
+}
