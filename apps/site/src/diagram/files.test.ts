@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { parseDocument } from 'yaml';
 import { checkDiagramFiles, MAX_FILE_CAPTION_LENGTH, readDiagramFile } from './files.ts';
 
 // The checks compile the layout with elkjs, which loads lazily and can be slow on a cold machine.
@@ -498,5 +499,167 @@ describe('checkDiagramFiles: a folder that does not exist', () => {
     await expect(
       checkDiagramFiles(join(root, 'no-such-diagrams'), iconsOf()),
     ).resolves.toBeInstanceOf(Array);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Review round 1 (AC-19…AC-21)
+// ---------------------------------------------------------------------------
+
+/** True when `text` has a line break of any kind. */
+function isMultiLine(text: string): boolean {
+  return /[\r\n]/.test(text);
+}
+
+/** The first line of the message the YAML parser itself gives for `text`. */
+function parserFirstLine(text: string): string {
+  const message = parseDocument(text).errors[0]?.message ?? '';
+  return message.split(/\r?\n/)[0] ?? '';
+}
+
+describe('readDiagramFile and checkDiagramFiles: YAML errors on a single line', () => {
+  const broken = 'title: [unclosed\n';
+
+  test('AC-19: the message for bad YAML has no line break', () => {
+    const { dir } = makeFolder();
+    write(dir, 'broken.yaml', broken);
+
+    expect(isMultiLine(messageOf(() => readDiagramFile(dir, 'broken')))).toBe(false);
+  });
+
+  test("AC-19: the message names the file, says 'not valid YAML' and keeps the parser's first line with its line and column", () => {
+    const { dir } = makeFolder();
+    write(dir, 'broken.yaml', broken);
+    const first = parserFirstLine(broken);
+
+    const message = messageOf(() => readDiagramFile(dir, 'broken'));
+
+    expect(first).toMatch(/line \d+, column \d+/);
+    expect(message).toContain('broken.yaml');
+    expect(message).toContain('not valid YAML');
+    expect(message).toContain(first);
+  });
+
+  test.each([
+    ['a duplicate key', 'duplicate', 'id: duplicate\ntitle: One\ntitle: Two\n'],
+    ['two YAML documents', 'multi', 'id: multi\ntitle: One\n---\nid: multi\ntitle: Two\n'],
+  ])('AC-19: the message for %s has no line break', (_name, id, text) => {
+    const { dir } = makeFolder();
+    write(dir, `${id}.yaml`, text);
+
+    const message = messageOf(() => readDiagramFile(dir, id));
+
+    expect(message).toContain('not valid YAML');
+    expect(isMultiLine(message)).toBe(false);
+  });
+
+  test("AC-19: the line of checkDiagramFiles starts with the file name and holds the parser's first line", async () => {
+    const { dir } = makeFolder();
+    write(dir, 'broken.yaml', broken);
+
+    const problems = await checkDiagramFiles(dir, iconsOf());
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]?.startsWith('broken.yaml: ')).toBe(true);
+    expect(problems[0]).toContain('not valid YAML');
+    expect(problems[0]).toContain(parserFirstLine(broken));
+    expect(isMultiLine(problems[0] ?? '')).toBe(false);
+  });
+
+  test('AC-19: every line checkDiagramFiles returns has no line break', async () => {
+    const { dir } = makeFolder();
+    write(dir, 'a-broken.yaml', broken);
+    write(dir, 'b-dup.yaml', 'id: b-dup\ntitle: One\ntitle: Two\n');
+    write(dir, 'c-mismatch.yaml', diagramYaml('other'));
+    write(dir, 'd-schema.yaml', diagramYaml('d-schema', { firstEdge: 'nope' }));
+    write(dir, 'e-long.yaml', diagramYaml('e-long', { captions: ['Short.', 'a'.repeat(141)] }));
+    write(dir, 'notes.md', '# Notes\n');
+
+    const problems = await checkDiagramFiles(dir, iconsOf());
+
+    expect(problems.length).toBeGreaterThanOrEqual(6);
+    expect(problems.filter(isMultiLine)).toEqual([]);
+  });
+});
+
+describe('readDiagramFile and checkDiagramFiles: YAML warnings', () => {
+  const tagged = 'title: !foo x\n';
+
+  /** Runs `action` while stderr, console.warn and process warnings are spied; returns the spies' call counts. */
+  async function withSilencedOutput<T>(
+    action: () => T | Promise<T>,
+  ): Promise<{ result: T; calls: Record<string, number> }> {
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const emitWarning = vi.spyOn(process, 'emitWarning').mockImplementation(() => undefined);
+    try {
+      const result = await action();
+      return {
+        result,
+        calls: {
+          'process.stderr.write': stderr.mock.calls.length,
+          'console.warn': warn.mock.calls.length,
+          'process.emitWarning': emitWarning.mock.calls.length,
+        },
+      };
+    } finally {
+      stderr.mockRestore();
+      warn.mockRestore();
+      emitWarning.mockRestore();
+    }
+  }
+
+  test("AC-20: a file with an unresolved tag throws 'not valid YAML' with the file name", () => {
+    const { dir } = makeFolder();
+    write(dir, 'tagged.yaml', tagged);
+
+    const message = messageOf(() => readDiagramFile(dir, 'tagged'));
+
+    expect(message).toContain('tagged.yaml');
+    expect(message).toContain('not valid YAML');
+  });
+
+  const silent = { 'process.stderr.write': 0, 'console.warn': 0, 'process.emitWarning': 0 };
+
+  test('AC-20: reading a file with an unresolved tag prints nothing to stderr', async () => {
+    const { dir } = makeFolder();
+    write(dir, 'tagged.yaml', tagged);
+
+    const { calls } = await withSilencedOutput(() => {
+      try {
+        readDiagramFile(dir, 'tagged');
+      } catch {
+        // the throw is checked by the test above; here only the output matters
+      }
+    });
+
+    expect(calls).toEqual(silent);
+  });
+
+  test('AC-20: a file with an unresolved tag is reported by checkDiagramFiles, with nothing printed', async () => {
+    const { dir } = makeFolder();
+    write(dir, 'tagged.yaml', tagged);
+
+    const { result: problems, calls } = await withSilencedOutput(() =>
+      checkDiagramFiles(dir, iconsOf()),
+    );
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]?.startsWith('tagged.yaml: ')).toBe(true);
+    expect(problems[0]).toContain('not valid YAML');
+    expect(calls).toEqual(silent);
+  });
+});
+
+describe('readDiagramFile: ids that are not strings', () => {
+  test.each([
+    ['undefined', undefined as unknown as string],
+    ['a number', 42 as unknown as string],
+  ])("AC-21: %s throws 'not a lowercase slug' without reading a file", (_name, id) => {
+    const { dir } = makeFolder();
+    write(dir, 'undefined.yaml', diagramYaml('undefined'));
+    write(dir, '42.yaml', diagramYaml('42'));
+
+    expect(messageOf(() => readDiagramFile(dir, id))).toContain('not a lowercase slug');
   });
 });
