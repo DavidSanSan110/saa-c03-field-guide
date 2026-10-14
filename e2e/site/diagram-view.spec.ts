@@ -1921,3 +1921,78 @@ test.describe('picture without JavaScript', () => {
     await expect(main.figure.getByRole('tablist', { includeHidden: true })).toBeHidden();
   });
 });
+
+// ---------------------------------------------------------------------------
+// AC-39 hydrating does not move the page (spec 012, review round 3)
+// ---------------------------------------------------------------------------
+
+/** The scripts that hydrate the islands, read from the built fixture page. */
+async function hydrationScriptUrls(page: Page): Promise<string[]> {
+  const response = await page.request.get(FIXTURE_PATH);
+  const html = await response.text();
+  const urls = new Set<string>();
+  for (const match of html.matchAll(/(?:component|renderer)-url="([^"]+)"/g)) {
+    urls.add(match[1] as string);
+  }
+  return [...urls];
+}
+
+/**
+ * Loads the fixture page with the island scripts held back, measures the top of the
+ * "Steps as text" details of view-fixture, releases the scripts and measures again once
+ * the island is hydrated.
+ */
+async function measureHydrationShift(page: Page): Promise<{ before: number; after: number }> {
+  const urls = await hydrationScriptUrls(page);
+  expect(urls.length, 'the island scripts were found in the built page').toBeGreaterThan(0);
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  for (const url of urls) {
+    await page.route(`**${url}`, async (route) => {
+      await gate;
+      await route.continue();
+    });
+  }
+  const top = () =>
+    page
+      .locator('figure[data-diagram="view-fixture"] details')
+      .evaluate((element) => element.getBoundingClientRect().top + window.scrollY);
+
+  await page.goto(FIXTURE_PATH, { waitUntil: 'load' });
+  const main = islandOf(page, viewFixture.id);
+  await expect(main.root).toBeAttached();
+  // The "before" measurement must really be pre-hydration.
+  await expect(main.root).not.toHaveAttribute('data-hydrated');
+  const before = await top();
+
+  release();
+  await expect(main.root).toHaveAttribute('data-hydrated', 'true');
+  const after = await top();
+  return { before, after };
+}
+
+test.describe('hydration does not shift the page on desktop', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-39: the Steps as text details moves by at most 8 px when the island hydrates', async ({
+    page,
+  }) => {
+    const { before, after } = await measureHydrationShift(page);
+
+    expect(Math.abs(after - before), `top before ${before}, after ${after}`).toBeLessThanOrEqual(8);
+  });
+});
+
+test.describe('hydration does not shift the page on a Pixel 7', () => {
+  test.use(pixel7);
+
+  test('AC-39: the Steps as text details moves by at most 8 px when the island hydrates', async ({
+    page,
+  }) => {
+    const { before, after } = await measureHydrationShift(page);
+
+    expect(Math.abs(after - before), `top before ${before}, after ${after}`).toBeLessThanOrEqual(8);
+  });
+});
