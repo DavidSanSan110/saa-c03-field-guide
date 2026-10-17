@@ -1016,3 +1016,117 @@ describe('dedupe usage', () => {
     expect(run.output).toMatch(/usage/i);
   });
 });
+
+// Review round 1 (regression ACs).
+
+describe('dedupe --write when a sidecar cannot be written', () => {
+  /** Existing sidecar bytes: CRLF, a comment and odd spacing, so that any rewrite shows. */
+  const OLD_SIDECAR = 'keep: me   # by hand\r\nverification:\r\n  a: 1\r\n';
+
+  /** Two drafts, the first one identical to a bank question; an empty folder at the given sidecar. */
+  function setup(blockedSlug: 'aaa' | 'zzz', existingSidecarOf?: 'aaa' | 'zzz'): string {
+    const dir = makeTempDir();
+    putVariant(dir, BANK, 'd1-1.3-0001', 'original', 'alpha', 'a');
+    putVariant(dir, DRAFTS, 'd1-1.3-0002', 'aaa', 'alpha', 'a');
+    putVariant(dir, DRAFTS, 'd1-1.3-0003', 'zzz', 'bravo', 'a');
+    mkdirSync(join(dir, DRAFTS, 'd1', '1.3', `${blockedSlug}.check.yaml`), { recursive: true });
+    if (existingSidecarOf !== undefined) {
+      write(dir, `${DRAFTS}/d1/1.3/${existingSidecarOf}.check.yaml`, OLD_SIDECAR);
+    }
+    return dir;
+  }
+
+  test('AC-23: a folder at the last sidecar: exit 1, the sidecar is named, the tree is as before', () => {
+    const dir = setup('zzz');
+    const before = snapshot(dir);
+
+    const run = runCli(dir, ['dedupe', '--write']);
+
+    expect(run.status).toBe(1);
+    expect(run.output).toContain(`${DRAFTS}/d1/1.3/zzz.check.yaml`);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test('AC-23: the failing sidecar is named in the folder-as-given form, not as an absolute path', () => {
+    const dir = setup('zzz');
+
+    const run = runCli(dir, ['dedupe', '--write']);
+
+    expect(run.output).toContain(`${DRAFTS}/d1/1.3/zzz.check.yaml`);
+    expect(run.output).not.toContain(dir);
+    expect(run.output).not.toContain(dir.replace(/\\/g, '/'));
+  });
+
+  test('AC-23: the name uses the folder given with --drafts', () => {
+    const dir = makeTempDir();
+    putVariant(dir, 'my-bank', 'd1-1.3-0001', 'original', 'alpha', 'a');
+    putVariant(dir, 'my-drafts', 'd1-1.3-0002', 'aaa', 'alpha', 'a');
+    putVariant(dir, 'my-drafts', 'd1-1.3-0003', 'zzz', 'bravo', 'a');
+    mkdirSync(join(dir, 'my-drafts', 'd1', '1.3', 'zzz.check.yaml'), { recursive: true });
+    const before = snapshot(dir);
+
+    const run = runCli(dir, ['dedupe', '--drafts', 'my-drafts', '--bank', 'my-bank', '--write']);
+
+    expect(run.status).toBe(1);
+    expect(run.output).toContain('my-drafts/d1/1.3/zzz.check.yaml');
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test('AC-23: the sidecar written before the failure gets its old bytes back', () => {
+    const dir = setup('zzz', 'aaa');
+    const before = snapshot(dir);
+
+    const run = runCli(dir, ['dedupe', '--write']);
+
+    expect(run.status).toBe(1);
+    expect(read(dir, `${DRAFTS}/d1/1.3/aaa.check.yaml`).toString('utf8')).toBe(OLD_SIDECAR);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test('AC-23: a sidecar created before the failure is deleted again', () => {
+    const dir = setup('zzz');
+
+    runCli(dir, ['dedupe', '--write']);
+
+    expect(exists(dir, `${DRAFTS}/d1/1.3/aaa.check.yaml`)).toBe(false);
+  });
+
+  test('AC-23: no temporary file is left in the drafts tree', () => {
+    const dir = setup('zzz', 'aaa');
+    const before = Object.keys(snapshot(dir)).sort();
+
+    runCli(dir, ['dedupe', '--write']);
+
+    expect(Object.keys(snapshot(dir)).sort()).toEqual(before);
+    expect(readdirSync(join(dir, DRAFTS, 'd1', '1.3')).sort()).toEqual([
+      'aaa.check.yaml',
+      'aaa.yaml',
+      'zzz.check.yaml',
+      'zzz.yaml',
+    ]);
+  });
+
+  test('AC-23: a folder at the first sidecar: the one written after it is not left either', () => {
+    const dir = setup('aaa', 'zzz');
+    const before = snapshot(dir);
+
+    const run = runCli(dir, ['dedupe', '--write']);
+
+    expect(run.status).toBe(1);
+    expect(run.output).toContain(`${DRAFTS}/d1/1.3/aaa.check.yaml`);
+    expect(read(dir, `${DRAFTS}/d1/1.3/zzz.check.yaml`).toString('utf8')).toBe(OLD_SIDECAR);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test('AC-23: the draft and bank files keep their bytes', () => {
+    const dir = setup('zzz', 'aaa');
+    const before = snapshot(dir);
+
+    runCli(dir, ['dedupe', '--write']);
+
+    const after = snapshot(dir);
+    for (const path of Object.keys(before).filter((key) => /\/[a-z]+\.yaml$/.test(key))) {
+      expect(after[path], path).toBe(before[path]);
+    }
+  });
+});

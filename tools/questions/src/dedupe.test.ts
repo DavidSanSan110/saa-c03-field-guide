@@ -11,6 +11,7 @@ import {
 } from './dedupe.ts';
 import type { SimilarPair, SimilarRef } from './dedupe.ts';
 import { names, shingleEntry, textOf } from './__mocks__/dedupe-fixtures.ts';
+import { makeEntry } from './__mocks__/fixtures.ts';
 
 const chars = (...codePoints: number[]): string => String.fromCodePoint(...codePoints);
 
@@ -623,5 +624,260 @@ describe('withDedupe', () => {
     ['null', 'null\n'],
   ])('AC-12: a YAML document that is %s throws', (_name, existing) => {
     expect(() => withDedupe(existing, 0.5, [])).toThrow(NOT_A_STUB);
+  });
+});
+
+// Review round 1 (regression ACs).
+
+const CRLF = '\r\n';
+
+/** The lines of an LF text, without the final line break. */
+const linesOfLf = (text: string): string[] => text.replace(/\n$/, '').split('\n');
+
+/** A top-level `dedupe:` block: the key line and the indented lines that follow it. */
+function splitDedupeBlock(textLines: string[]): { block: string[]; rest: string[]; at: number } {
+  const at = textLines.indexOf('dedupe:');
+  if (at < 0) return { block: [], rest: textLines, at: textLines.length };
+  let end = at + 1;
+  while (end < textLines.length && /^\s/.test(textLines[end] as string)) end++;
+  return {
+    block: textLines.slice(at, end),
+    rest: [...textLines.slice(0, at), ...textLines.slice(end)],
+    at,
+  };
+}
+
+const LONG_VALUE =
+  'This is a long plain scalar that goes well past one hundred and twenty characters, so a YAML ' +
+  'writer with the default line width would fold it onto several lines when it writes it again';
+
+const COMMENTED_SIDECAR = [
+  '# header comment, kept as it is',
+  'zeta: last key, written first   # inline note on zeta',
+  'alpha:',
+  '  - one # note on one',
+  '  - two',
+  `long: ${LONG_VALUE}`,
+  'omega: end # note on omega',
+];
+
+describe('withDedupe keeps the rest of the file as text', () => {
+  const similar: SimilarRef[] = [
+    { id: 'd1-1.3-0001', folder: 'bank', path: 'd1/1.3/sse-c.yaml', score: 0.62 },
+  ];
+
+  test('AC-24: the long string used by these tests is longer than 120 characters', () => {
+    expect(LONG_VALUE.length).toBeGreaterThan(120);
+    expect(LONG_VALUE).not.toContain(': ');
+  });
+
+  test('AC-24: comments, key order and the text of the other keys are kept; dedupe goes last', () => {
+    const existing = COMMENTED_SIDECAR.join(CRLF) + CRLF;
+
+    const output = withDedupe(existing, 0.5, similar);
+
+    const lines = linesOfLf(output).filter((line) => line.trim() !== '');
+    const { block, rest, at } = splitDedupeBlock(lines);
+    expect(rest).toEqual(COMMENTED_SIDECAR);
+    expect(at).toBe(COMMENTED_SIDECAR.length);
+    expect(parse(block.join('\n'))).toEqual({ dedupe: { threshold: 0.5, similar } });
+  });
+
+  test('AC-24: the long string is not re-wrapped', () => {
+    const existing = COMMENTED_SIDECAR.join(CRLF) + CRLF;
+
+    const output = withDedupe(existing, 0.5, similar);
+
+    expect(linesOfLf(output)).toContain(`long: ${LONG_VALUE}`);
+  });
+
+  test('AC-24: the comments are still there', () => {
+    const existing = COMMENTED_SIDECAR.join(CRLF) + CRLF;
+
+    const output = withDedupe(existing, 0.5, similar);
+
+    expect(output).toContain('# header comment, kept as it is');
+    expect(output).toContain('zeta: last key, written first   # inline note on zeta');
+    expect(output).toContain('  - one # note on one');
+    expect(output).toContain('omega: end # note on omega');
+  });
+
+  test('AC-24: the keys are not sorted', () => {
+    const existing = COMMENTED_SIDECAR.join(CRLF) + CRLF;
+
+    const output = withDedupe(existing, 0.5, similar);
+
+    expect(Object.keys(parse(output) as object)).toEqual([
+      'zeta',
+      'alpha',
+      'long',
+      'omega',
+      'dedupe',
+    ]);
+  });
+
+  test('AC-24: an existing dedupe key is replaced in place, the other lines are kept', () => {
+    const before = COMMENTED_SIDECAR.slice(0, 5);
+    const after = COMMENTED_SIDECAR.slice(5);
+    const stale = [
+      'dedupe:',
+      '  threshold: 0.9',
+      '  similar:',
+      '    - { id: gone, folder: bank, path: gone.yaml, score: 0.99 }',
+    ];
+    const existing = [...before, ...stale, ...after].join(CRLF) + CRLF;
+
+    const output = withDedupe(existing, 0.5, similar);
+
+    const lines = linesOfLf(output).filter((line) => line.trim() !== '');
+    const { block, rest, at } = splitDedupeBlock(lines);
+    expect(rest).toEqual(COMMENTED_SIDECAR);
+    expect(at).toBe(before.length);
+    expect(parse(block.join('\n'))).toEqual({ dedupe: { threshold: 0.5, similar } });
+  });
+
+  test('AC-24: the output has LF line endings only', () => {
+    const withCrlf = COMMENTED_SIDECAR.join(CRLF) + CRLF;
+    const withMixed = `${COMMENTED_SIDECAR.join(CRLF)}\nextra: 1\r\n`;
+
+    expect(withDedupe(withCrlf, 0.5, similar)).not.toContain('\r');
+    expect(withDedupe(withMixed, 0.5, similar)).not.toContain('\r');
+    expect(withDedupe(undefined, 0.5, similar)).not.toContain('\r');
+  });
+
+  test.each([
+    ['a CRLF sidecar with comments', COMMENTED_SIDECAR.join(CRLF) + CRLF],
+    [
+      'a sidecar with an existing dedupe key',
+      'a: 1\ndedupe:\n  threshold: 0.9\n  similar: []\nb: 2\n',
+    ],
+    ['no sidecar', undefined],
+  ])('AC-24: a second call with the same arguments gives the same text (%s)', (_name, existing) => {
+    const once = withDedupe(existing, 0.5, similar);
+
+    expect(withDedupe(once, 0.5, similar)).toBe(once);
+  });
+});
+
+describe('cue and why are not compared', () => {
+  const stem = 'Which service stores the objects of the archive for ten years';
+  const optionTexts = [
+    'alpha beta gamma',
+    'delta epsilon zeta',
+    'eta theta iota',
+    'kappa lambda mu',
+  ];
+
+  /** A question with its options' `why` text and a `cue`. */
+  function withNotes(
+    question: ReturnType<typeof textOf>,
+    cue: string,
+    why: string,
+  ): ReturnType<typeof textOf> & { cue: string } {
+    return {
+      ...question,
+      cue,
+      options: question.options.map((option) => ({ ...option, why })),
+    };
+  }
+
+  test('AC-25: questions identical except for cue and why have similarity 1', () => {
+    const a = withNotes(textOf(stem, optionTexts), 'one cue about glacier', 'one reason');
+    const b = withNotes(
+      textOf(stem, optionTexts),
+      'a different cue about vaults',
+      'another reason',
+    );
+
+    expect(shingles(a).size).toBeGreaterThan(0);
+    expect(shingles(a)).toEqual(shingles(b));
+    expect(similarity(shingles(a), shingles(b))).toBe(1);
+  });
+
+  test('AC-25: questions that share only cue and why text have similarity 0', () => {
+    const cue = 'shared cue about retrieval times';
+    const why = 'Shared reason, word for word.';
+    const a = withNotes(textOf(stem, optionTexts), cue, why);
+    const b = withNotes(
+      textOf('Where should the logs of the web tier land every night', [
+        'omega sigma tau',
+        'upsilon phi chi',
+        'psi nu xi',
+        'rho pi omicron',
+      ]),
+      cue,
+      why,
+    );
+
+    expect(shingles(a).size).toBeGreaterThan(0);
+    expect(shingles(b).size).toBeGreaterThan(0);
+    expect(similarity(shingles(a), shingles(b))).toBe(0);
+  });
+
+  test('AC-25: the cue and why text never become shingles', () => {
+    const a = withNotes(textOf(stem, optionTexts), 'secretcue words here', 'secretwhy words here');
+
+    const all = [...shingles(a)].join(' | ');
+
+    expect(all).not.toContain('secretcue');
+    expect(all).not.toContain('secretwhy');
+  });
+
+  test('AC-25: findSimilar flags two entries that differ only in cue and why, with score 1', () => {
+    const draft = makeEntry('d1-1.3-0002', 'copy', {
+      stem,
+      cue: 'first cue',
+      options: withNotes(textOf(stem, optionTexts), 'x', 'first reason').options,
+    });
+    const original = makeEntry('d1-1.3-0001', 'original', {
+      stem,
+      cue: 'second cue',
+      options: withNotes(textOf(stem, optionTexts), 'x', 'second reason').options,
+    });
+
+    const pairs = findSimilar([draft], [original], 0.5);
+
+    expect(pairs.map((pair) => pair.score)).toEqual([1]);
+  });
+
+  test('AC-25: findSimilar does not flag entries that share only cue and why', () => {
+    const cue = 'shared cue about retrieval times';
+    const left = makeEntry('d1-1.3-0002', 'left', {
+      stem,
+      cue,
+      options: withNotes(textOf(stem, optionTexts), cue, 'Shared reason.').options,
+    });
+    const otherStem = 'Where should the logs of the web tier land every night';
+    const right = makeEntry('d1-1.3-0001', 'right', {
+      stem: otherStem,
+      cue,
+      options: withNotes(
+        textOf(otherStem, ['omega sigma tau', 'upsilon phi chi', 'psi nu xi', 'rho pi omicron']),
+        cue,
+        'Shared reason.',
+      ).options,
+    });
+
+    expect(findSimilar([left], [right], 0.01)).toEqual([]);
+  });
+});
+
+describe('withDedupe on an empty sidecar', () => {
+  test.each([
+    ['an empty string', ''],
+    ['only a comment', '# only a comment\n'],
+    ['only a document marker', '---\n'],
+    ['a document marker with a comment', '--- # c\n'],
+  ])('AC-26: %s counts as an empty mapping', (_name, existing) => {
+    const output = withDedupe(existing, 0.5, []);
+
+    expect(parse(output)).toEqual({ dedupe: { threshold: 0.5, similar: [] } });
+  });
+
+  test('AC-26: the output has no CR and the same text again on a second call', () => {
+    const once = withDedupe('# only a comment\n', 0.5, []);
+
+    expect(once).not.toContain('\r');
+    expect(withDedupe(once, 0.5, [])).toBe(once);
   });
 });
