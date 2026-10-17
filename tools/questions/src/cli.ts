@@ -3,6 +3,7 @@ import {
   copyFileSync,
   constants,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -149,11 +150,15 @@ function runNextId(options: Options): number {
   if (!isTaskId(task)) throw new UsageError();
   const draftFolder = readFolder(options.drafts);
   const bankFolder = readFolder(options.bank);
-  // Links are not followed, so ids behind them are unknown: say so, but still print the id.
-  for (const { file, message } of draftFolder.links)
-    console.error(`${options.drafts}/${file}: ${message}`);
-  for (const { file, message } of bankFolder.links)
-    console.error(`${options.bank}/${file}: ${message}`);
+  // Ids behind a link are unknown, so allocating without them could hand out a used id.
+  const links = [
+    ...draftFolder.links.map(({ file, message }) => `${options.drafts}/${file}: ${message}`),
+    ...bankFolder.links.map(({ file, message }) => `${options.bank}/${file}: ${message}`),
+  ];
+  if (links.length > 0) {
+    for (const link of links) console.error(link);
+    return 1;
+  }
   console.log(nextId(task, [...collectIds(draftFolder.files), ...collectIds(bankFolder.files)]));
   return 0;
 }
@@ -223,16 +228,22 @@ function runPromote(options: Options): number {
 function copyAll(moves: PromoteMove[], options: Options): string | undefined {
   const copies: string[] = [];
   const createdFolders: string[] = [];
+  let writing: string | undefined;
   try {
     for (const { from, to } of moves) {
       const target = under(options.bank, to);
       const created = mkdirSync(dirname(target), { recursive: true });
       if (created !== undefined) createdFolders.push(created);
+      // Only a target that is ours to clean up: Windows reports a clash as EPERM, not EEXIST.
+      writing = lstatSync(target, { throwIfNoEntry: false }) === undefined ? target : undefined;
       copyFileSync(under(options.drafts, from), target, constants.COPYFILE_EXCL);
       copies.push(target);
+      writing = undefined;
     }
     return undefined;
   } catch (error) {
+    // A failed copy may leave a part-written target (never one that was already there).
+    if (writing !== undefined) rmSync(writing, { force: true });
     for (const copy of copies) rmSync(copy, { force: true });
     for (const folder of createdFolders) rmSync(folder, { recursive: true, force: true });
     return error instanceof Error ? error.message : String(error);
