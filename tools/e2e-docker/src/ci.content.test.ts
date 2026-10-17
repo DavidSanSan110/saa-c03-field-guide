@@ -70,4 +70,21 @@ describe('the e2e job of ci.yml', () => {
     expect(steps.length).toBeGreaterThan(0);
     expect(steps.filter((step) => /playwright install/.test(step.run ?? ''))).toEqual([]);
   });
+
+  test('AC-11: the workspace is marked as a safe git directory between checkout and install', () => {
+    const steps = e2eJob().steps ?? [];
+
+    const checkout = steps.findIndex((step) => (step.uses ?? '').startsWith('actions/checkout@'));
+    const install = steps.findIndex((step) => (step.run ?? '').includes('pnpm install'));
+    const safeDirectory = steps.findIndex(
+      (step) =>
+        (step.run ?? '').includes('git config --global --add safe.directory') &&
+        (step.run ?? '').includes('$GITHUB_WORKSPACE'),
+    );
+
+    expect(checkout).toBeGreaterThanOrEqual(0);
+    expect(install).toBeGreaterThanOrEqual(0);
+    expect(safeDirectory).toBeGreaterThan(checkout);
+    expect(safeDirectory).toBeLessThan(install);
+  });
 });
