@@ -6,16 +6,32 @@ import { fileURLToPath } from 'node:url';
 import { shouldInjectFixtures } from './src/diagram/fixtures-route.ts';
 import { buildSidebar } from './src/sidebar.ts';
 
-// Diagram support (spec 012): hands the configured publicDir to Diagram.astro (its icon check) and, with
-// FIELD_GUIDE_FIXTURES=1 or in dev, injects the view's test page. Production builds never contain it.
+const diagramsDir = fileURLToPath(new URL('../../diagrams/', import.meta.url));
+
+// Diagram support (specs 012 and 013): hands the configured publicDir (icon check) and the diagrams/ folder
+// (FlowDiagram.astro) to the components, reloads the dev page when a diagrams/*.yaml file changes (pages read
+// the files on every request, so a reload is enough) and, with FIELD_GUIDE_FIXTURES=1 or in dev, injects
+// the view's test page. Production builds never contain it.
 /** @type {import('astro').AstroIntegration} */
 const diagrams = {
   name: 'diagrams',
   hooks: {
+    'astro:server:setup': ({ server }) => {
+      server.watcher.add(diagramsDir);
+      const reload = (/** @type {string} */ file) => {
+        if (/[\\/]diagrams[\\/][^\\/]+\.yaml$/.test(file)) {
+          server.ws.send({ type: 'full-reload' });
+        }
+      };
+      server.watcher.on('change', reload).on('add', reload).on('unlink', reload);
+    },
     'astro:config:setup': ({ command, config, injectRoute, updateConfig }) => {
       updateConfig({
         vite: {
-          define: { __FIELD_GUIDE_PUBLIC_DIR__: JSON.stringify(fileURLToPath(config.publicDir)) },
+          define: {
+            __FIELD_GUIDE_PUBLIC_DIR__: JSON.stringify(fileURLToPath(config.publicDir)),
+            __FIELD_GUIDE_DIAGRAMS_DIR__: JSON.stringify(diagramsDir),
+          },
         },
       });
       if (!shouldInjectFixtures(process.env, command)) return;

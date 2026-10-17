@@ -60,22 +60,26 @@ describe('site content contract', () => {
   );
 
   test.each(tasks.map((task) => [task.id, task] as const))(
-    'AC-3: task %s has d<n>/<slug>/index.md titled "Task <id>: <title>"',
+    'AC-3: task %s has exactly one of d<n>/<slug>/index.md and index.mdx, titled "Task <id>: <title>" (AC-13)',
     (_id, task) => {
-      const file = join(docsRoot, `d${String(task.domain)}`, task.slug, 'index.md');
+      const folder = join(docsRoot, `d${String(task.domain)}`, task.slug);
+      const files = ['index.md', 'index.mdx'].map((name) => join(folder, name)).filter(existsSync);
 
-      expect(existsSync(file)).toBe(true);
-      expect(readTitle(file)).toBe(`Task ${task.id}: ${task.title}`);
+      expect(files).toHaveLength(1);
+      expect(readTitle(files[0] as string)).toBe(`Task ${task.id}: ${task.title}`);
     },
   );
 
-  test('AC-3: pins literal titles from the spec', () => {
+  test('AC-3: pins literal titles from the spec (AC-13)', () => {
+    const taskFolder = join(docsRoot, 'd1', '1-3-data-security');
+    const taskFile = existsSync(join(taskFolder, 'index.mdx'))
+      ? join(taskFolder, 'index.mdx')
+      : join(taskFolder, 'index.md');
+
     expect(readTitle(join(docsRoot, 'd1', 'index.mdx'))).toBe(
       'Domain 1: Design Secure Architectures',
     );
-    expect(readTitle(join(docsRoot, 'd1', '1-3-data-security', 'index.md'))).toBe(
-      'Task 1.3: Determine appropriate data security controls',
-    );
+    expect(readTitle(taskFile)).toBe('Task 1.3: Determine appropriate data security controls');
   });
 
   test('AC-3: no file under apps/site is named like the blocked quiz page', () => {
