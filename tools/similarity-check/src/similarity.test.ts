@@ -320,3 +320,66 @@ describe('findMatches', () => {
     expect(findMatches(seq('rye', 1, 1).join(' '), index)).toEqual([]);
   });
 });
+
+// Review round 1 (regression ACs). The format characters are built at runtime, never typed.
+describe('format characters (review round 1)', () => {
+  const FORMAT_CHARACTERS: [string, number][] = [
+    ['soft hyphen', 0x00ad],
+    ['zero-width space', 0x200b],
+    ['zero-width non-joiner', 0x200c],
+    ['zero-width joiner', 0x200d],
+    ['word joiner', 0x2060],
+    ['byte order mark', 0xfeff],
+  ];
+  const RUN = 'lemon tarts cool slowly beside the quiet harbour window';
+
+  test.each(FORMAT_CHARACTERS)('AC-24: a %s inside a word does not split it', (_label, code) => {
+    const mark = String.fromCodePoint(code);
+
+    expect(words(`slo${mark}wly`)).toEqual([{ word: 'slowly', line: 1 }]);
+  });
+
+  test.each(FORMAT_CHARACTERS)('AC-24: a %s does not change the line numbers', (_label, code) => {
+    const mark = String.fromCodePoint(code);
+
+    expect(words(`first\nslo${mark}wly${mark} baked\n\nlast`)).toEqual([
+      { word: 'first', line: 1 },
+      { word: 'slowly', line: 2 },
+      { word: 'baked', line: 2 },
+      { word: 'last', line: 4 },
+    ]);
+  });
+
+  test('AC-24: several different format characters in one word are all removed', () => {
+    const marks = FORMAT_CHARACTERS.map(([, code]) => String.fromCodePoint(code)).join('');
+
+    expect(words(`Lem${marks}on`)).toEqual([{ word: 'lemon', line: 1 }]);
+  });
+
+  test('AC-24: a copied 9-word run with a soft hyphen in a word still matches at min 8', () => {
+    const shy = String.fromCodePoint(0x00ad);
+    const index = buildIndex({ 'a.txt': `before0 ${RUN} after0` }, 8);
+
+    const matches = findMatches(`intro0 ${RUN.replace('slowly', `slo${shy}wly`)} outro0`, index);
+
+    expect(matches).toEqual([
+      { line: 1, length: 9, text: RUN, corpusFile: 'a.txt', corpusLine: 1 },
+    ]);
+  });
+
+  test('AC-24: a soft hyphen in the corpus text does not prevent a match either', () => {
+    const shy = String.fromCodePoint(0x00ad);
+    const zwsp = String.fromCodePoint(0x200b);
+    const index = buildIndex(
+      {
+        'a.txt': `before0 ${RUN.replace('quiet', `qui${shy}et`).replace('tarts', `ta${zwsp}rts`)} after0`,
+      },
+      8,
+    );
+
+    const matches = findMatches(`intro0 ${RUN} outro0`, index);
+
+    expect(matches).toHaveLength(1);
+    expect(matches[0]).toMatchObject({ length: 9, text: RUN });
+  });
+});

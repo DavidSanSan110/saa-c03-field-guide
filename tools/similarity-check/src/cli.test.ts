@@ -604,3 +604,387 @@ describe('similarity-check CLI', () => {
     expect(run.output).not.toContain(dir);
   });
 });
+
+// Review round 1 (regression ACs).
+
+/** Adds files (relative POSIX path -> content) below an existing directory. */
+function addFiles(dir: string, files: Record<string, string | Buffer>): void {
+  for (const [path, content] of Object.entries(files)) {
+    const full = join(dir, ...path.split('/'));
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, content);
+  }
+}
+
+function git(cwd: string, args: string[]): void {
+  const result = spawnSync(
+    'git',
+    ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args],
+    { cwd, env: cleanEnv(), encoding: 'utf8', windowsHide: true },
+  );
+  expect(result.status, `git ${args.join(' ')}: ${result.stdout}${result.stderr}`).toBe(0);
+}
+
+/** A git checkout whose private/similarity-corpus (untracked, like the real one) holds x.txt. */
+function makeMainCheckout(): string {
+  const main = setup({
+    'private/similarity-corpus/x.txt': CORPUS_TEXT,
+    'README.md': 'main checkout\n',
+  });
+  git(main, ['init', '-q']);
+  git(main, ['add', 'README.md']);
+  git(main, ['commit', '-q', '--no-verify', '-m', 'init']);
+  return main;
+}
+
+function addWorktree(main: string, relativePath: string, branch: string): string {
+  const path = join(main, ...relativePath.split('/'));
+  git(main, ['worktree', 'add', '-q', path, '-b', branch]);
+  return path;
+}
+
+const MATCH_IN_X = `page.md:3: 9 words shared with x.txt:2: "${RUN}"`;
+
+describe('default corpus location (review round 1)', () => {
+  test('AC-22: a linked worktree inside the main checkout uses the main checkout corpus', () => {
+    const main = makeMainCheckout();
+    const linked = addWorktree(main, 'wt', 't1');
+    addFiles(linked, { 'page.md': PAGE });
+
+    const run = runCli(linked, ['page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(MATCH_IN_X);
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 1));
+  });
+
+  test('AC-22: a worktree nested under .claude/worktrees uses the main checkout corpus', () => {
+    const main = makeMainCheckout();
+    const linked = addWorktree(main, '.claude/worktrees/w', 't2');
+    addFiles(linked, { 'page.md': PAGE });
+
+    const run = runCli(linked, ['page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(MATCH_IN_X);
+  });
+
+  test('AC-22: a subfolder of a linked worktree uses the main checkout corpus too', () => {
+    const main = makeMainCheckout();
+    const linked = addWorktree(main, 'wt', 't3');
+    addFiles(linked, { 'sub/deep/page.md': PAGE });
+
+    const run = runCli(join(linked, 'sub', 'deep'), ['page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(MATCH_IN_X);
+  });
+
+  test('AC-22: the main checkout itself, from a subfolder, uses its own corpus', () => {
+    const main = makeMainCheckout();
+    addFiles(main, { 'sub/page.md': PAGE });
+
+    const run = runCli(join(main, 'sub'), ['page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(MATCH_IN_X);
+  });
+
+  test('AC-22: a corpus folder inside the linked worktree is not the default (the main one is)', () => {
+    const main = makeMainCheckout();
+    const linked = addWorktree(main, 'wt', 't4');
+    addFiles(linked, {
+      'private/similarity-corpus/z.txt': 'rye1 rye2 rye3 rye4 rye5 rye6 rye7 rye8',
+      'page.md': `${PAGE}\nrye1 rye2 rye3 rye4 rye5 rye6 rye7 rye8\n`,
+    });
+
+    const run = runCli(linked, ['page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(MATCH_IN_X);
+    expect(run.output).not.toContain('z.txt');
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 1));
+  });
+
+  test('AC-22: outside any git repository the default is private/similarity-corpus below the cwd', () => {
+    const dir = setup({
+      'private/similarity-corpus/x.txt': CORPUS_TEXT,
+      'page.md': PAGE,
+    });
+
+    const run = runCli(dir, ['page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(MATCH_IN_X);
+  });
+
+  test('AC-22: --corpus overrides the main checkout corpus inside a linked worktree', () => {
+    const main = makeMainCheckout();
+    const linked = addWorktree(main, 'wt', 't5');
+    const other = 'rye1 rye2 rye3 rye4 rye5 rye6 rye7 rye8';
+    addFiles(linked, {
+      'own/y.txt': other,
+      'page.md': `${PAGE}\n${other}\n`,
+    });
+
+    const run = runCli(linked, ['--corpus', 'own', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(`page.md:5: 8 words shared with y.txt:1: "${other}"`);
+    expect(run.output).not.toContain('x.txt');
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 1));
+  });
+
+  test('AC-22: --corpus naming a missing folder in a linked worktree does not fall back to the main one', () => {
+    const main = makeMainCheckout();
+    const linked = addWorktree(main, 'wt', 't6');
+    addFiles(linked, { 'page.md': PAGE });
+
+    const run = runCli(linked, ['--corpus', 'nowhere', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(run.output).toContain('no corpus at nowhere');
+    expect(run.output).not.toContain('words shared with');
+  });
+});
+
+describe('corpus file encodings (review round 1)', () => {
+  const BOM_CHAR = String.fromCodePoint(0xfeff);
+
+  test('AC-23: a UTF-16 LE corpus file with a BOM is decoded and matches', () => {
+    const dir = setup({
+      'corpus/utf16le.txt': Buffer.from(BOM_CHAR + CORPUS_TEXT, 'utf16le'),
+      'page.md': PAGE,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(`page.md:3: 9 words shared with utf16le.txt:2: "${RUN}"`);
+  });
+
+  test('AC-23: a UTF-16 BE corpus file with a BOM is decoded and matches', () => {
+    const dir = setup({
+      'corpus/sub/utf16be.md': Buffer.from(BOM_CHAR + CORPUS_TEXT, 'utf16le').swap16(),
+      'page.md': PAGE,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.md:3: 9 words shared with sub/utf16be.md:2: "${RUN}"`,
+    );
+  });
+
+  test('AC-23: UTF-8 text with non-ASCII letters is a valid corpus file', () => {
+    const sentence = 'the café on harbour street sells rye bread every single morning';
+    const dir = setup({
+      'corpus/cafe.txt': `Notes\n${sentence}\n`,
+      'page.md': `Visit: ${sentence}!\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.md:1: 11 words shared with cafe.txt:2: "${sentence}"`,
+    );
+  });
+
+  test('AC-23: a corpus file with NUL bytes fails the run, naming the file with / separators', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'corpus/bin/data.txt': Buffer.from('some text\u0000more text here'),
+      'page.md': CLEAN_TEXT,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(run.output).toContain('corpus file bin/data.txt is not UTF-8');
+  });
+
+  test('AC-23: a corpus file with invalid UTF-8 bytes in the middle fails the run', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'corpus/broken.md': Buffer.concat([
+        Buffer.from('fine text before '),
+        Buffer.from([0xff, 0xfe]),
+        Buffer.from(' and after'),
+      ]),
+      'page.md': CLEAN_TEXT,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(run.output).toContain('corpus file broken.md is not UTF-8');
+  });
+
+  test('AC-23: a lone 0x93 byte (a cp1252 quote) is not UTF-8 and fails the run', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'corpus/legacy/quotes.txt': Buffer.concat([
+        Buffer.from('he said '),
+        Buffer.from([0x93]),
+        Buffer.from('hello there my friend'),
+      ]),
+      'page.md': CLEAN_TEXT,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(run.output).toContain('corpus file legacy/quotes.txt is not UTF-8');
+  });
+});
+
+describe('Markdown links and entities (review round 1)', () => {
+  const LINKED = [
+    '# Notes',
+    '',
+    `Our visit notes say that [lemon tarts cool slowly](https://example.com/some/long/path) beside the quiet harbour window today.`,
+    '',
+  ].join('\n');
+
+  test.each(['md', 'mdx'])(
+    'AC-25: a link target inside a copied run does not break it in a .%s target',
+    (ext) => {
+      const dir = setup({ ...CORPUS_FILES, [`page.${ext}`]: LINKED });
+
+      const run = runCli(dir, ['--corpus', 'corpus', `page.${ext}`]);
+
+      expect(run.status, run.output).toBe(1);
+      expect(lines(run.output)).toContain(
+        `page.${ext}:3: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+      );
+    },
+  );
+
+  test('AC-25: the link text is kept and the line numbers stay right after a link', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'page.md': [
+        '# Notes',
+        '',
+        'See [the docs](https://example.com/a/b/c) for more.',
+        '',
+        'Our notes say that [lemon tarts cool slowly](https://example.com/x/y/z) beside the quiet harbour window today.',
+        '',
+      ].join('\n'),
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.md:5: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+  });
+
+  test('AC-25: a run starting on the line of a link and wrapped to the next line is reported there', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'page.md': [
+        '# Notes',
+        '',
+        'Our notes say that [lemon tarts cool slowly](https://example.com/x/y/z)',
+        'beside the quiet harbour window today.',
+        '',
+      ].join('\n'),
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.md:3: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+  });
+
+  test.each([
+    ['&rsquo;', 'baker&rsquo;s'],
+    ['&#8217;', 'baker&#8217;s'],
+  ])('AC-25: the entity %s inside a run does not break it', (_label, baker) => {
+    const dir = setup({
+      'corpus/shop.txt': `Intro\npreamble the baker’s lemon tarts cool slowly beside the quiet harbour window postscript`,
+      'page.md': `Notes: the ${baker} lemon tarts cool slowly beside the quiet harbour window today.\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      'page.md:1: 11 words shared with shop.txt:2: "the bakers lemon tarts cool slowly beside the quiet harbour window"',
+    );
+  });
+
+  test('AC-25: a &nbsp; entity between words does not break the run', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'page.md': `Our notes say that lemon tarts cool &nbsp; slowly beside the quiet harbour window today.\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.md:1: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+  });
+
+  test('AC-25: links and entities are removed from .md corpus files too', () => {
+    const dir = setup({
+      'corpus/notes.md': [
+        'First line.',
+        '',
+        `preamble our [lemon tarts cool slowly](https://example.org/x/y/z) beside the quiet &nbsp; harbour window postscript`,
+        '',
+      ].join('\n'),
+      'page.txt': `Our notes say that\n${RUN} today.\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.txt']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(`page.txt:2: 9 words shared with notes.md:3: "${RUN}"`);
+  });
+
+  test('AC-25: a .txt target is not stripped, so the words of a link target stay and break the run', () => {
+    const dir = setup({ ...CORPUS_FILES, 'page.txt': LINKED });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.txt']);
+
+    expect(run.status, run.output).toBe(0);
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 0));
+  });
+
+  test('AC-25: a .yaml target is not stripped either', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'page.yaml': `id: x\nstem: Our notes say that lemon tarts cool &nbsp; slowly beside the quiet harbour window\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.yaml']);
+
+    expect(run.status, run.output).toBe(0);
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 0));
+  });
+
+  test('AC-25: in a .txt target the link words are real words and match a corpus that has them', () => {
+    const dir = setup({
+      'corpus/links.txt':
+        'preamble [lemon tarts cool slowly](https://example.com/some/path) beside the quiet harbour window postscript',
+      'page.txt':
+        'Notes [lemon tarts cool slowly](https://example.com/some/path) beside the quiet harbour window today.\n',
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.txt']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      'page.txt:1: 14 words shared with links.txt:1: "lemon tarts cool slowly https example com some path beside the quiet harbour window"',
+    );
+  });
+});
