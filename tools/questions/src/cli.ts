@@ -1,4 +1,5 @@
-// Questions CLI: argument parsing, file I/O and exit codes only; the logic is in bank.ts.
+// Questions CLI: argument parsing, file I/O and exit codes only; the logic is in bank.ts and
+// dedupe.ts.
 import {
   copyFileSync,
   constants,
@@ -7,6 +8,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
@@ -21,7 +23,7 @@ import {
   sidecarPath,
 } from './bank.ts';
 import type { BankResult, FileMap, Problem, PromoteMove } from './bank.ts';
-import { findSimilar, similarByDraft, withDedupe } from './dedupe.ts';
+import { findSimilar, roundScore, similarByDraft, withDedupe } from './dedupe.ts';
 
 const USAGE = `Usage:
   questions check [options]                      read both folders and print every problem
@@ -200,21 +202,64 @@ function runDedupe(options: Options): number {
     return 1;
   }
 
-  const score = (value: number): string => (Math.round(value * 100) / 100).toFixed(2);
   for (const { a, b, bFolder, score: value } of pairs) {
     const other = under(bFolder === 'drafts' ? options.drafts : options.bank, b.path);
     console.log(
-      `${score(value)} ${a.question.id} ${under(options.drafts, a.path)} ~ ${b.question.id} ${other}`,
+      `${roundScore(value).toFixed(2)} ${a.question.id} ${under(options.drafts, a.path)} ~ ${b.question.id} ${other}`,
     );
   }
   const n = drafts.entries.length;
   const compared = n * bank.entries.length + (n * (n - 1)) / 2;
   console.log(
-    `pairs: ${pairs.length} flagged of ${compared} compared (threshold ${options.threshold.toFixed(2)})`,
+    `pairs: ${pairs.length} flagged of ${compared} compared (threshold ${String(options.threshold)})`,
   );
 
-  for (const [target, text] of sidecars) writeFileSync(under(options.drafts, target), text);
+  const failure = writeSidecars(sidecars, options.drafts);
+  if (failure !== undefined) {
+    console.error(`questions: ${failure}; no sidecar was changed`);
+    return 1;
+  }
   return pairs.length > 0 ? 1 : 0;
+}
+
+/**
+ * Writes each sidecar to a temporary file next to it and renames it into place. On a failure it
+ * puts back the old bytes of the sidecars already replaced, deletes the ones it created and the
+ * temporary files, and returns a message naming the failing sidecar; else undefined.
+ */
+function writeSidecars(sidecars: Map<string, string>, folder: string): string | undefined {
+  const done: { file: string; old: Buffer | undefined }[] = [];
+  let file = '';
+  let temp = '';
+  try {
+    for (const [path, text] of sidecars) {
+      file = under(folder, path);
+      temp = `${file}.${String(process.pid)}.tmp`;
+      const old = readOld(file);
+      writeFileSync(temp, text);
+      renameSync(temp, file);
+      done.push({ file, old });
+    }
+    return undefined;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? 'unknown error';
+    rmSync(temp, { force: true });
+    for (const { file: written, old } of done.reverse()) {
+      if (old === undefined) rmSync(written, { force: true });
+      else writeFileSync(written, old);
+    }
+    return `could not write ${file} (${code})`;
+  }
+}
+
+/** The bytes of a file, or undefined when there is none. */
+function readOld(file: string): Buffer | undefined {
+  try {
+    return readFileSync(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
 }
 
 function runNextId(options: Options): number {
