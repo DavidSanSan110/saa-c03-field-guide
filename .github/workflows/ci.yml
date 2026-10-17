@@ -91,11 +91,22 @@ jobs:
     name: e2e
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The same pinned image as `pnpm e2e:docker`: screenshot baselines are rendered in it.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.0-noble@sha256:06a9939e57531807f8d5fd76ce44b53165ffb7d7501d87ab10e285c20b1e971f
+      options: --ipc=host
+    env:
+      FIELD_GUIDE_VISUAL: '1'
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Mark the workspace as a safe git directory
+        # The container runs as root but the checkout belongs to the runner user, and the
+        # `prepare` script installs the git hooks (D15), which needs git to trust the directory.
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Set up pnpm
         uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
@@ -108,9 +119,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
-      - name: Install Playwright browser
-        run: pnpm exec playwright install --with-deps chromium
 
       - name: Build
         run: pnpm -r --if-present build

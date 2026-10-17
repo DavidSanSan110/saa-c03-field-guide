@@ -258,3 +258,323 @@ test.describe('the diagram file', () => {
     expect(loadDiagram().scenarios.map((scenario) => scenario.id)).toEqual(PINNED_SCENARIO_IDS);
   });
 });
+
+// ===========================================================================
+// The second real diagram: alb-asg-az-failure on the 2.2 page (spec 013, AC-14…AC-17).
+// Same checks as above, plus the element states this diagram uses. The expected captions are read
+// from diagrams/alb-asg-az-failure.yaml at test time.
+// ===========================================================================
+
+const ALB_PAGE_PATH = '/d2/2-2-high-availability/';
+const ALB_DIAGRAM_ID = 'alb-asg-az-failure';
+const ALB_HEADING = 'ALB and Auto Scaling across two AZs';
+const ALB_DIAGRAM_FILE = resolve(
+  import.meta.dirname,
+  '..',
+  '..',
+  'diagrams',
+  `${ALB_DIAGRAM_ID}.yaml`,
+);
+const ALB_SCENARIO_IDS = ['traffic', 'az-failure', 'az-recovery'];
+
+function loadAlbDiagram(): Diagram {
+  return parse(readFileSync(ALB_DIAGRAM_FILE, 'utf8')) as Diagram;
+}
+
+function albScenarioIdsForTests(): string[] {
+  try {
+    return loadAlbDiagram().scenarios.map((scenario) => scenario.id);
+  } catch {
+    return ALB_SCENARIO_IDS;
+  }
+}
+
+function albScenarioOf(id: string): DiagramScenario {
+  const scenario = loadAlbDiagram().scenarios.find((candidate) => candidate.id === id);
+  if (scenario === undefined) throw new Error(`no scenario ${id} in ${ALB_DIAGRAM_ID}.yaml`);
+  return scenario;
+}
+
+function albIslandOf(page: Page): Island {
+  const figure = page.locator(`figure[data-diagram="${ALB_DIAGRAM_ID}"]`);
+  return {
+    figure,
+    root: figure.locator('[data-diagram-view]'),
+    back: figure.getByRole('button', { name: 'Step back' }),
+    forward: figure.getByRole('button', { name: 'Step forward' }),
+  };
+}
+
+async function openAlbPage(page: Page): Promise<Island> {
+  await page.goto(ALB_PAGE_PATH);
+  const island = albIslandOf(page);
+  await island.figure.scrollIntoViewIfNeeded();
+  await expect(island.root).toHaveAttribute('data-hydrated', 'true');
+  return island;
+}
+
+/** Opens the page, selects the scenario and steps forward to the 0-based `step` (-1 = the start). */
+async function openAlbAt(page: Page, scenarioId: string, step: number): Promise<Island> {
+  const island = await openAlbPage(page);
+  await selectScenario(island, albScenarioOf(scenarioId));
+  for (let reached = 0; reached <= step; reached += 1) await island.forward.click();
+  await expectStep(island, step);
+  return island;
+}
+
+function albNode(island: Island, id: string): Locator {
+  return island.root.locator(`[data-node-id="${id}"]`);
+}
+
+function albGroup(island: Island, id: string): Locator {
+  return island.root.locator(`[data-group-id="${id}"]`);
+}
+
+function albEdge(island: Island, id: string): Locator {
+  return island.root.locator(`[data-edge-id="${id}"]`);
+}
+
+test.describe('the ALB diagram on the 2.2 page', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-14: the page contains exactly one figure for alb-asg-az-failure', async ({ page }) => {
+    await page.goto(ALB_PAGE_PATH);
+
+    await expect(page.locator(`figure[data-diagram="${ALB_DIAGRAM_ID}"]`)).toHaveCount(1);
+  });
+
+  test(`AC-14: the page has a heading "${ALB_HEADING}"`, async ({ page }) => {
+    await page.goto(ALB_PAGE_PATH);
+
+    await expect(page.getByRole('heading', { name: ALB_HEADING, level: 2 })).toHaveCount(1);
+  });
+
+  test('AC-14: the alb figure sits under the heading: it is the nearest heading before the figure', async ({
+    page,
+  }) => {
+    await page.goto(ALB_PAGE_PATH);
+
+    const nearestHeading = await page
+      .locator(`figure[data-diagram="${ALB_DIAGRAM_ID}"]`)
+      .evaluate((figure) => {
+        const headings = Array.from(
+          document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6'),
+        ).filter(
+          (heading) =>
+            !figure.contains(heading) &&
+            (heading.compareDocumentPosition(figure) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+        );
+        return headings.at(-1)?.textContent?.trim() ?? null;
+      });
+
+    expect(nearestHeading).toBe(ALB_HEADING);
+  });
+
+  test('AC-14: the island of the alb figure hydrates', async ({ page }) => {
+    const island = await openAlbPage(page);
+
+    await expect(island.root).toHaveAttribute('data-hydrated', 'true');
+    await expect(island.forward).toBeVisible();
+  });
+
+  test('AC-15: "Steps as text" of the alb figure lists every scenario label of the file, each with its captions in file order', async ({
+    page,
+  }) => {
+    const diagram = loadAlbDiagram();
+    await page.goto(ALB_PAGE_PATH);
+    const details = page.locator(`figure[data-diagram="${ALB_DIAGRAM_ID}"] details`);
+
+    await expect(details).toHaveCount(1);
+    await expect(details.locator('summary')).toHaveText('Steps as text');
+    const lists = details.locator('ol');
+    await expect(lists).toHaveCount(diagram.scenarios.length);
+    for (const [index, scenario] of diagram.scenarios.entries()) {
+      const list = lists.nth(index);
+      await expect(list.locator('li'), scenario.id).toHaveText(scenario.steps.map(fallbackText));
+      const labelId = await list.getAttribute('aria-labelledby');
+      expect(labelId, `${scenario.id} list is labelled`).toBeTruthy();
+      await expect(page.locator(`[id="${String(labelId)}"]`)).toHaveText(scenario.label);
+    }
+  });
+
+  test('AC-18: the alb file has 3 scenarios with the ids traffic, az-failure and az-recovery', () => {
+    expect(albScenarioIdsForTests()).toEqual(ALB_SCENARIO_IDS);
+  });
+});
+
+test.describe('stepping through the scenarios of the ALB diagram', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  for (const id of albScenarioIdsForTests()) {
+    test(`AC-16: alb scenario "${id}" shows each step's caption in order when stepping forward`, async ({
+      page,
+    }) => {
+      const scenario = albScenarioOf(id);
+      const island = await openAlbPage(page);
+      await selectScenario(island, scenario);
+
+      for (const [index, step] of scenario.steps.entries()) {
+        await island.forward.click();
+        await expectStep(island, index);
+        await expect(captionRegion(island)).toContainText(step.caption);
+      }
+    });
+
+    test(`AC-16: alb scenario "${id}" shows the previous caption again when stepping back from the last step`, async ({
+      page,
+    }) => {
+      const scenario = albScenarioOf(id);
+      const island = await openAlbPage(page);
+      await selectScenario(island, scenario);
+      test.skip(scenario.steps.length < 2, 'a one-step scenario has no previous caption');
+      for (let step = 0; step < scenario.steps.length; step += 1) await island.forward.click();
+      await expectStep(island, scenario.steps.length - 1);
+      const previous = scenario.steps.at(-2);
+
+      await island.back.click();
+
+      await expectStep(island, scenario.steps.length - 2);
+      await expect(captionRegion(island)).toContainText(previous?.caption ?? '');
+    });
+  }
+});
+
+test.describe('element states of the ALB diagram', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-16: at the start of "az-failure" web-a is visible and web-b2 with its edges is hidden', async ({
+    page,
+  }) => {
+    const island = await openAlbAt(page, 'az-failure', -1);
+
+    await expect(albNode(island, 'web-a')).toBeVisible();
+    await expect(albNode(island, 'web-a')).toHaveAttribute('data-state', 'normal');
+    await expect(albNode(island, 'web-b2')).toHaveAttribute('data-state', 'hidden');
+    await expect(albNode(island, 'web-b2')).toBeHidden();
+    await expect(albEdge(island, 'to-b2')).toHaveAttribute('data-state', 'hidden');
+    await expect(albEdge(island, 'launch-b2')).toHaveAttribute('data-state', 'hidden');
+  });
+
+  test('AC-16: "az-failure" step 1 marks az-a and web-a failed, each with a failed pill', async ({
+    page,
+  }) => {
+    const island = await openAlbAt(page, 'az-failure', 0);
+
+    await expect(albGroup(island, 'az-a')).toHaveAttribute('data-state', 'failed');
+    await expect(albGroup(island, 'az-a')).toHaveAttribute('data-active', 'true');
+    await expect(
+      island.root.locator('[data-group-head="az-a"]').getByText('failed', { exact: true }),
+    ).toBeVisible();
+    await expect(albNode(island, 'web-a')).toHaveAttribute('data-state', 'failed');
+    await expect(albNode(island, 'web-a').getByText('failed', { exact: true })).toBeVisible();
+    await expect(albGroup(island, 'az-b')).toHaveAttribute('data-state', 'normal');
+    await expect(albNode(island, 'web-b')).toHaveAttribute('data-state', 'normal');
+  });
+
+  test('AC-16: "az-failure" step 2 breaks the to-a edge and shows its cross', async ({ page }) => {
+    const island = await openAlbAt(page, 'az-failure', 1);
+
+    await expect(albEdge(island, 'to-a')).toHaveAttribute('data-state', 'broken');
+    await expect(albEdge(island, 'to-a')).toHaveAttribute('data-active', 'true');
+    await expect(island.root.getByText('✕')).toBeVisible();
+    await expect(albGroup(island, 'az-a')).toHaveAttribute('data-state', 'failed');
+  });
+
+  test('AC-16: "az-failure" step 4 hides web-a (and its edges) and highlights the asg', async ({
+    page,
+  }) => {
+    const island = await openAlbAt(page, 'az-failure', 3);
+
+    await expect(albNode(island, 'web-a')).toHaveAttribute('data-state', 'hidden');
+    await expect(albNode(island, 'web-a')).toBeHidden();
+    await expect(albEdge(island, 'to-a')).toHaveAttribute('data-state', 'hidden');
+    await expect(albEdge(island, 'launch-a')).toHaveAttribute('data-state', 'hidden');
+    await expect(albNode(island, 'asg')).toHaveAttribute('data-state', 'highlighted');
+    await expect(albNode(island, 'asg')).toHaveAttribute('data-active', 'true');
+    await expect(albGroup(island, 'az-a')).toHaveAttribute('data-state', 'failed');
+    await expect(albNode(island, 'web-b2')).toBeHidden();
+  });
+
+  test('AC-16: "az-failure" step 5 launches web-b2, which appears, and the asg is normal again', async ({
+    page,
+  }) => {
+    const island = await openAlbAt(page, 'az-failure', 4);
+
+    await expect(albNode(island, 'web-b2')).toHaveAttribute('data-state', 'appearing');
+    await expect(albNode(island, 'web-b2')).toBeVisible();
+    await expect(albNode(island, 'asg')).toHaveAttribute('data-state', 'normal');
+    await expect(albEdge(island, 'launch-b2')).toHaveAttribute('data-active', 'true');
+    await expect(albNode(island, 'web-a')).toBeHidden();
+  });
+
+  test('AC-16: "az-failure" step back from step 5 hides web-b2 and highlights the asg again', async ({
+    page,
+  }) => {
+    const island = await openAlbAt(page, 'az-failure', 4);
+
+    await island.back.click();
+
+    await expectStep(island, 3);
+    await expect(albNode(island, 'web-b2')).toHaveAttribute('data-state', 'hidden');
+    await expect(albNode(island, 'web-b2')).toBeHidden();
+    await expect(albNode(island, 'asg')).toHaveAttribute('data-state', 'highlighted');
+  });
+
+  test('AC-16: "az-recovery" starts with web-a hidden and az-a normal', async ({ page }) => {
+    const island = await openAlbAt(page, 'az-recovery', -1);
+
+    await expect(albNode(island, 'web-a')).toHaveAttribute('data-state', 'hidden');
+    await expect(albNode(island, 'web-a')).toBeHidden();
+    await expect(albNode(island, 'web-b2')).toBeVisible();
+    await expect(albGroup(island, 'az-a')).toHaveAttribute('data-state', 'normal');
+  });
+
+  test('AC-16: "az-recovery" step 2 makes web-a appear and az-a normal again', async ({ page }) => {
+    const island = await openAlbAt(page, 'az-recovery', 1);
+
+    await expect(albNode(island, 'web-a')).toHaveAttribute('data-state', 'appearing');
+    await expect(albNode(island, 'web-a')).toBeVisible();
+    await expect(albGroup(island, 'az-a')).toHaveAttribute('data-state', 'normal');
+  });
+
+  test('AC-16: "az-recovery" ends with web-b2 hidden', async ({ page }) => {
+    const island = await openAlbAt(page, 'az-recovery', 4);
+
+    await expect(albNode(island, 'web-b2')).toHaveAttribute('data-state', 'hidden');
+    await expect(albNode(island, 'web-b2')).toBeHidden();
+    await expect(albNode(island, 'web-a')).toBeVisible();
+  });
+});
+
+test.describe('accessibility of the 2.2 page', () => {
+  test.use({ viewport: DESKTOP_VIEWPORT });
+
+  test('AC-17: axe finds no WCAG A/AA violations on the 2.2 page at the start', async ({
+    page,
+  }) => {
+    await openAlbPage(page);
+
+    await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+  });
+
+  test('AC-17: axe finds no WCAG A/AA violations at the failed state of "az-failure"', async ({
+    page,
+  }) => {
+    await openAlbAt(page, 'az-failure', 1);
+
+    await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+  });
+
+  test('AC-17: axe finds no WCAG A/AA violations at the last step of the last scenario', async ({
+    page,
+  }) => {
+    const last = loadAlbDiagram().scenarios.at(-1);
+    if (last === undefined) throw new Error(`${ALB_DIAGRAM_ID}.yaml has no scenario`);
+    const island = await openAlbPage(page);
+    await selectScenario(island, last);
+    for (let step = 0; step < last.steps.length; step += 1) await island.forward.click();
+    await expectStep(island, last.steps.length - 1);
+
+    await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+  });
+});
