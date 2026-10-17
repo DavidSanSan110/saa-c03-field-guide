@@ -641,3 +641,99 @@ describe('planPromote', () => {
     expect(plan.moves).toHaveLength(1);
   });
 });
+
+describe('review round 1 regressions', () => {
+  test('AC-41: collectIds also reads .yml files', () => {
+    expect(collectIds({ 'd1/1.3/misnamed.yml': questionYaml({ id: 'd1-1.3-0007' }) })).toEqual([
+      'd1-1.3-0007',
+    ]);
+  });
+
+  test('AC-41: an id held only by a .yml file is never handed out again', () => {
+    const ids = collectIds({
+      'd1/1.3/a.yaml': questionYaml({ id: 'd1-1.3-0001' }),
+      'd1/1.3/misnamed.yml': questionYaml({ id: 'd1-1.3-0004' }),
+    });
+
+    expect(nextId('1.3', ids)).toBe('d1-1.3-0005');
+  });
+
+  test('AC-41: readBank still reports the .yml file as a problem', () => {
+    const result = readBank({ 'd1/1.3/misnamed.yml': questionYaml() }, { publicOnly: false });
+
+    expect(result.entries).toEqual([]);
+    expect(only(result.problems).file).toBe('d1/1.3/misnamed.yml');
+  });
+
+  test('AC-42: a rejected-old/ folder is read as question paths, unlike rejected/', () => {
+    const files: FileMap = {
+      'rejected-old/d1/1.3/x.yaml': questionYaml({ id: 'd1-1.3-0001' }),
+      'rejected/d1/1.3/y.yaml': questionYaml({ id: 'd1-1.3-0002' }),
+    };
+
+    const result = readBank(files, { publicOnly: false });
+
+    expect(result.entries).toEqual([]);
+    const problem = only(result.problems);
+    expect(problem.file).toBe('rejected-old/d1/1.3/x.yaml');
+    expect(problem.message).toContain('d1/1.3/x.yaml');
+  });
+
+  test('AC-42: a top-level file rejectedfoo.yaml is read as a question path', () => {
+    const result = readBank(
+      { 'rejectedfoo.yaml': questionYaml({ id: 'd1-1.3-0001' }) },
+      { publicOnly: false },
+    );
+
+    expect(result.entries).toEqual([]);
+    const problem = only(result.problems);
+    expect(problem.file).toBe('rejectedfoo.yaml');
+    expect(problem.message).toContain('d1/1.3/rejectedfoo.yaml');
+  });
+
+  test.each([
+    ['fails the schema', 'd1/1.3/a-bad.yaml', { stem: 'short' }],
+    ['is in the wrong place', 'd1/1.2/a-bad.yaml', {}],
+    ['has an invalid slug', 'd1/1.3/A_bad.yaml', {}],
+  ])(
+    'AC-43: a first file that %s does not make the valid file with the same id a duplicate',
+    (_name, badPath, overrides) => {
+      const good = fileFor('d1-1.3-0005', 'b-good');
+      const files: FileMap = {
+        [good.path]: good.text,
+        [badPath]: questionYaml({ id: 'd1-1.3-0005', ...overrides }),
+      };
+      // The invalid file sorts first.
+      expect(badPath < good.path).toBe(true);
+
+      const result = readBank(files, { publicOnly: false });
+
+      expect(result.entries.map((entry) => entry.path)).toEqual([good.path]);
+      expect(result.problems.length).toBeGreaterThan(0);
+      expect(result.problems.every((problem) => problem.file === badPath)).toBe(true);
+    },
+  );
+
+  test('AC-43: collectIds still counts the id of the invalid file', () => {
+    const ids = collectIds({
+      'd1/1.3/a-bad.yaml': questionYaml({ id: 'd1-1.3-0009', stem: 'short' }),
+    });
+
+    expect(ids).toEqual(['d1-1.3-0009']);
+  });
+
+  test('AC-43: two valid files with the same id are still a duplicate', () => {
+    const first = fileFor('d1-1.3-0005', 'a-first');
+    const second = fileFor('d1-1.3-0005', 'b-second');
+
+    const result = readBank(
+      { [first.path]: first.text, [second.path]: second.text },
+      {
+        publicOnly: false,
+      },
+    );
+
+    expect(result.entries.map((entry) => entry.path)).toEqual([first.path]);
+    expect(only(result.problems).file).toBe(second.path);
+  });
+});

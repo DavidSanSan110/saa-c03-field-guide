@@ -8,6 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { symlinkSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -783,5 +784,194 @@ describe('root script', () => {
 
     expect(script).toMatch(/^tsx (\.\/)?tools\/questions\/src\/cli\.ts(\s|$)/);
     expect(existsSync(join(ROOT, 'tools', 'questions', 'src', 'cli.ts'))).toBe(true);
+  });
+});
+
+// ---- Review round 1 regressions (AC-39 to AC-45) -------------------------------------------------
+
+/** Like `snapshot`, but a link is recorded as a link and never followed. */
+function snapshotLinks(dir: string): Record<string, string> {
+  const tree: Record<string, string> = {};
+  const walk = (relative: string): void => {
+    for (const entry of readdirSync(join(dir, relative), { withFileTypes: true })) {
+      const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
+      if (entry.isSymbolicLink()) {
+        tree[path] = '<link>';
+      } else if (entry.isDirectory()) {
+        tree[`${path}/`] = '<dir>';
+        walk(path);
+      } else {
+        tree[path] = readFileSync(join(dir, path)).toString('hex');
+      }
+    }
+  };
+  walk('');
+  return tree;
+}
+
+/** Creates a link; false when the OS refuses (for example EPERM for file links on Windows). */
+function tryLink(target: string, path: string, type: 'file' | 'junction'): boolean {
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    symlinkSync(target, path, type);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+describe('review round 1 regressions', () => {
+  test('AC-39: a copy that fails partway is rolled back: nothing moved, nothing deleted, exit 1', () => {
+    const dir = makeTempDir();
+    put(dir, DRAFTS, 'd1-1.3-0001', 'aaa');
+    put(dir, DRAFTS, 'd1-1.3-0002', 'bbb');
+    write(dir, `${DRAFTS}/d1/1.3/aaa.check.yaml`, 'sidecar a\n');
+    write(dir, `${DRAFTS}/d1/1.3/bbb.check.yaml`, 'sidecar b\n');
+    // A folder sits where the second copy must go; readBank does not see it.
+    mkdirSync(join(dir, BANK, 'd1', '1.3', 'bbb.yaml'), { recursive: true });
+    const before = snapshot(dir);
+
+    const run = runCli(dir, ['promote']);
+
+    expect(run.status).toBe(1);
+    expect(run.output).not.toMatch(/\bmoved\b/i);
+    expect(run.output).toContain('bbb');
+    expect(snapshot(dir)).toEqual(before);
+    expect(exists(dir, `${BANK}/d1/1.3/aaa.yaml`)).toBe(false);
+    expect(exists(dir, `${DRAFTS}/d1/1.3/aaa.yaml`)).toBe(true);
+    expect(exists(dir, `${DRAFTS}/d1/1.3/aaa.check.yaml`)).toBe(true);
+    expect(exists(dir, `${DRAFTS}/d1/1.3/bbb.yaml`)).toBe(true);
+    expect(exists(dir, `${DRAFTS}/d1/1.3/bbb.check.yaml`)).toBe(true);
+  });
+
+  test('AC-39: the failure is the same when the first copy needs new folders', () => {
+    const dir = makeTempDir();
+    put(dir, DRAFTS, 'd1-1.3-0001', 'aaa');
+    put(dir, DRAFTS, 'd3-3.4-0002', 'bbb');
+    mkdirSync(join(dir, BANK, 'd3', '3.4', 'bbb.yaml'), { recursive: true });
+
+    const run = runCli(dir, ['promote']);
+
+    expect(run.status).toBe(1);
+    expect(run.output).not.toMatch(/\bmoved\b/i);
+    expect(exists(dir, `${BANK}/d1/1.3/aaa.yaml`)).toBe(false);
+    expect(exists(dir, `${DRAFTS}/d1/1.3/aaa.yaml`)).toBe(true);
+    expect(exists(dir, `${DRAFTS}/d3/3.4/bbb.yaml`)).toBe(true);
+  });
+
+  test('AC-40: the check summary line is exactly "drafts: N, bank questions: M, problems: K"', () => {
+    const dir = makeTempDir();
+    put(dir, DRAFTS, 'd1-1.3-0001', 'one', { status: 'draft' });
+    put(dir, DRAFTS, 'd2-2.1-0001', 'two', { status: 'verified' });
+    put(dir, DRAFTS, 'd3-3.4-0001', 'three');
+    put(dir, BANK, 'd1-1.2-0001', 'four');
+
+    const run = runCli(dir, ['check']);
+
+    expect(run.status).toBe(0);
+    expect(lines(run.output)).toContain('drafts: 3, bank questions: 1, problems: 0');
+  });
+
+  test('AC-40: valid entries and problems are counted separately', () => {
+    const dir = makeTempDir();
+    put(dir, DRAFTS, 'd1-1.3-0001', 'one', { status: 'draft' });
+    put(dir, DRAFTS, 'd2-2.1-0001', 'two');
+    write(dir, `${DRAFTS}/d1/1.3/bad.yaml`, 'id: [unclosed\n');
+    put(dir, BANK, 'd1-1.2-0001', 'four');
+    put(dir, BANK, 'd1-1.2-0002', 'five', { status: 'draft' });
+
+    const run = runCli(dir, ['check']);
+
+    expect(run.status).toBe(1);
+    expect(lines(run.output)).toContain('drafts: 2, bank questions: 1, problems: 2');
+  });
+
+  test('AC-40: empty folders give zeros', () => {
+    const dir = makeTempDir();
+
+    const run = runCli(dir, ['check']);
+
+    expect(run.status).toBe(0);
+    expect(lines(run.output)).toContain('drafts: 0, bank questions: 0, problems: 0');
+  });
+
+  test.each([
+    ['check -x', ['check', '-x']],
+    ['check -h', ['check', '-h']],
+    ['check --bogus', ['check', '--bogus']],
+    ['next-id 1.3 -x', ['next-id', '1.3', '-x']],
+    ['next-id 1.3 -h', ['next-id', '1.3', '-h']],
+    ['next-id -x', ['next-id', '-x']],
+    ['next-id 1.3 --bogus', ['next-id', '1.3', '--bogus']],
+    ['promote -x', ['promote', '-x']],
+    ['promote -h', ['promote', '-h']],
+    ['promote --bogus', ['promote', '--bogus']],
+    ['promote id -x', ['promote', 'd1-1.3-0001', '-x']],
+  ])('AC-44: %s exits 2 with the usage text', (_name, args) => {
+    const dir = makeTempDir();
+    put(dir, BANK, 'd1-1.2-0001', 'ok');
+
+    const run = runCli(dir, args);
+
+    expect(run.status).toBe(2);
+    expect(run.output).toMatch(/usage/i);
+  });
+
+  test('AC-44: promote with -x touches nothing', () => {
+    const dir = makeTempDir();
+    put(dir, DRAFTS, 'd1-1.3-0001', 'one');
+    write(dir, `${DRAFTS}/d1/1.3/one.check.yaml`, 'sidecar\n');
+    const before = snapshot(dir);
+
+    const run = runCli(dir, ['promote', '-x']);
+
+    expect(run.status).toBe(2);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  describe.each([
+    ['drafts', DRAFTS],
+    ['bank', BANK],
+  ])('AC-45: links inside the %s folder', (_name, folder) => {
+    test('AC-45: a junction to a folder is a problem naming the link, and promote writes nothing', (ctx) => {
+      const dir = makeTempDir();
+      put(dir, DRAFTS, 'd1-1.3-0001', 'ready');
+      put(dir, 'outside', 'd1-1.3-0002', 'beyond');
+      if (!tryLink(join(dir, 'outside'), join(dir, folder, 'linked-folder'), 'junction')) {
+        ctx.skip();
+        return;
+      }
+      const before = snapshotLinks(dir);
+
+      const check = runCli(dir, ['check']);
+      const promote = runCli(dir, ['promote']);
+
+      expect(check.status).toBe(1);
+      expect(check.output).toContain('linked-folder');
+      expect(promote.status).toBe(1);
+      expect(promote.output).toContain('linked-folder');
+      expect(snapshotLinks(dir)).toEqual(before);
+    });
+
+    test('AC-45: a file symlink is a problem naming the link, and promote writes nothing', (ctx) => {
+      const dir = makeTempDir();
+      put(dir, DRAFTS, 'd1-1.3-0001', 'ready');
+      put(dir, 'outside', 'd1-1.3-0002', 'beyond');
+      const target = join(dir, 'outside', 'd1', '1.3', 'beyond.yaml');
+      if (!tryLink(target, join(dir, folder, 'd1', '1.3', 'linked-file.yaml'), 'file')) {
+        ctx.skip();
+        return;
+      }
+      const before = snapshotLinks(dir);
+
+      const check = runCli(dir, ['check']);
+      const promote = runCli(dir, ['promote']);
+
+      expect(check.status).toBe(1);
+      expect(check.output).toContain('linked-file.yaml');
+      expect(promote.status).toBe(1);
+      expect(promote.output).toContain('linked-file.yaml');
+      expect(snapshotLinks(dir)).toEqual(before);
+    });
   });
 });
