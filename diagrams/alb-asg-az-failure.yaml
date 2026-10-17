@@ -1,0 +1,114 @@
+# An Application Load Balancer and an Auto Scaling group across two Availability Zones, and what
+# happens when one zone fails and comes back.
+# Sources: https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html
+#          https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html
+#          https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-benefits.html
+#          https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-health-checks.html
+#          https://docs.aws.amazon.com/autoscaling/ec2/userguide/attach-load-balancer-asg.html
+id: alb-asg-az-failure
+title: ALB and Auto Scaling across two AZs
+description: How an Application Load Balancer and an Auto Scaling group keep a web app up when one Availability Zone fails.
+groups:
+  - { id: region, label: eu-west-1, kind: region }
+  - { id: vpc, label: VPC, kind: vpc, parent: region }
+  - { id: az-a, label: eu-west-1a, kind: az, parent: vpc }
+  - { id: subnet-a, label: Private subnet, kind: private-subnet, parent: az-a }
+  - { id: az-b, label: eu-west-1b, kind: az, parent: vpc }
+  - { id: subnet-b, label: Private subnet, kind: private-subnet, parent: az-b }
+nodes:
+  - { id: client, icon: user, label: Client, sub: Web browser }
+  - {
+      id: alb,
+      icon: elastic-load-balancing,
+      label: Application Load Balancer,
+      sub: Internet-facing,
+      group: vpc,
+    }
+  - {
+      id: asg,
+      icon: ec2-auto-scaling,
+      label: Auto Scaling group,
+      sub: 'Desired 2, min 2, max 4',
+      group: region,
+      pos: { x: 24, y: 56 },
+    }
+  - { id: web-a, icon: ec2, label: EC2 instance, sub: Web server, group: subnet-a }
+  - { id: web-b, icon: ec2, label: EC2 instance, sub: Web server, group: subnet-b }
+  - { id: web-b2, icon: ec2, label: EC2 instance, sub: Replacement, group: subnet-b }
+edges:
+  - { id: request, from: client, to: alb }
+  - { id: to-a, from: alb, to: web-a }
+  - { id: to-b, from: alb, to: web-b }
+  - { id: to-b2, from: alb, to: web-b2 }
+  - { id: launch-a, from: asg, to: web-a }
+  - { id: launch-b2, from: asg, to: web-b2 }
+scenarios:
+  - id: traffic
+    label: Normal traffic
+    initial: { web-b2: hidden }
+    steps:
+      - edge: request
+        packet: GET /
+        caption: The client sends requests to the ALB's DNS name, never to an instance, so instances can come and go.
+      - edge: to-a
+        packet: GET /
+        caption: The ALB has a node in each AZ. With cross-zone load balancing (on by default), any node can use any target.
+      - edge: to-b
+        packet: GET /
+        caption: The next request goes to the instance in eu-west-1b. Round robin is the default routing algorithm.
+      - edge: to-b
+        reverse: true
+        packet: 200 OK
+        caption: The instance answers through the ALB. It sees the client's IP in the X-Forwarded-For header.
+      - edge: to-a
+        packet: Health check
+        caption: Every 30 seconds by default, the ALB checks each target. A target stays healthy while it answers with the success code 200.
+  - id: az-failure
+    label: AZ a fails
+    initial: { web-b2: hidden }
+    steps:
+      - group: az-a
+        caption: eu-west-1a goes down, and the instance in it with it. The app survives only because it runs in two AZs.
+        state: { az-a: failed, web-a: failed }
+      - edge: to-a
+        packet: Health check
+        caption: Health checks to that instance time out. After 2 failures in a row (the default), the ALB marks it unhealthy.
+        state: { to-a: broken }
+        metrics: { Healthy targets: 1 of 2 }
+      - edge: to-b
+        packet: GET /
+        caption: The ALB sends every request to the healthy instance in eu-west-1b. Users are still served, with half the capacity.
+      - node: asg
+        caption: The ASG finds the instance unhealthy and terminates it. It is now below its desired capacity of 2.
+        state: { asg: highlighted, web-a: hidden }
+      - edge: launch-b2
+        packet: Launch
+        caption: It can't launch in the failed AZ, so it launches a replacement in eu-west-1b from its launch template.
+        state: { asg: normal, web-b2: appearing }
+      - edge: to-b2
+        packet: Health check
+        caption: The ASG registers the new instance with the target group. It gets requests once it passes a health check.
+        metrics: { Healthy targets: 2 of 2 }
+  - id: az-recovery
+    label: AZ a recovers
+    initial: { web-a: hidden }
+    steps:
+      - group: az-a
+        caption: eu-west-1a is healthy again, but both instances run in eu-west-1b. The ASG rebalances the AZs.
+        state: { az-a: highlighted }
+      - edge: launch-a
+        packet: Launch
+        caption: Rebalancing launches first, in the AZ with the fewest instances, so capacity never drops below desired.
+        state: { az-a: normal, web-a: appearing }
+        metrics: { Running instances: 3 }
+      - edge: to-a
+        packet: Health check
+        caption: The new instance is registered with the target group and gets requests once it passes a health check.
+      - edge: to-b2
+        packet: Draining
+        caption: Then the ASG terminates one instance in eu-west-1b. The ALB deregisters it and stops sending it new requests.
+        state: { web-b2: highlighted }
+      - node: web-b2
+        caption: The deregistration delay (300 seconds by default) lets in-flight requests finish before the instance is terminated.
+        state: { web-b2: hidden }
+        metrics: { Running instances: 2 }
