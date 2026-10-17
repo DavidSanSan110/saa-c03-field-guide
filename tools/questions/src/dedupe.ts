@@ -155,13 +155,11 @@ export function withDedupe(
   const isEmpty =
     contents === null ||
     (isScalar(contents) && contents.value === null && contents.range?.[0] === contents.range?.[1]);
-  if (!isEmpty && !isMap(contents)) throw new Error('the YAML top level must be a mapping');
-
-  if (isMap(contents) && contents.flow === true) {
-    // A top-level `{ ... }` has no lines to replace: write it again.
-    contents.set('dedupe', doc.createNode({ threshold, similar }));
-    return doc.toString({ lineWidth: 0 });
+  // A top-level { ... } has no lines to replace, so only a block mapping is accepted.
+  if (!isEmpty && !(isMap(contents) && contents.flow !== true)) {
+    throw new Error('the YAML top level must be a block mapping');
   }
+
   const block = stringify({ dedupe: { threshold, similar } }, { lineWidth: 0 });
   const pair = isMap(contents)
     ? contents.items.find((item) => isScalar(item.key) && item.key.value === 'dedupe')
