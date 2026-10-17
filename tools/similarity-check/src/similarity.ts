@@ -54,7 +54,7 @@ function windowAt(texts: string[], start: number, size: number): string {
 export function stripMarkup(text: string): string {
   return text
     .replace(/\]\([^)\n]*\)/gu, '')
-    .replace(/&(?:rsquo|apos|#39|#x27|#8217|#x2019);/giu, '')
+    .replace(/&(?:rsquo|apos|#0*39|#x0*27|#0*8217|#x0*2019);/giu, '')
     .replace(/&(?:#\d+|#x[\da-f]+|[a-z][a-z\d]*);/giu, ' ');
 }
 
