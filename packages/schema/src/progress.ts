@@ -85,6 +85,7 @@ const seed = z
   .int()
   .min(0)
   .max(2 ** 32 - 1);
+const size = z.int().min(1).max(10_000);
 const box = z.literal([0, 1, 2, 3, 4, 5]);
 
 const statsSchema = z
@@ -103,17 +104,19 @@ const statsSchema = z
   });
 
 /**
- * The question stats by id. zod drops an own `__proto__` key from a record, so it is rejected
- * before the record is parsed.
+ * A record keyed by question id. zod drops an own `__proto__` key from a record, so it is
+ * rejected before the record is parsed.
  */
-const questionsSchema = z
-  .unknown()
-  .superRefine((raw, ctx) => {
-    if (typeof raw === 'object' && raw !== null && Object.hasOwn(raw, '__proto__')) {
-      fail(ctx, ['__proto__'], 'is not a question id');
-    }
-  })
-  .pipe(z.record(questionIdSchema, statsSchema));
+function byQuestionId<T extends z.ZodType>(value: T) {
+  return z
+    .unknown()
+    .superRefine((raw, ctx) => {
+      if (typeof raw === 'object' && raw !== null && Object.hasOwn(raw, '__proto__')) {
+        fail(ctx, ['__proto__'], 'is not a question id');
+      }
+    })
+    .pipe(z.record(questionIdSchema, value));
+}
 
 function isOrdered(tally: DomainTally): boolean {
   return tally.correct <= tally.answered && tally.answered <= tally.total;
@@ -136,7 +139,7 @@ const attemptSchema = z
   .strictObject({
     mode,
     seed,
-    size: z.int().min(1).max(10_000),
+    size,
     startedAt: time,
     submittedAt: time,
     submitReason,
@@ -151,7 +154,7 @@ const attemptSchema = z
 export const progressSchema: z.ZodType<Progress> = z.strictObject({
   version: z.literal(PROGRESS_VERSION),
   attempts: z.array(attemptSchema).max(MAX_ATTEMPTS),
-  questions: questionsSchema,
+  questions: byQuestionId(statsSchema),
 });
 
 function checkUnique(values: string[], ctx: Ctx): void {
@@ -203,12 +206,12 @@ export const savedSessionSchema: z.ZodType<SavedSession> = z
     current: count,
     exam: z.strictObject({
       seed,
-      size: count,
+      size,
       complete: z.boolean(),
       byDomain: z.strictObject({ 1: planSchema, 2: planSchema, 3: planSchema, 4: planSchema }),
       items: z.array(z.strictObject({ id: questionIdSchema, optionOrder: uniqueStrings })).min(1),
     }),
-    answers: z.record(z.string(), uniqueStrings.min(1)),
+    answers: byQuestionId(uniqueStrings.min(1)),
     flagged: uniqueIds,
     revealed: uniqueIds,
     status: z.enum(['active', 'submitted']),
