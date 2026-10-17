@@ -975,3 +975,55 @@ describe('review round 1 regressions', () => {
     });
   });
 });
+
+describe('review round 2 regressions', () => {
+  test.for<[string, string]>([
+    ['drafts', `${DRAFTS}/rejected`],
+    ['bank', `${BANK}/linked-folder`],
+  ])(
+    'AC-46: next-id refuses to allocate when a junction sits in the %s folder',
+    ([, linkPath], ctx) => {
+      const dir = makeTempDir();
+      put(dir, DRAFTS, 'd1-1.3-0007', 'real', { status: 'draft' });
+      // The linked folder holds the highest id, which next-id must not silently miss.
+      put(dir, 'outside', 'd1-1.3-0042', 'hidden');
+      if (!tryLink(join(dir, 'outside'), join(dir, ...linkPath.split('/')), 'junction')) {
+        ctx.skip();
+        return;
+      }
+      const before = snapshotLinks(dir);
+
+      const run = runCli(dir, ['next-id', '1.3']);
+
+      expect(run.status).toBe(1);
+      expect(run.stdout).not.toMatch(/d\d-\d\.\d-\d{4}/);
+      expect(run.output).toContain(linkPath.split('/').at(-1));
+      expect(snapshotLinks(dir)).toEqual(before);
+    },
+  );
+
+  test('AC-47: a junction at d1 is a problem and the valid question behind it is neither counted nor promoted', (ctx) => {
+    const dir = makeTempDir();
+    put(dir, DRAFTS, 'd3-3.4-0001', 'real');
+    // Followed through the link, this would be the valid, reviewed d1/1.3/ready.yaml.
+    write(dir, 'elsewhere/1.3/ready.yaml', questionYaml({ id: 'd1-1.3-0042' }));
+    if (!tryLink(join(dir, 'elsewhere'), join(dir, ...`${DRAFTS}/d1`.split('/')), 'junction')) {
+      ctx.skip();
+      return;
+    }
+    const before = snapshotLinks(dir);
+
+    const check = runCli(dir, ['check']);
+    const promote = runCli(dir, ['promote']);
+
+    expect(check.status).toBe(1);
+    expect(check.output).toContain(`${DRAFTS}/d1`);
+    expect(lines(check.output)).toContainEqual(
+      expect.stringMatching(/^drafts: 1, bank questions: 0, problems: [1-9]\d*$/),
+    );
+    expect(promote.status).toBe(1);
+    expect(exists(dir, `${BANK}/d1/1.3/ready.yaml`)).toBe(false);
+    expect(exists(dir, 'elsewhere/1.3/ready.yaml')).toBe(true);
+    expect(snapshotLinks(dir)).toEqual(before);
+  });
+});
