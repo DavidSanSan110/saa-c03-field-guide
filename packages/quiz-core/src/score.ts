@@ -39,7 +39,7 @@ export interface AttemptScore extends ScoreBucket {
 }
 
 function gradeResult(question: Question, answers: Answers): QuestionResult {
-  const selected = answers[question.id] ?? [];
+  const selected = (Object.hasOwn(answers, question.id) && answers[question.id]) || [];
   return {
     id: question.id,
     domain: question.domain,
