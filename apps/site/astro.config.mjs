@@ -59,6 +59,7 @@ export default defineConfig({
         },
       ],
       sidebar: buildSidebar(),
+      customCss: ['./src/styles/layout.css'],
       components: {
         Banner: './src/components/Banner.astro',
         Footer: './src/components/Footer.astro',

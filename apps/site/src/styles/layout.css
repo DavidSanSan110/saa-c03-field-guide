@@ -1,0 +1,22 @@
+/* Wide layout (spec 015): from 72rem up, the content starts after the left sidebar instead of being
+   centred on the window; prose keeps a reading width and diagrams use the whole column. Unlayered, so it
+   wins over Starlight's `starlight.core` layer. */
+@media (min-width: 72rem) {
+  [data-has-sidebar][data-has-toc] .right-sidebar-container {
+    width: var(--sl-sidebar-width);
+  }
+  [data-has-sidebar][data-has-toc] .main-pane {
+    width: calc(100% - var(--sl-sidebar-width));
+  }
+  [data-has-sidebar] .main-pane {
+    --sl-content-margin-inline: 0;
+    --sl-content-pad-x: clamp(1.5rem, 8vw - 5rem, 5rem);
+  }
+  [data-has-sidebar] .sl-container {
+    max-width: 75rem;
+  }
+  [data-has-sidebar] .sl-container h1,
+  [data-has-sidebar] .sl-markdown-content > :not(figure.dl) {
+    max-width: 45rem;
+  }
+}
