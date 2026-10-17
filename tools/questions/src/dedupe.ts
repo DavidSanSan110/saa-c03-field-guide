@@ -1,7 +1,7 @@
 // Near-duplicate detection (spec 020): word shingles, Jaccard similarity and the `dedupe` key of a
 // draft's check file (sidecar). No file system access: tools/questions/src/cli.ts does the I/O.
 import type { Question } from '@field-guide/schema';
-import { isMap, isNode, isScalar, parseDocument, stringify } from 'yaml';
+import { isMap, isNode, isScalar, parseAllDocuments, parseDocument, stringify } from 'yaml';
 import type { BankEntry } from './bank.ts';
 
 const SHINGLE_SIZE = 3;
@@ -146,6 +146,58 @@ export function withDedupe(
   threshold: number,
   similar: SimilarRef[],
 ): string {
+  const { text, expected } = splice(existing, { threshold, similar });
+  if (!holdsExactly(text, expected)) {
+    throw new Error('cannot update this sidecar safely; fix it by hand');
+  }
+  return text;
+}
+
+/** Structural equality of parsed YAML values, including the order of the keys. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) || Array.isArray(b)) {
+    return (
+      Array.isArray(a) &&
+      Array.isArray(b) &&
+      a.length === b.length &&
+      a.every((item, index) => sameValue(item, b[index]))
+    );
+  }
+  if (typeof a === 'object' && a !== null && typeof b === 'object' && b !== null) {
+    const x = Object.entries(a);
+    const y = Object.entries(b);
+    return (
+      Object.getPrototypeOf(a) === Object.prototype &&
+      Object.getPrototypeOf(b) === Object.prototype &&
+      x.length === y.length &&
+      x.every(([key, value], index) => key === y[index]?.[0] && sameValue(value, y[index]?.[1]))
+    );
+  }
+  return Object.is(a, b);
+}
+
+/** True when `text` is one YAML document, without errors, whose value is `expected`. */
+function holdsExactly(text: string, expected: unknown): boolean {
+  const documents = parseAllDocuments(text);
+  const [only] = documents;
+  if (documents.length !== 1 || only === undefined || only.errors.length > 0) return false;
+  try {
+    return sameValue(only.toJS(), expected);
+  } catch {
+    // For instance an alias whose anchor is gone.
+    return false;
+  }
+}
+
+/**
+ * The new text, and the value it must parse to: the old mapping with `dedupe` replaced in place,
+ * or added last.
+ */
+function splice(
+  existing: string | undefined,
+  dedupe: { threshold: number; similar: SimilarRef[] },
+): { text: string; expected: Record<string, unknown> } {
+  const { threshold, similar } = dedupe;
   const text = (existing ?? '').replace(/\r\n?/g, '\n');
   const doc = parseDocument(text);
   const [problem] = doc.errors;
@@ -160,6 +212,8 @@ export function withDedupe(
     throw new Error('the YAML top level must be a block mapping');
   }
 
+  const old = (isMap(contents) ? doc.toJS() : {}) as Record<string, unknown>;
+  const expected = { ...old, dedupe };
   const block = stringify({ dedupe: { threshold, similar } }, { lineWidth: 0 });
   const pair = isMap(contents)
     ? contents.items.find((item) => isScalar(item.key) && item.key.value === 'dedupe')
@@ -167,10 +221,10 @@ export function withDedupe(
   const keyStart = isNode(pair?.key) ? pair.key.range?.[0] : undefined;
   if (pair === undefined || keyStart === undefined) {
     const separator = text === '' || text.endsWith('\n') ? '' : '\n';
-    return `${text}${separator}${block}`;
+    return { text: `${text}${separator}${block}`, expected };
   }
   const valueEnd = isNode(pair.value) ? pair.value.range?.[1] : undefined;
   const start = text.lastIndexOf('\n', keyStart - 1) + 1;
   const end = endOfLine(text, valueEnd ?? keyStart);
-  return `${text.slice(0, start)}${block}${text.slice(end)}`;
+  return { text: `${text.slice(0, start)}${block}${text.slice(end)}`, expected };
 }
