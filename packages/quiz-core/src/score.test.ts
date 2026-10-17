@@ -276,3 +276,40 @@ describe('scoreAttempt: duplicates and purity', () => {
     expect(answers).toEqual(answersBefore);
   });
 });
+
+describe('review round 1: scoring regressions', () => {
+  test('AC-31: 31 correct of 45 gives estimated 720 and passed', () => {
+    const questions = makeBank({ 1: 15, 2: 12, 3: 10, 4: 8 });
+    expect(questions).toHaveLength(45);
+    const score = scoreAttempt(questions, attempt(questions, 31, 14));
+    expect(score.correct).toBe(31);
+    expect(score.estimated).toBe(720);
+    expect(score.passed).toBe(true);
+  });
+
+  test('AC-31: 42 correct of 61 (unrounded 719.67) gives estimated 720 and passed', () => {
+    const questions = makeBank({ 1: 20, 2: 16, 3: 14, 4: 11 });
+    expect(questions).toHaveLength(61);
+    const score = scoreAttempt(questions, attempt(questions, 42, 19));
+    expect(score.correct).toBe(42);
+    expect(score.estimated).toBe(720);
+    expect(score.passed).toBe(true);
+  });
+
+  test('AC-32: an inherited answer does not count, the question is unanswered and wrong', () => {
+    const question = makeQuestion({ type: 'single', correct: ['C'] });
+    const answers = Object.create({ [question.id]: ['C'] }) as Answers;
+    const score = scoreAttempt([question], answers);
+    expect(score.answered).toBe(0);
+    expect(score.correct).toBe(0);
+    expect(score.results[0]).toMatchObject({ id: question.id, answered: false, correct: false });
+  });
+
+  test('AC-32: an own answer on the same kind of object still counts', () => {
+    const question = makeQuestion({ type: 'single', correct: ['C'] });
+    const answers = Object.assign(Object.create({}) as object, { [question.id]: ['C'] }) as Answers;
+    const score = scoreAttempt([question], answers);
+    expect(score.answered).toBe(1);
+    expect(score.correct).toBe(1);
+  });
+});

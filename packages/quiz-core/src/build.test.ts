@@ -361,3 +361,17 @@ describe('buildExam: purity', () => {
     expect(bank.map((question) => question.id)).toEqual(order);
   });
 });
+
+describe('review round 1: size limit regressions', () => {
+  test('AC-33: domainQuotas(10_000) is 3000 / 2600 / 2400 / 2000', () => {
+    expect(domainQuotas(10_000)).toEqual({ 1: 3000, 2: 2600, 3: 2400, 4: 2000 });
+  });
+
+  test.each([10_001, 2 ** 53])('AC-33: domainQuotas(%s) throws RangeError', (size) => {
+    expect(() => domainQuotas(size)).toThrow(RangeError);
+  });
+
+  test('AC-33: buildExam with size 10_001 throws RangeError', () => {
+    expect(() => buildExam(fullBank(), { seed: 1, size: 10_001 })).toThrow(RangeError);
+  });
+});

@@ -116,3 +116,26 @@ describe('shuffle', () => {
     }
   });
 });
+
+describe('review round 1: generator and shuffle regressions', () => {
+  test('AC-29: createRng(0) is mulberry32, with the known first three values', () => {
+    const rng = createRng(0);
+    expect(rng()).toBe(0.26642920868471265);
+    expect(rng()).toBe(0.0003297457005828619);
+    expect(rng()).toBe(0.2232720274478197);
+  });
+
+  test('AC-30: over 24,000 shuffles of [1, 2, 3, 4] each of the 24 orders appears 850 to 1,150 times', () => {
+    const rng = createRng(5);
+    const counts = new Map<string, number>();
+    for (let i = 0; i < 24_000; i += 1) {
+      const order = shuffle([1, 2, 3, 4], rng).join(',');
+      counts.set(order, (counts.get(order) ?? 0) + 1);
+    }
+    expect(counts.size).toBe(24);
+    for (const [order, count] of counts) {
+      expect(count, order).toBeGreaterThanOrEqual(850);
+      expect(count, order).toBeLessThanOrEqual(1150);
+    }
+  });
+});
