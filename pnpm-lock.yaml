@@ -134,6 +134,8 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
 
+  tools/e2e-docker: {}
+
   tools/guardrails:
     dependencies:
       '@field-guide/schema':
