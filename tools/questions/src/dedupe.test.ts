@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
+import { parseAllDocuments } from 'yaml';
 import type { BankEntry } from './bank.ts';
 import {
   findSimilar,
@@ -879,5 +880,90 @@ describe('withDedupe on an empty sidecar', () => {
 
     expect(once).not.toContain('\r');
     expect(withDedupe(once, 0.5, [])).toBe(once);
+  });
+});
+
+// Review round 2 (regression AC).
+
+const NEW_DEDUPE = { threshold: 0.5, similar: [] };
+
+/**
+ * `withDedupe` must either throw or return one YAML document, without errors, whose value is the
+ * input mapping with only `dedupe` replaced (added last when absent).
+ */
+function outcomeOf(
+  existing: string,
+):
+  | { threw: false; documents: number; errors: number; value: unknown }
+  | { threw: true; error: unknown } {
+  let output: string;
+  try {
+    output = withDedupe(existing, 0.5, []);
+  } catch (error) {
+    return { threw: true, error };
+  }
+  const documents = parseAllDocuments(output);
+  let value: unknown;
+  try {
+    value = documents[0]?.toJS();
+  } catch (error) {
+    // For instance an alias whose anchor was dropped: the text does not hold the data.
+    value = `the document cannot be read: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return {
+    threw: false,
+    documents: documents.length,
+    errors: documents.reduce((sum, document) => sum + document.errors.length, 0),
+    value,
+  };
+}
+
+function expectThrowsOrKeepsData(existing: string, expected: unknown): void {
+  const outcome = outcomeOf(existing);
+  if (outcome.threw) return;
+  expect(outcome.documents).toBe(1);
+  expect(outcome.errors).toBe(0);
+  expect(outcome.value).toEqual(expected);
+}
+
+describe('withDedupe never loses or moves data', () => {
+  test('AC-27: a document end marker (...) is handled or rejected', () => {
+    expectThrowsOrKeepsData('a: 1\n...\n', { a: 1, dedupe: NEW_DEDUPE });
+  });
+
+  test('AC-27: a document end marker with a comment is handled or rejected', () => {
+    expectThrowsOrKeepsData('a: 1\n... # end\n', { a: 1, dedupe: NEW_DEDUPE });
+  });
+
+  test('AC-27: a mapping indented by spaces is handled or rejected', () => {
+    expectThrowsOrKeepsData('  a: 1\n  b: 2\n', { a: 1, b: 2, dedupe: NEW_DEDUPE });
+  });
+
+  test('AC-27: an indented mapping with a dedupe key followed by another key keeps that key', () => {
+    expectThrowsOrKeepsData('  dedupe: 1\n  b: 2\n', { dedupe: NEW_DEDUPE, b: 2 });
+  });
+
+  test('AC-27: an indented mapping with dedupe and a verification mapping keeps the mapping', () => {
+    expectThrowsOrKeepsData('  dedupe: 1\n  verification:\n    answer: B\n', {
+      dedupe: NEW_DEDUPE,
+      verification: { answer: 'B' },
+    });
+  });
+
+  test('AC-27: an anchor on the old dedupe value that is used elsewhere is handled or rejected', () => {
+    expectThrowsOrKeepsData('dedupe: &d 1\nx: *d\n', { dedupe: NEW_DEDUPE, x: 1 });
+  });
+
+  test.each([
+    ['a document end marker', 'a: 1\n...\n'],
+    ['a document end marker with a comment', 'a: 1\n... # end\n'],
+    ['an indented mapping', '  a: 1\n  b: 2\n'],
+    ['an indented dedupe key', '  dedupe: 1\n  b: 2\n'],
+    ['an anchor on the old dedupe value', 'dedupe: &d 1\nx: *d\n'],
+  ])('AC-27: with %s, a rejection is a real Error', (_name, existing) => {
+    const outcome = outcomeOf(existing);
+
+    if (outcome.threw) expect(outcome.error).toBeInstanceOf(Error);
+    else expect(outcome.documents).toBe(1);
   });
 });
