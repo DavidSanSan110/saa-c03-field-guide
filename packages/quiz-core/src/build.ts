@@ -6,10 +6,13 @@ import { createRng, shuffle } from './random.ts';
 
 export const EXAM_SIZE = 65;
 
-/** Largest-remainder split of `size` by the domain weights. `size` is an integer >= 1. */
+/** Keeps `size * weight` exact. */
+const MAX_SIZE = 10_000;
+
+/** Largest-remainder split of `size` by the domain weights. `size` is an integer from 1 to 10,000. */
 export function domainQuotas(size: number): Record<DomainId, number> {
-  if (!Number.isInteger(size) || size < 1) {
-    throw new RangeError(`size must be an integer >= 1, got ${size}`);
+  if (!Number.isInteger(size) || size < 1 || size > MAX_SIZE) {
+    throw new RangeError(`size must be an integer from 1 to ${MAX_SIZE}, got ${size}`);
   }
   const shares = domains.map(({ id, weight }) => {
     const share = size * weight;
@@ -17,8 +20,9 @@ export function domainQuotas(size: number): Record<DomainId, number> {
     return { id, remainder, quota: (share - remainder) / 100 };
   });
   const seats = size - shares.reduce((sum, { quota }) => sum + quota, 0);
-  // Domains are in id order and the sort is stable, so a tie goes to the lower id.
-  const winners = [...shares].sort((a, b) => b.remainder - a.remainder).slice(0, seats);
+  const winners = [...shares]
+    .sort((a, b) => b.remainder - a.remainder || a.id - b.id)
+    .slice(0, seats);
   const winnerIds = new Set(winners.map(({ id }) => id));
   return Object.fromEntries(
     shares.map(({ id, quota }) => [id, quota + (winnerIds.has(id) ? 1 : 0)]),
