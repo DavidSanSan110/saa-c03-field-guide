@@ -289,3 +289,96 @@ test.describe('no sideways scroll', () => {
     });
   }
 });
+
+// ---------------------------------------------------------------------------
+// AC-9: media wider than the column never overflows it (regression, review of #32)
+// ---------------------------------------------------------------------------
+
+test.describe('media in a narrow column', () => {
+  const V1152: Viewport = { width: 1152, height: 800 };
+
+  for (const viewport of [V1280, V1152]) {
+    test(`AC-9: at ${label(viewport)} a 900 px img and iframe are no wider than the column`, async ({
+      page,
+    }) => {
+      await open(page, viewport);
+
+      const widths = await page.evaluate(() => {
+        const content = document.querySelector('.sl-markdown-content');
+        if (content === null) throw new Error('no .sl-markdown-content');
+        const img = document.createElement('img');
+        img.src = '/favicon.svg';
+        img.alt = '';
+        img.setAttribute('width', '900');
+        img.setAttribute('height', '50');
+        const frame = document.createElement('iframe');
+        frame.src = 'about:blank';
+        frame.title = 'wide frame';
+        frame.setAttribute('width', '900');
+        content.append(img, frame);
+        return {
+          column: content.getBoundingClientRect().width,
+          img: img.getBoundingClientRect().width,
+          iframe: frame.getBoundingClientRect().width,
+        };
+      });
+
+      expect
+        .soft(widths.img, 'the img is no wider than the column')
+        .toBeLessThanOrEqual(widths.column + 1);
+      expect
+        .soft(widths.iframe, 'the iframe is no wider than the column')
+        .toBeLessThanOrEqual(widths.column + 1);
+    });
+
+    test(`AC-9: at ${label(viewport)} a 900 px img and iframe do not scroll the page sideways`, async ({
+      page,
+    }) => {
+      await open(page, viewport);
+
+      await page.evaluate(() => {
+        const content = document.querySelector('.sl-markdown-content');
+        if (content === null) throw new Error('no .sl-markdown-content');
+        const img = document.createElement('img');
+        img.src = '/favicon.svg';
+        img.alt = '';
+        img.setAttribute('width', '900');
+        img.setAttribute('height', '50');
+        const frame = document.createElement('iframe');
+        frame.src = 'about:blank';
+        frame.title = 'wide frame';
+        frame.setAttribute('width', '900');
+        content.append(img, frame);
+      });
+      const { scrollWidth, clientWidth } = await page.evaluate(() => ({
+        scrollWidth: document.documentElement.scrollWidth,
+        clientWidth: document.documentElement.clientWidth,
+      }));
+
+      expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// AC-10: the rules apply to the content column only (regression, review of #32)
+// ---------------------------------------------------------------------------
+
+test.describe('"On this page" panel container', () => {
+  test(`AC-10: at ${label(V1600)} the panel container keeps Starlight's max-width`, async ({
+    page,
+  }) => {
+    await open(page, V1600);
+
+    const maxWidth = await page
+      .locator('.right-sidebar-panel .sl-container')
+      .evaluate((element) => getComputedStyle(element).maxWidth);
+
+    // 1200px is the content column cap, 720px the prose cap; Starlight's own value is a calc() of
+    // the window width, about a quarter of the free space (a few hundred px at this size).
+    expect(maxWidth, 'not the content column cap').not.toBe('1200px');
+    expect(maxWidth, 'not the prose cap').not.toBe('720px');
+    expect(maxWidth, 'a pixel length').toMatch(/^\d+(\.\d+)?px$/);
+    expect(parseFloat(maxWidth), 'narrower than the prose cap').toBeLessThan(PROSE_MAX);
+  });
+});
