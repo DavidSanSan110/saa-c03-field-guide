@@ -59,7 +59,7 @@ scenarios:
       - edge: to-b
         reverse: true
         packet: 200 OK
-        caption: The instance answers through the ALB. It sees the client's IP in the X-Forwarded-For header.
+        caption: The instance answers through the ALB. The request came from the ALB, with the client's IP in X-Forwarded-For.
       - edge: to-a
         packet: Health check
         caption: Every 30 seconds by default, the ALB checks each target. A target stays healthy while it answers with the success code 200.
@@ -79,7 +79,7 @@ scenarios:
         packet: GET /
         caption: The ALB sends every request to the healthy instance in eu-west-1b. Users are still served, with half the capacity.
       - node: asg
-        caption: The ASG finds the instance unhealthy and terminates it. It is now below its desired capacity of 2.
+        caption: With ELB health checks turned on, the ASG also sees it unhealthy and terminates it. It is now below its desired capacity of 2.
         state: { asg: highlighted, web-a: hidden }
       - edge: launch-b2
         packet: Launch
@@ -106,7 +106,7 @@ scenarios:
         caption: The new instance is registered with the target group and gets requests once it passes a health check.
       - edge: to-b2
         packet: Draining
-        caption: Then the ASG terminates one instance in eu-west-1b. The ALB deregisters it and stops sending it new requests.
+        caption: Then the ASG picks an instance in eu-west-1b to terminate and first deregisters it. The ALB stops sending it new requests.
         state: { web-b2: highlighted }
       - node: web-b2
         caption: The deregistration delay (300 seconds by default) lets in-flight requests finish before the instance is terminated.
