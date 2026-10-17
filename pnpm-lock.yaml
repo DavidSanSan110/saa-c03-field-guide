@@ -134,7 +134,11 @@ importers:
         specifier: ^4.6.5
         version: 4.6.5
 
-  tools/e2e-docker: {}
+  tools/e2e-docker:
+    dependencies:
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
 
   tools/guardrails:
     dependencies:

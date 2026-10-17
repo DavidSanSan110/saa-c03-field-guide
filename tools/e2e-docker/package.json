@@ -6,5 +6,8 @@
   "description": "Runs the Playwright e2e tests in the pinned Linux container of CI, so screenshot baselines match everywhere.",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "yaml": "^2.9.1"
   }
 }
