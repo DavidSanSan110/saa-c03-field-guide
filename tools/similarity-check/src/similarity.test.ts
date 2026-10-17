@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { buildIndex, findMatches, words } from './similarity.ts';
+import { stripMarkup } from './similarity.ts';
 
 const BOM = String.fromCodePoint(0xfeff);
 
@@ -381,5 +382,95 @@ describe('format characters (review round 1)', () => {
 
     expect(matches).toHaveLength(1);
     expect(matches[0]).toMatchObject({ length: 9, text: RUN });
+  });
+});
+
+// Review round 2 (regression AC).
+describe('stripMarkup (review round 2)', () => {
+  /** The words of a text after stripMarkup, without line numbers. */
+  const stripped = (text: string): string[] => words(stripMarkup(text)).map((entry) => entry.word);
+
+  test.each(['&#39;', '&#039;', '&#x27;', '&#x0027;', '&apos;', '&rsquo;', '&#8217;', '&#x2019;'])(
+    'AC-26: the apostrophe entity %s inside baker...s gives one word, bakers',
+    (entity) => {
+      expect(stripped(`baker${entity}s`)).toEqual(['bakers']);
+    },
+  );
+
+  test.each(['&amp;', '&nbsp;', '&copy;', '&#160;'])(
+    'AC-26: the other entity %s becomes a space even without spaces around it',
+    (entity) => {
+      expect(stripped(`cool${entity}slowly`)).toEqual(['cool', 'slowly']);
+    },
+  );
+
+  test('AC-26: cool&nbsp;slowly is two words on the same line', () => {
+    expect(words(stripMarkup('first\ncool&nbsp;slowly'))).toEqual([
+      { word: 'first', line: 1 },
+      { word: 'cool', line: 2 },
+      { word: 'slowly', line: 2 },
+    ]);
+  });
+
+  test('AC-26: an unclosed [x]( on line 1 with the ) on line 3 keeps every line', () => {
+    const text = 'see [x](unclosed\nmiddle words here\nend) tail';
+
+    const output = stripMarkup(text);
+
+    expect(output.split('\n')).toHaveLength(text.split('\n').length);
+    const middle = words(output).filter((entry) => entry.line === 2);
+    expect(middle).toEqual([
+      { word: 'middle', line: 2 },
+      { word: 'words', line: 2 },
+      { word: 'here', line: 2 },
+    ]);
+  });
+
+  test('AC-26: a link target never spans lines, so the words after it on later lines stay', () => {
+    const text = 'a [x](first\nsecond line\nthird) fourth';
+
+    const found = words(stripMarkup(text));
+
+    expect(found.filter((entry) => entry.line === 2).map((entry) => entry.word)).toEqual([
+      'second',
+      'line',
+    ]);
+  });
+
+  test('AC-26: image alt text stays and the image path goes', () => {
+    expect(stripped('![alt words](img.png)')).toEqual(['alt', 'words']);
+  });
+
+  test('AC-26: nested link text stays and only the target goes', () => {
+    expect(stripped('[a [b] c](u)')).toEqual(['a', 'b', 'c']);
+  });
+
+  test('AC-26: a normal link keeps its text and drops its target', () => {
+    expect(stripped('see [the docs](https://example.com/a/b) now')).toEqual([
+      'see',
+      'the',
+      'docs',
+      'now',
+    ]);
+  });
+
+  test('AC-26: the output has as many lines as the input for a multi-line sample', () => {
+    const text = [
+      '# Title &amp; more',
+      '',
+      'A [link](https://example.com/x) and ![image](pic.png) here.',
+      'An unclosed [x](oops',
+      'baker&#039;s &nbsp; tarts)',
+      '',
+      '[a [b] c](u) end&rsquo;',
+    ].join('\n');
+
+    expect(stripMarkup(text).split('\n')).toHaveLength(text.split('\n').length);
+  });
+
+  test('AC-26: text without markup is left as it is', () => {
+    const text = 'Plain words, no links.\nSecond line (with brackets) here.';
+
+    expect(words(stripMarkup(text))).toEqual(words(text));
   });
 });
