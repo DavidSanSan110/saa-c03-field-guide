@@ -1414,3 +1414,148 @@ describe('package surface', () => {
     expect(true).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Review round 1 (test gaps)
+// ---------------------------------------------------------------------------------------------
+
+describe('review round 1', () => {
+  /** Item ids that sort in the reverse of item order: q9, q8... (items 0, 1, 2... of `count`). */
+  function reverseIdExam(count: number): Exam {
+    return examOf(
+      Array.from({ length: count }, (_, index) =>
+        makeQuestion({ id: `q${String(9 - index)}`, type: 'single', correct: ['A'] }),
+      ),
+    );
+  }
+
+  test('AC-28: flagged follows exam item order, not id order (q9, q5, q1)', () => {
+    const exam = examOf(
+      ['q9', 'q5', 'q1'].map((id) => makeQuestion({ id, type: 'single', correct: ['A'] })),
+    );
+    const session = play(startExam(exam), goTo(2), flag(true), goTo(0), flag(true));
+    expect(session.flagged).toEqual(['q9', 'q1']);
+  });
+
+  test('AC-28: revealed follows exam item order, not id order (q9, q5, q1)', () => {
+    const exam = examOf(
+      ['q9', 'q5', 'q1'].map((id) => makeQuestion({ id, type: 'single', correct: ['A'] })),
+    );
+    const session = play(startPractice(exam), goTo(2), reveal(), goTo(0), reveal());
+    expect(session.revealed).toEqual(['q9', 'q1']);
+  });
+
+  test('AC-28: with 6 reverse-sorted ids, flags set in a scrambled order stay in item order', () => {
+    const exam = reverseIdExam(6);
+    expect(ids(exam)).toEqual(['q9', 'q8', 'q7', 'q6', 'q5', 'q4']);
+    const session = play(
+      startExam(exam),
+      goTo(4),
+      flag(true),
+      goTo(1),
+      flag(true),
+      goTo(5),
+      flag(true),
+      goTo(0),
+      flag(true),
+    );
+    expect(session.flagged).toEqual(['q9', 'q8', 'q5', 'q4']);
+  });
+
+  test('AC-28: with 6 reverse-sorted ids, reveals in a scrambled order stay in item order', () => {
+    const session = play(
+      startPractice(reverseIdExam(6)),
+      goTo(5),
+      reveal(),
+      goTo(3),
+      reveal(),
+      goTo(1),
+      reveal(),
+    );
+    expect(session.revealed).toEqual(['q8', 'q6', 'q4']);
+  });
+
+  test('AC-28: reviewList follows item order too, with reverse-sorted ids', () => {
+    const session = play(startExam(reverseIdExam(3)), goTo(2), flag(true));
+    expect(reviewList(session).map((entry) => entry.id)).toEqual(['q9', 'q8', 'q7']);
+  });
+
+  /** Item 1 is a multiple question; `['B', 'E']` is stored on it. */
+  function withStoredAnswer(mode: SessionMode): Session {
+    return answerItem(startSession(exam6(), { mode, now: 0 }), 1, ['B', 'E']);
+  }
+
+  test.each<SessionMode>(['exam', 'practice'])(
+    'AC-29: %s mode: the selection already stored, in another order, returns the same object',
+    (mode) => {
+      const session = withStoredAnswer(mode);
+      expect(sessionReducer(session, answer(['E', 'B']))).toBe(session);
+    },
+  );
+
+  test('AC-29: the selection already stored, with duplicates, returns the same object', () => {
+    const session = withStoredAnswer('exam');
+    expect(sessionReducer(session, answer(['B', 'E', 'B']))).toBe(session);
+  });
+
+  test('AC-29: the selection already stored, as it is, returns the same object', () => {
+    const session = withStoredAnswer('exam');
+    expect(sessionReducer(session, answer(['B', 'E']))).toBe(session);
+  });
+
+  test('AC-29: the same single selection answered again returns the same object', () => {
+    const session = answerItem(startExam(), 0, ['B']);
+    expect(sessionReducer(session, answer(['B']))).toBe(session);
+  });
+
+  test.each<SessionMode>(['exam', 'practice'])(
+    'AC-29: %s mode: answer [] on an unanswered question returns the same object',
+    (mode) => {
+      const fresh = startSession(exam6(), { mode, now: 0 });
+      expect(sessionReducer(fresh, answer([]))).toBe(fresh);
+      const elsewhere = answerItem(fresh, 2, ['C']);
+      const onUnanswered = sessionReducer(elsewhere, goTo(3));
+      expect(sessionReducer(onUnanswered, answer([]))).toBe(onUnanswered);
+    },
+  );
+
+  test('AC-29: a different selection still gives a new object, and a clear on an answer too', () => {
+    const session = withStoredAnswer('exam');
+    const narrower = sessionReducer(session, answer(['B']));
+    expect(narrower).not.toBe(session);
+    expect(narrower.answers['q1']).toEqual(['B']);
+    const wider = sessionReducer(session, answer(['B', 'C', 'E']));
+    expect(wider).not.toBe(session);
+    expect(wider.answers['q1']).toEqual(['B', 'C', 'E']);
+    const cleared = sessionReducer(session, answer([]));
+    expect(cleared).not.toBe(session);
+    expect(cleared.answers).toEqual({});
+  });
+
+  test('AC-30: practice mode with durationMs 0 throws RangeError', () => {
+    expect(() => startSession(exam6(), { mode: 'practice', now: 0, durationMs: 0 })).toThrow(
+      RangeError,
+    );
+  });
+
+  test.each([
+    ['-1', -1],
+    ['1.5', 1.5],
+    ['NaN', Number.NaN],
+    ['Infinity', Number.POSITIVE_INFINITY],
+    ['a string', '600000' as unknown as number],
+  ] as const)(
+    'AC-30: practice mode with durationMs = %s throws RangeError',
+    (_name, durationMs) => {
+      expect(() => startSession(exam6(), { mode: 'practice', now: 0, durationMs })).toThrow(
+        RangeError,
+      );
+    },
+  );
+
+  test('AC-30: practice mode with a valid durationMs gives a null deadline', () => {
+    const session = startSession(exam6(), { mode: 'practice', now: 0, durationMs: 600_000 });
+    expect(session.deadline).toBeNull();
+    expect(session.status).toBe('active');
+  });
+});
