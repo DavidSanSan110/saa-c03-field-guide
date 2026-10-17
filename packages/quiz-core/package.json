@@ -1,0 +1,16 @@
+{
+  "name": "@field-guide/quiz-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Practice-test logic: grading, scoring, exam builder (pure).",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@field-guide/schema": "workspace:*"
+  }
+}
