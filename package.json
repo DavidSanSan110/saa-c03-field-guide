@@ -16,6 +16,7 @@
     "test:watch": "vitest",
     "coverage": "vitest run --coverage",
     "e2e": "playwright test",
+    "e2e:docker": "tsx tools/e2e-docker/src/cli.ts",
     "verify:static": "pnpm format:check && pnpm lint && pnpm typecheck",
     "verify:fast": "pnpm verify:static && pnpm test",
     "verify": "pnpm verify:static && pnpm coverage && pnpm e2e",
