@@ -152,8 +152,15 @@ export function nextId(task: TaskId, ids: Iterable<string>): string {
   return `${prefix}${String(highest + 1).padStart(4, '0')}`;
 }
 
-/** One problem, on the draft's file, for each draft whose id is already used in the bank. */
-export function findIdCollisions(drafts: BankEntry[], bank: BankEntry[]): Problem[] {
+/**
+ * One problem, on the draft's file, for each draft whose id is already used in the bank; the bank
+ * file is named with `bankPrefix` (the bank folder and a slash) in front of its path.
+ */
+export function findIdCollisions(
+  drafts: BankEntry[],
+  bank: BankEntry[],
+  bankPrefix = '',
+): Problem[] {
   const bankById = new Map(bank.map((entry) => [entry.question.id, entry.path]));
   const problems: Problem[] = [];
   for (const draft of drafts) {
@@ -161,7 +168,7 @@ export function findIdCollisions(drafts: BankEntry[], bank: BankEntry[]): Proble
     if (bankPath !== undefined) {
       problems.push({
         file: draft.path,
-        message: `id ${draft.question.id} is already used in the bank by ${bankPath}`,
+        message: `id ${draft.question.id} is already used in the bank by ${bankPrefix}${bankPath}`,
       });
     }
   }
@@ -171,14 +178,16 @@ export function findIdCollisions(drafts: BankEntry[], bank: BankEntry[]): Proble
 export function planPromote(
   drafts: BankEntry[],
   bank: BankEntry[],
-  opts?: { ids?: string[] },
+  opts?: { ids?: string[]; bankPrefix?: string },
 ): PromotePlan {
   const requested = opts?.ids === undefined ? undefined : new Set(opts.ids);
   const skipped: Problem[] = [];
   const errors: Problem[] = [];
   const moves: PromoteMove[] = [];
 
-  const idClashes = new Map(findIdCollisions(drafts, bank).map((p) => [p.file, p.message]));
+  const idClashes = new Map(
+    findIdCollisions(drafts, bank, opts?.bankPrefix).map((p) => [p.file, p.message]),
+  );
   const bankPaths = new Set(bank.map((entry) => entry.path));
 
   for (const id of requested ?? []) {
@@ -190,11 +199,12 @@ export function planPromote(
   const selected = drafts.filter((draft) => requested?.has(draft.question.id) ?? true);
   for (const draft of selected) {
     const { id, status } = draft.question;
+    const clash = idClashes.get(draft.path);
     if (status !== 'reviewed') {
       const problem = { file: draft.path, message: `status is ${status}, not reviewed` };
       (requested === undefined ? skipped : errors).push(problem);
-    } else if (idClashes.has(draft.path)) {
-      errors.push({ file: draft.path, message: idClashes.get(draft.path) ?? '' });
+    } else if (clash !== undefined) {
+      errors.push({ file: draft.path, message: clash });
     } else if (bankPaths.has(draft.path)) {
       errors.push({
         file: draft.path,
