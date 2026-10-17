@@ -1,2 +1,5 @@
 // Practice-test logic: grading, scoring and the exam builder.
-export {};
+export * from './random.ts';
+export * from './grade.ts';
+export * from './score.ts';
+export * from './build.ts';
