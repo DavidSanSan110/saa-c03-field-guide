@@ -3,6 +3,7 @@ import { z } from 'zod';
 
 import { getTask, isTaskId } from './exam.ts';
 import type { DomainId, TaskId } from './exam.ts';
+import { questionIdSchema } from './question-id.ts';
 
 export interface QuestionOption {
   key: string;
@@ -42,7 +43,6 @@ export interface Question {
 export type ValidationResult = { ok: true; question: Question } | { ok: false; errors: string[] };
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-export const ID_PATTERN = /^d[1-4]-[1-4]\.\d-\d{4}$/;
 const DOCS_HOST = 'docs.aws.amazon.com';
 
 /** A string with at least one non-whitespace character. */
@@ -163,7 +163,7 @@ function checkQuestion(question: Question, ctx: Ctx): void {
 /** Any status. */
 export const questionSchema: z.ZodType<Question> = z
   .strictObject({
-    id: z.string().regex(ID_PATTERN, 'must look like d<domain>-<task>-<4 digits>'),
+    id: questionIdSchema,
     domain: domainSchema,
     task: taskSchema,
     services: z

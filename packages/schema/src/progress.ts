@@ -2,7 +2,7 @@
 import { z } from 'zod';
 
 import type { DomainId } from './exam.ts';
-import { ID_PATTERN } from './question.ts';
+import { questionIdSchema } from './question-id.ts';
 
 export const PROGRESS_VERSION = 1;
 export const SAVED_SESSION_VERSION = 1;
@@ -79,7 +79,6 @@ function fail(ctx: Ctx, path: (string | number)[], message: string): void {
 
 const count = z.int().min(0);
 const time = z.number();
-const questionId = z.string().regex(ID_PATTERN, 'must look like d<domain>-<task>-<4 digits>');
 const mode = z.enum(['exam', 'practice']);
 const submitReason = z.enum(['manual', 'timeout']);
 const seed = z
@@ -114,7 +113,7 @@ const questionsSchema = z
       fail(ctx, ['__proto__'], 'is not a question id');
     }
   })
-  .pipe(z.record(questionId, statsSchema));
+  .pipe(z.record(questionIdSchema, statsSchema));
 
 function isOrdered(tally: DomainTally): boolean {
   return tally.correct <= tally.answered && tally.answered <= tally.total;
@@ -160,7 +159,7 @@ function checkUnique(values: string[], ctx: Ctx): void {
 }
 
 const uniqueStrings = z.array(z.string().min(1)).superRefine(checkUnique);
-const uniqueIds = z.array(questionId).superRefine(checkUnique);
+const uniqueIds = z.array(questionIdSchema).superRefine(checkUnique);
 const planSchema = z.strictObject({ quota: count, available: count, picked: count, short: count });
 
 function checkNamesItems(ids: Set<string>, names: string[], key: string, ctx: Ctx): void {
@@ -207,7 +206,7 @@ export const savedSessionSchema: z.ZodType<SavedSession> = z
       size: count,
       complete: z.boolean(),
       byDomain: z.strictObject({ 1: planSchema, 2: planSchema, 3: planSchema, 4: planSchema }),
-      items: z.array(z.strictObject({ id: questionId, optionOrder: uniqueStrings })).min(1),
+      items: z.array(z.strictObject({ id: questionIdSchema, optionOrder: uniqueStrings })).min(1),
     }),
     answers: z.record(z.string(), uniqueStrings.min(1)),
     flagged: uniqueIds,
