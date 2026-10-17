@@ -1,19 +1,14 @@
 // Weighted exam builder: seeded, domain-weighted, never borrows across domains (spec 016).
 import { domains } from '@field-guide/schema';
 import type { DomainId, Question } from '@field-guide/schema';
-import { assertUniqueIds, perDomain } from './internal.ts';
+import { assertSize, assertUniqueIds, perDomain, sortedReviewed } from './internal.ts';
 import { createRng, shuffle } from './random.ts';
 
 export const EXAM_SIZE = 65;
 
-/** Keeps `size * weight` exact. */
-const MAX_SIZE = 10_000;
-
 /** Largest-remainder split of `size` by the domain weights. `size` is an integer from 1 to 10,000. */
 export function domainQuotas(size: number): Record<DomainId, number> {
-  if (!Number.isInteger(size) || size < 1 || size > MAX_SIZE) {
-    throw new RangeError(`size must be an integer from 1 to ${MAX_SIZE}, got ${size}`);
-  }
+  assertSize(size);
   const shares = domains.map(({ id, weight }) => {
     const share = size * weight;
     const remainder = share % 100;
@@ -47,13 +42,6 @@ export interface Exam {
   items: ExamItem[];
   complete: boolean;
   byDomain: Record<DomainId, DomainPlan>;
-}
-
-/** Reviewed questions only, sorted by id so the file read order does not matter. */
-function sortedReviewed(bank: readonly Question[]): Question[] {
-  return bank
-    .filter((question) => question.status === 'reviewed')
-    .sort((a, b) => (a.id < b.id ? -1 : 1));
 }
 
 export function buildExam(
