@@ -42,7 +42,7 @@ export interface Question {
 export type ValidationResult = { ok: true; question: Question } | { ok: false; errors: string[] };
 
 const SLUG_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const ID_PATTERN = /^d[1-4]-[1-4]\.\d-\d{4}$/;
+export const ID_PATTERN = /^d[1-4]-[1-4]\.\d-\d{4}$/;
 const DOCS_HOST = 'docs.aws.amazon.com';
 
 /** A string with at least one non-whitespace character. */
@@ -195,9 +195,14 @@ function formatIssue(issue: z.core.$ZodIssue): string {
   return `${path}: ${issue.message}`;
 }
 
+/** The issues of a failed parse as `path: message` strings. */
+export function formatIssues(issues: readonly z.core.$ZodIssue[]): string[] {
+  return issues.map(formatIssue);
+}
+
 export function validateQuestion(data: unknown, opts?: { publicOnly?: boolean }): ValidationResult {
   const schema = opts?.publicOnly === true ? publicQuestionSchema : questionSchema;
   const result = schema.safeParse(data);
   if (result.success) return { ok: true, question: result.data };
-  return { ok: false, errors: result.error.issues.map(formatIssue) };
+  return { ok: false, errors: formatIssues(result.error.issues) };
 }
