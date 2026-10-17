@@ -1,7 +1,7 @@
 // Near-duplicate detection (spec 020): word shingles, Jaccard similarity and the `dedupe` key of a
 // draft's check file (sidecar). No file system access: tools/questions/src/cli.ts does the I/O.
 import type { Question } from '@field-guide/schema';
-import { Document, isMap, parseDocument } from 'yaml';
+import { isMap, isNode, isScalar, parseDocument, stringify } from 'yaml';
 import type { BankEntry } from './bank.ts';
 
 const SHINGLE_SIZE = 3;
@@ -12,9 +12,9 @@ function compare(a: string, b: string): number {
   return a > b ? 1 : 0;
 }
 
-/** Two decimals, as stored in a check file and printed. */
-function round2(score: number): number {
-  return Math.round(score * 100) / 100;
+/** A score with two decimals, as stored in a check file and printed (0.285 gives 0.29). */
+export function roundScore(score: number): number {
+  return Math.round(score * 100 + 1e-9) / 100;
 }
 
 /** NFKC, lower case, no apostrophes, then the runs of letters and digits as words. */
@@ -116,7 +116,7 @@ export function similarByDraft(
       id: other.question.id,
       folder,
       path: other.path,
-      score: round2(score),
+      score: roundScore(score),
     });
   };
   for (const { a, b, bFolder, score } of pairs) {
@@ -129,18 +129,50 @@ export function similarByDraft(
   return lists;
 }
 
-/** New sidecar text: `existing` (or nothing) with its `dedupe` key replaced. Throws on invalid YAML or a non-mapping. */
+/** The offset just after the line that holds `at` (or `at` itself when it starts a line). */
+function endOfLine(text: string, at: number): number {
+  if (at > 0 && text[at - 1] === '\n') return at;
+  const newline = text.indexOf('\n', at);
+  return newline === -1 ? text.length : newline + 1;
+}
+
+/**
+ * New sidecar text: `existing` (or nothing) with its `dedupe` key replaced. Only the lines of that
+ * key change (a new key goes last), so the comments and the text of the other keys stay as they
+ * are; line endings become LF. Throws on invalid YAML or a non-mapping.
+ */
 export function withDedupe(
   existing: string | undefined,
   threshold: number,
   similar: SimilarRef[],
 ): string {
-  const doc = existing === undefined ? new Document({}) : parseDocument(existing);
+  const text = (existing ?? '').replace(/\r\n?/g, '\n');
+  const doc = parseDocument(text);
   const [problem] = doc.errors;
   if (problem !== undefined) throw new Error(`invalid YAML: ${problem.message}`);
-  // An empty file, or one with only comments, counts as an empty mapping.
-  if (doc.contents === null) doc.contents = doc.createNode({});
-  if (!isMap(doc.contents)) throw new Error('the YAML top level must be a mapping');
-  doc.set('dedupe', doc.createNode({ threshold, similar }));
-  return doc.toString();
+  const { contents } = doc;
+  // An empty file, only comments, or only a document marker count as an empty mapping.
+  const isEmpty =
+    contents === null ||
+    (isScalar(contents) && contents.value === null && contents.range?.[0] === contents.range?.[1]);
+  if (!isEmpty && !isMap(contents)) throw new Error('the YAML top level must be a mapping');
+
+  if (isMap(contents) && contents.flow === true) {
+    // A top-level `{ ... }` has no lines to replace: write it again.
+    contents.set('dedupe', doc.createNode({ threshold, similar }));
+    return doc.toString({ lineWidth: 0 });
+  }
+  const block = stringify({ dedupe: { threshold, similar } }, { lineWidth: 0 });
+  const pair = isMap(contents)
+    ? contents.items.find((item) => isScalar(item.key) && item.key.value === 'dedupe')
+    : undefined;
+  const keyStart = isNode(pair?.key) ? pair.key.range?.[0] : undefined;
+  if (pair === undefined || keyStart === undefined) {
+    const separator = text === '' || text.endsWith('\n') ? '' : '\n';
+    return `${text}${separator}${block}`;
+  }
+  const valueEnd = isNode(pair.value) ? pair.value.range?.[1] : undefined;
+  const start = text.lastIndexOf('\n', keyStart - 1) + 1;
+  const end = endOfLine(text, valueEnd ?? keyStart);
+  return `${text.slice(0, start)}${block}${text.slice(end)}`;
 }
