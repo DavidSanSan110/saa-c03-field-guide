@@ -1241,3 +1241,33 @@ describe('package surface', () => {
     }
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Review round 1 (gaps): AC-39
+// ---------------------------------------------------------------------------------------------
+
+describe('recordSession: the active check comes first', () => {
+  test('AC-39: an active session throws RangeError even when its attempt is already recorded', () => {
+    const recorded = recordSession(NO_PROGRESS, buildSession());
+    // The same exam, mode, seed and startedAt as buildSession(), but still active.
+    const exam = makeExam(makeDescendingQuestions(5), {}, { seed: 424_242, size: 65 });
+    const active = startSession(exam, { mode: 'exam', now: 1_000 });
+    expect(active.status).toBe('active');
+    expect(
+      recorded.attempts.some(
+        (attempt) =>
+          attempt.mode === active.mode &&
+          attempt.seed === active.exam.seed &&
+          attempt.startedAt === active.startedAt,
+      ),
+    ).toBe(true);
+    expect(() => recordSession(recorded, active)).toThrow(RangeError);
+  });
+
+  test('AC-39: the same holds in practice mode', () => {
+    const recorded = recordSession(NO_PROGRESS, buildSession({ mode: 'practice' }));
+    const exam = makeExam(makeDescendingQuestions(5), {}, { seed: 424_242, size: 65 });
+    const active = startSession(exam, { mode: 'practice', now: 1_000 });
+    expect(() => recordSession(recorded, active)).toThrow(RangeError);
+  });
+});

@@ -697,3 +697,39 @@ describe('restoreSession: normalised order', () => {
     expect(restored(saved, questions).flagged).toEqual([idAt(own, 0), idAt(own, 4), idAt(own, 5)]);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Review round 1 (gaps): AC-38
+// ---------------------------------------------------------------------------------------------
+
+describe('restoreSession: order of checks', () => {
+  test('AC-38: a missing item and a changed item give reason "missing", naming the missing id', () => {
+    const { questions, exam } = fixtureExam();
+    const own = activeExam(exam);
+    const saved = handSaved(own);
+    // Item 0 changed (a key the question does not have); item 2 gone from the bank.
+    at(saved.exam.items, 0).optionOrder = ['D', 'C', 'B', 'Z'];
+    const bank = questions.filter((question) => question.id !== idAt(own, 2));
+    // Each problem alone gives its own reason.
+    expect(failure(handSaved(own), bank).reason).toBe('missing');
+    const onlyChanged = handSaved(own);
+    at(onlyChanged.exam.items, 0).optionOrder = ['D', 'C', 'B', 'Z'];
+    expect(failure(onlyChanged, questions).reason).toBe('changed');
+
+    const result = failure(saved, bank);
+    expect(result.reason).toBe('missing');
+    expect(result.errors.join('\n')).toContain(idAt(own, 2));
+  });
+
+  test('AC-38: an invalid copy is reported before missing questions', () => {
+    const { exam } = fixtureExam();
+    const broken = { ...handSaved(activeExam(exam)), current: 6 };
+    expect(failure(broken, []).reason).toBe('invalid');
+  });
+
+  test('AC-38: a newer version is reported before missing questions', () => {
+    const { exam } = fixtureExam();
+    const newer = { ...handSaved(activeExam(exam)), version: 2 };
+    expect(failure(newer, []).reason).toBe('version');
+  });
+});

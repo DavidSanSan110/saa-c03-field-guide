@@ -600,3 +600,79 @@ describe('savedSessionSchema', () => {
     ).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Review round 1 (gaps): AC-37, AC-41
+// ---------------------------------------------------------------------------------------------
+
+describe('savedSessionSchema: review round 1', () => {
+  test('AC-37: an answers key "__proto__" from JSON.parse is rejected', () => {
+    expect(accepts(savedSessionSchema, savedExamSession)).toBe(true);
+    // JSON.parse makes "__proto__" an own property, as stored data would have it.
+    const text = JSON.stringify(savedExamSession).replace(
+      '"answers":{',
+      '"answers":{"__proto__":["A"],',
+    );
+    const data = JSON.parse(text) as { answers: object };
+    expect(Object.hasOwn(data.answers, '__proto__')).toBe(true);
+    expect(accepts(savedSessionSchema, data)).toBe(false);
+  });
+
+  test('AC-37: an answers key that is not a question id is rejected', () => {
+    expect(accepts(savedSessionSchema, savedExamSession)).toBe(true);
+    expect(accepts(savedSessionSchema, withValue(savedExamSession, ['answers', 'q1'], ['A']))).toBe(
+      false,
+    );
+  });
+
+  test.each([
+    ['size 0', 0],
+    ['size 10,001', 10_001],
+    ['size 2.5', 2.5],
+    ['size NaN', Number.NaN],
+  ])('AC-41: exam.%s is rejected', (_name, size) => {
+    // `complete` is false so that it agrees with items.length (3) differing from size.
+    const base = withValue(savedExamSession, ['exam', 'complete'], false);
+    const valid = withValue(base, ['exam', 'size'], 5);
+    expect(accepts(savedSessionSchema, valid)).toBe(true);
+    expect(accepts(savedSessionSchema, withValue(valid, ['exam', 'size'], size))).toBe(false);
+  });
+
+  test('AC-41: exam.size 10,000 is accepted (complete false) and 1 is accepted with its item count', () => {
+    const big = withValue(
+      withValue(savedExamSession, ['exam', 'complete'], false),
+      ['exam', 'size'],
+      10_000,
+    );
+    expect(accepts(savedSessionSchema, big)).toBe(true);
+    const oneItem = {
+      ...savedExamSession,
+      current: 0,
+      exam: { ...savedExamSession.exam, size: 1, complete: true, items: [savedItems[0]] },
+      answers: { 'd1-1.1-0001': ['B'] },
+      flagged: [],
+    };
+    expect(accepts(savedSessionSchema, oneItem)).toBe(true);
+  });
+
+  test.each([
+    ['seed -1', -1],
+    ['seed 1.5', 1.5],
+    ['seed 2 ** 32', 2 ** 32],
+    ['seed NaN', Number.NaN],
+  ])('AC-41: exam.%s is rejected', (_name, seed) => {
+    expect(accepts(savedSessionSchema, savedExamSession)).toBe(true);
+    expect(accepts(savedSessionSchema, withValue(savedExamSession, ['exam', 'seed'], seed))).toBe(
+      false,
+    );
+  });
+
+  test.each([
+    ['seed 0', 0],
+    ['seed 2 ** 32 - 1', 2 ** 32 - 1],
+  ])('AC-41: exam.%s is accepted', (_name, seed) => {
+    expect(accepts(savedSessionSchema, withValue(savedExamSession, ['exam', 'seed'], seed))).toBe(
+      true,
+    );
+  });
+});

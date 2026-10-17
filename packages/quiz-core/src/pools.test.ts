@@ -656,3 +656,25 @@ describe('buildPracticeExam: invalid input and purity', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------------------------
+// Review round 1 (gaps): AC-40
+// ---------------------------------------------------------------------------------------------
+
+describe('buildPracticeExam: tighter sampling bound', () => {
+  test('AC-40: 3 of 10 over seeds 0-999, each question is picked 255 to 345 times', () => {
+    const pool = makeBank({ 1: 10 });
+    const counts = new Map<string, number>();
+    for (let seed = 0; seed < 1_000; seed += 1) {
+      for (const item of buildPracticeExam(pool, { seed, size: 3 }).items) {
+        counts.set(item.question.id, (counts.get(item.question.id) ?? 0) + 1);
+      }
+    }
+    expect(counts.size).toBe(10);
+    for (const question of pool) {
+      const count = counts.get(question.id) ?? 0;
+      expect(count, question.id).toBeGreaterThanOrEqual(255);
+      expect(count, question.id).toBeLessThanOrEqual(345);
+    }
+  });
+});
