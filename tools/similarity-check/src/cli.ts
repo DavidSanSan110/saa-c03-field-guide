@@ -1,6 +1,8 @@
 // Similarity check CLI: arguments, file I/O, output and exit codes only; the logic is in similarity.ts.
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { buildIndex, findMatches } from './similarity.ts';
+import { dirname, resolve } from 'node:path';
+import { buildIndex, findMatches, stripMarkup } from './similarity.ts';
 
 const DEFAULT_CORPUS = 'private/similarity-corpus';
 const DEFAULT_TARGETS = ['apps/site/src/content/docs', 'questions'];
@@ -15,7 +17,8 @@ Paths are files or folders (recursive); default: ${DEFAULT_TARGETS.join(', ')}.
 Only .md, .mdx, .yaml, .yml and .txt files are read.
 
 Options:
-  --corpus <dir>          corpus folder of .txt and .md files (default ${DEFAULT_CORPUS})
+  --corpus <dir>          corpus folder of .txt and .md files
+                          (default ${DEFAULT_CORPUS} of the main checkout)
   --min-words <n>         shortest shared run to report, an integer >= ${MIN_ALLOWED_WORDS} (default ${DEFAULT_MIN_WORDS})
   --skip-without-corpus   exit 0 instead of 1 when there is no corpus`;
 
@@ -25,7 +28,8 @@ class UsageError extends Error {}
 class TargetError extends Error {}
 
 interface Options {
-  corpus: string;
+  /** Undefined unless `--corpus` was given; see defaultCorpus(). */
+  corpus: string | undefined;
   minWords: number;
   skipWithoutCorpus: boolean;
   paths: string[];
@@ -36,9 +40,23 @@ function trimSeparators(path: string): string {
   return path.replace(/[\\/]+$/, '') || path;
 }
 
+/**
+ * The default corpus: private/... of the main checkout, so that a linked worktree finds it too.
+ * Outside a git repository it is relative to the current directory.
+ */
+function defaultCorpus(): string {
+  const git = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    windowsHide: true,
+  });
+  const commonDir = git.status === 0 ? git.stdout.trim() : '';
+  return commonDir === '' ? DEFAULT_CORPUS : `${dirname(commonDir)}/${DEFAULT_CORPUS}`;
+}
+
 function parseArgs(argv: string[]): Options {
   const options: Options = {
-    corpus: DEFAULT_CORPUS,
+    corpus: undefined,
     minWords: DEFAULT_MIN_WORDS,
     skipWithoutCorpus: false,
     paths: [],
@@ -67,13 +85,14 @@ function parseArgs(argv: string[]): Options {
 }
 
 /** The files below `dir` whose name matches `wanted`, as sorted POSIX paths relative to `dir`. */
-function listFiles(dir: string, wanted: RegExp): string[] {
+function listFiles(dir: string, wanted: RegExp, onLink?: (path: string) => void): string[] {
   const found: string[] = [];
   const walk = (relative: string): void => {
     const here = relative === '' ? dir : `${dir}/${relative}`;
     for (const entry of readdirSync(here, { withFileTypes: true })) {
       const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
-      if (entry.isDirectory()) walk(path);
+      if (entry.isSymbolicLink()) onLink?.(path);
+      else if (entry.isDirectory()) walk(path);
       else if (entry.isFile() && wanted.test(entry.name)) found.push(path);
     }
   };
@@ -83,20 +102,52 @@ function listFiles(dir: string, wanted: RegExp): string[] {
 
 const CORPUS_FILE = /\.(txt|md)$/i;
 const TARGET_FILE = /\.(md|mdx|ya?ml|txt)$/i;
+const MARKDOWN_FILE = /\.mdx?$/i;
+
+/** A corpus file as text: UTF-16 with a byte order mark, else strict UTF-8 without NUL bytes. */
+function decode(bytes: Buffer, name: string): string {
+  const first = bytes[0];
+  const second = bytes[1];
+  try {
+    if (first === 0xff && second === 0xfe) {
+      return new TextDecoder('utf-16le', { fatal: true }).decode(bytes);
+    }
+    if (first === 0xfe && second === 0xff) {
+      return new TextDecoder('utf-16be', { fatal: true }).decode(bytes);
+    }
+    if (!bytes.includes(0)) return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    // Falls through to the error below.
+  }
+  throw new Error(`corpus file ${name} is not UTF-8`);
+}
+
+/** The text of a file as it is matched: Markdown links and entities are removed. */
+function matchable(name: string, text: string): string {
+  return MARKDOWN_FILE.test(name) ? stripMarkup(text) : text;
+}
 
 /** The corpus as `relative path -> text`; empty when the folder is missing or has no file. */
 function readCorpus(dir: string): Record<string, string> {
   const corpus: Record<string, string> = {};
   if (!existsSync(dir) || !statSync(dir).isDirectory()) return corpus;
-  for (const path of listFiles(dir, CORPUS_FILE)) {
-    corpus[path] = readFileSync(`${dir}/${path}`, 'utf8');
+  const warnLink = (path: string): void => {
+    console.error(`similarity-check: link not followed in the corpus: ${path}`);
+  };
+  for (const path of listFiles(dir, CORPUS_FILE, warnLink)) {
+    corpus[path] = matchable(path, decode(readFileSync(`${dir}/${path}`), path));
   }
   return corpus;
 }
 
 /** The checkable files of the given paths (files, or folders read recursively), without repeats. */
 function collectTargets(paths: string[]): string[] {
-  const targets = new Set<string>();
+  // The same file can be given in several forms (./a.md, a.md): the first form is kept.
+  const targets = new Map<string, string>();
+  const add = (path: string): void => {
+    const key = resolve(path);
+    if (!targets.has(key)) targets.set(key, path);
+  };
   const explicit = paths.length > 0;
   for (const path of explicit ? paths : DEFAULT_TARGETS) {
     if (!existsSync(path)) {
@@ -104,30 +155,31 @@ function collectTargets(paths: string[]): string[] {
       continue;
     }
     if (statSync(path).isDirectory()) {
-      for (const file of listFiles(path, TARGET_FILE)) targets.add(`${path}/${file}`);
+      for (const file of listFiles(path, TARGET_FILE)) add(`${path}/${file}`);
     } else if (TARGET_FILE.test(path)) {
-      targets.add(path);
+      add(path);
     }
   }
-  return [...targets];
+  return [...targets.values()];
 }
 
 function run(options: Options): number {
-  const corpus = readCorpus(options.corpus);
+  const corpusDir = options.corpus ?? defaultCorpus();
+  const corpus = readCorpus(corpusDir);
   const corpusFiles = Object.keys(corpus).length;
   if (corpusFiles === 0) {
     if (options.skipWithoutCorpus) {
-      console.log(`no corpus at ${options.corpus}, similarity check skipped`);
+      console.log(`no corpus at ${corpusDir}, similarity check skipped`);
       return 0;
     }
-    console.error(`no corpus at ${options.corpus}`);
+    console.error(`no corpus at ${corpusDir}`);
     return 1;
   }
   const targets = collectTargets(options.paths);
   const index = buildIndex(corpus, options.minWords);
   let total = 0;
   for (const target of targets) {
-    for (const match of findMatches(readFileSync(target, 'utf8'), index)) {
+    for (const match of findMatches(matchable(target, readFileSync(target, 'utf8')), index)) {
       console.log(
         `${target}:${match.line}: ${match.length} words shared with ${match.corpusFile}:${match.corpusLine}: "${match.text}"`,
       );
