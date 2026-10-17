@@ -128,7 +128,7 @@
   width: 100%;
   aspect-ratio: var(--dl-aw) / var(--dl-ah);
   min-height: 14rem;
-  max-height: 32rem;
+  max-height: min(56rem, 80svh);
   background-image: radial-gradient(var(--dl-dots) 1px, transparent 1px);
   background-size: 16px 16px;
 }
