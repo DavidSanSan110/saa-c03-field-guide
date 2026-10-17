@@ -5,8 +5,6 @@ export interface Word {
   line: number;
 }
 
-const BOM = String.fromCodePoint(0xfeff);
-
 interface Spot {
   file: string;
   line: number;
@@ -29,9 +27,11 @@ export interface Match {
 
 /** The normalised words of a text, each with its 1-based line number. */
 export function words(text: string): Word[] {
-  const normalised = (text.startsWith(BOM) ? text.slice(1) : text)
+  // Format characters (soft hyphen, zero-width space, BOM...) are invisible, so they are removed.
+  const normalised = text
     .normalize('NFKC')
     .toLowerCase()
+    .replace(/\p{Cf}/gu, '')
     .replace(/['’]/gu, '');
   const found: Word[] = [];
   normalised.split('\n').forEach((lineText, index) => {
@@ -42,10 +42,20 @@ export function words(text: string): Word[] {
   return found;
 }
 
-function windowAt(list: Word[], start: number, size: number): string {
-  let joined = (list[start] as Word).word;
-  for (let i = start + 1; i < start + size; i++) joined += ` ${(list[i] as Word).word}`;
-  return joined;
+/** The key of a window: its words joined by spaces (a flat string, cheap to keep in a Map). */
+function windowAt(texts: string[], start: number, size: number): string {
+  return texts.slice(start, start + size).join(' ');
+}
+
+/**
+ * Prepares Markdown text for matching, keeping its line numbers: link targets `](...)` go (the
+ * link text stays), apostrophe entities go like `'`, any other entity becomes a space.
+ */
+export function stripMarkup(text: string): string {
+  return text
+    .replace(/\]\([^)\n]*\)/gu, '')
+    .replace(/&(?:rsquo|apos|#39|#x27|#8217|#x2019);/giu, '')
+    .replace(/&(?:#\d+|#x[\da-f]+|[a-z][a-z\d]*);/giu, ' ');
 }
 
 /** Indexes the runs of `minWords` consecutive words of every corpus file (name -> text). */
@@ -54,8 +64,9 @@ export function buildIndex(corpus: Record<string, string>, minWords: number): Co
   const names = Object.keys(corpus);
   for (const file of names) {
     const list = words(corpus[file] as string);
+    const texts = list.map((entry) => entry.word);
     for (let i = 0; i + minWords <= list.length; i++) {
-      const key = windowAt(list, i, minWords);
+      const key = windowAt(texts, i, minWords);
       if (!windows.has(key)) windows.set(key, { file, line: (list[i] as Word).line });
     }
   }
@@ -66,6 +77,7 @@ export function buildIndex(corpus: Record<string, string>, minWords: number): Co
 export function findMatches(text: string, index: CorpusIndex): Match[] {
   const { minWords, windows } = index;
   const list = words(text);
+  const texts = list.map((entry) => entry.word);
   const matches: Match[] = [];
   let open: { start: number; end: number; spot: Spot } | undefined;
   const close = (): void => {
@@ -73,17 +85,14 @@ export function findMatches(text: string, index: CorpusIndex): Match[] {
     matches.push({
       line: (list[open.start] as Word).line,
       length: open.end - open.start,
-      text: list
-        .slice(open.start, open.end)
-        .map((entry) => entry.word)
-        .join(' '),
+      text: texts.slice(open.start, open.end).join(' '),
       corpusFile: open.spot.file,
       corpusLine: open.spot.line,
     });
     open = undefined;
   };
   for (let i = 0; i + minWords <= list.length; i++) {
-    const spot = windows.get(windowAt(list, i, minWords));
+    const spot = windows.get(windowAt(texts, i, minWords));
     if (spot === undefined) {
       close();
     } else if (open !== undefined && open.end === i + minWords - 1) {
