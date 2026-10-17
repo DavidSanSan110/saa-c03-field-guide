@@ -18,7 +18,7 @@ import {
   readBank,
   sidecarPath,
 } from './bank.ts';
-import type { BankResult, FileMap, Problem } from './bank.ts';
+import type { BankResult, FileMap, Problem, PromoteMove } from './bank.ts';
 
 const USAGE = `Usage:
   questions check [options]                      read both folders and print every problem
@@ -58,11 +58,13 @@ function parseArgs(argv: string[]): Options {
     if (arg === '--drafts' || arg === '--bank') {
       const value = rest[++i];
       if (value === undefined || value.startsWith('--')) throw new UsageError();
-      if (arg === '--drafts') options.drafts = value;
-      else options.bank = value;
+      // No trailing separator, so that printed paths do not show `dir//d1/...`.
+      const folder = value.replace(/[\\/]+$/, '') || value;
+      if (arg === '--drafts') options.drafts = folder;
+      else options.bank = folder;
     } else if (arg === '--dry-run' && command === 'promote') {
       options.dryRun = true;
-    } else if (arg.startsWith('--')) {
+    } else if (arg.startsWith('-')) {
       throw new UsageError();
     } else {
       options.positionals.push(arg);
@@ -73,22 +75,36 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
-/** Every file under `dir` as `relative POSIX path -> text`; a missing folder is empty, with a notice. */
-function readFolder(dir: string): FileMap {
-  const files: FileMap = {};
+interface Folder {
+  files: FileMap;
+  /** Symbolic links and junctions: they are never followed, and each one is a problem. */
+  links: Problem[];
+}
+
+/**
+ * The YAML files under `dir` as `relative POSIX path -> text`; a missing folder is empty, with a
+ * notice. Links are listed in `links` instead of being followed.
+ */
+function readFolder(dir: string): Folder {
+  const folder: Folder = { files: {}, links: [] };
   if (!existsSync(dir)) {
     console.error(`no folder at ${dir}, treated as empty`);
-    return files;
+    return folder;
   }
   const walk = (relative: string): void => {
     for (const entry of readdirSync(under(dir, relative), { withFileTypes: true })) {
       const path = relative === '' ? entry.name : `${relative}/${entry.name}`;
-      if (entry.isDirectory()) walk(path);
-      else if (entry.isFile()) files[path] = readFileSync(under(dir, path), 'utf8');
+      if (entry.isSymbolicLink()) {
+        folder.links.push({ file: path, message: 'symbolic links are not followed' });
+      } else if (entry.isDirectory()) {
+        walk(path);
+      } else if (entry.isFile() && /\.ya?ml$/.test(path)) {
+        folder.files[path] = readFileSync(under(dir, path), 'utf8');
+      }
     }
   };
   walk('');
-  return files;
+  return folder;
 }
 
 /** The path of a file below `dir`, as printed and as opened. */
@@ -104,15 +120,17 @@ interface Folders {
 }
 
 function readFolders(options: Options): Folders {
-  const draftFiles = readFolder(options.drafts);
-  const bankFiles = readFolder(options.bank);
-  const drafts = readBank(draftFiles, { publicOnly: false });
-  const bank = readBank(bankFiles, { publicOnly: true });
+  const draftFolder = readFolder(options.drafts);
+  const bankFolder = readFolder(options.bank);
+  const drafts = readBank(draftFolder.files, { publicOnly: false });
+  const bank = readBank(bankFolder.files, { publicOnly: true });
   const label = (dir: string) => (problem: Problem) => `${dir}/${problem.file}: ${problem.message}`;
   const problems = [
-    ...drafts.problems.map(label(options.drafts)),
-    ...bank.problems.map(label(options.bank)),
-    ...findIdCollisions(drafts.entries, bank.entries).map(label(options.drafts)),
+    ...[...drafts.problems, ...draftFolder.links].map(label(options.drafts)),
+    ...[...bank.problems, ...bankFolder.links].map(label(options.bank)),
+    ...findIdCollisions(drafts.entries, bank.entries, `${options.bank}/`).map(
+      label(options.drafts),
+    ),
   ];
   return { drafts, bank, problems };
 }
@@ -129,16 +147,25 @@ function runCheck(options: Options): number {
 function runNextId(options: Options): number {
   const task = options.positionals[0];
   if (!isTaskId(task)) throw new UsageError();
-  const draftFiles = readFolder(options.drafts);
-  const bankFiles = readFolder(options.bank);
-  console.log(nextId(task, [...collectIds(draftFiles), ...collectIds(bankFiles)]));
+  const draftFolder = readFolder(options.drafts);
+  const bankFolder = readFolder(options.bank);
+  // Links are not followed, so ids behind them are unknown: say so, but still print the id.
+  for (const { file, message } of draftFolder.links)
+    console.error(`${options.drafts}/${file}: ${message}`);
+  for (const { file, message } of bankFolder.links)
+    console.error(`${options.bank}/${file}: ${message}`);
+  console.log(nextId(task, [...collectIds(draftFolder.files), ...collectIds(bankFolder.files)]));
   return 0;
 }
 
 function runPromote(options: Options): number {
   const { drafts, bank, problems } = readFolders(options);
-  const only = options.positionals.length > 0 ? { ids: options.positionals } : {};
-  const plan = problems.length > 0 ? undefined : planPromote(drafts.entries, bank.entries, only);
+  const bankPrefix = `${options.bank}/`;
+  const planOptions = options.positionals.length > 0 ? { ids: options.positionals } : {};
+  const plan =
+    problems.length > 0
+      ? undefined
+      : planPromote(drafts.entries, bank.entries, { ...planOptions, bankPrefix });
 
   const errors = [
     ...problems,
@@ -160,27 +187,72 @@ function runPromote(options: Options): number {
   for (const { file, message } of plan.skipped) {
     console.log(`skipped ${options.drafts}/${file}: ${message}`);
   }
-  const verb = options.dryRun ? 'would move' : 'moved';
-  for (const { id, from, to } of plan.moves) {
-    console.log(`${verb} ${id}: ${under(options.drafts, from)} -> ${under(options.bank, to)}`);
-  }
+  const printMoves = (verb: string): void => {
+    for (const { id, from, to } of plan.moves) {
+      console.log(`${verb} ${id}: ${under(options.drafts, from)} -> ${under(options.bank, to)}`);
+    }
+  };
   if (options.dryRun) {
+    printMoves('would move');
     console.log('dry run: nothing was written or deleted');
     return 0;
   }
 
   // Copy every file first and delete afterwards, so a failed copy leaves the drafts untouched.
-  for (const { from, to } of plan.moves) {
-    const target = under(options.bank, to);
-    mkdirSync(dirname(target), { recursive: true });
-    copyFileSync(under(options.drafts, from), target, constants.COPYFILE_EXCL);
+  const copied = copyAll(plan.moves, options);
+  if (copied !== undefined) {
+    console.error(`questions: ${copied}; the drafts were left as they were`);
+    return 1;
   }
-  for (const { from } of plan.moves) {
-    rmSync(under(options.drafts, from));
-    rmSync(under(options.drafts, sidecarPath(from)), { force: true });
+  const left = deleteDrafts(plan.moves, options);
+  printMoves('moved');
+  if (left.length > 0) {
+    // The bank copies are complete; only the deletion of the drafts is left to do by hand.
+    console.error(`questions: could not delete these drafts (the bank already has their copies):`);
+    for (const line of left) console.error(`  ${line}`);
+    return 1;
   }
   console.log(`Review the new files, then commit ${options.bank}/ yourself (git is not run here).`);
   return 0;
+}
+
+/**
+ * Copies each draft into the bank without overwriting anything. On a failure it removes what it
+ * made (the copies and the folders it created) and returns the error message; else undefined.
+ */
+function copyAll(moves: PromoteMove[], options: Options): string | undefined {
+  const copies: string[] = [];
+  const createdFolders: string[] = [];
+  try {
+    for (const { from, to } of moves) {
+      const target = under(options.bank, to);
+      const created = mkdirSync(dirname(target), { recursive: true });
+      if (created !== undefined) createdFolders.push(created);
+      copyFileSync(under(options.drafts, from), target, constants.COPYFILE_EXCL);
+      copies.push(target);
+    }
+    return undefined;
+  } catch (error) {
+    for (const copy of copies) rmSync(copy, { force: true });
+    for (const folder of createdFolders) rmSync(folder, { recursive: true, force: true });
+    return error instanceof Error ? error.message : String(error);
+  }
+}
+
+/** Deletes the promoted drafts and their sidecars; returns one line per file that was left. */
+function deleteDrafts(moves: PromoteMove[], options: Options): string[] {
+  const left: string[] = [];
+  for (const { from } of moves) {
+    for (const path of [from, sidecarPath(from)]) {
+      try {
+        rmSync(under(options.drafts, path), { force: true });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        left.push(`${under(options.drafts, path)}: ${reason}`);
+      }
+    }
+  }
+  return left;
 }
 
 /** Runs the CLI and resolves to the process exit code (0 ok, 1 problems, 2 usage error). */
