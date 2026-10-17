@@ -1,8 +1,40 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { DESKTOP_VIEWPORT } from './support.ts';
 import { BANNER_TEXT, DISCLAIMER_TEXT } from './support.ts';
 
 test.use({ viewport: DESKTOP_VIEWPORT });
+
+interface IndexedPage {
+  url: string;
+  content: string;
+}
+
+/** Queries Pagefind's JS API in the page and returns the indexed text of every result. */
+async function searchIndex(page: Page, term: string): Promise<IndexedPage[]> {
+  return page.evaluate(async (query) => {
+    interface PagefindApi {
+      init?: () => Promise<void>;
+      search: (q: string) => Promise<{
+        results: { data: () => Promise<{ url: string; content: string }> }[];
+      }>;
+    }
+    // A variable specifier keeps TypeScript from resolving the import at compile time.
+    const specifier = '/pagefind/pagefind.js';
+    const pagefind = (await import(/* @vite-ignore */ specifier)) as PagefindApi;
+    await pagefind.init?.();
+    const search = await pagefind.search(query);
+    return Promise.all(
+      search.results.map(async (result) => {
+        const data = await result.data();
+        return { url: data.url, content: data.content };
+      }),
+    );
+  }, term);
+}
+
+function collapseWhitespace(text: string): string {
+  return text.replace(/\s+/g, ' ');
+}
 
 test.describe('search', () => {
   test('AC-12: searching "data security" lists a result linking to the 1.3 task page', async ({
@@ -56,19 +88,42 @@ test.describe('search index', () => {
     expect(hrefs.filter((href) => href !== '/' && !href?.startsWith('/#'))).toEqual([]);
   });
 
-  for (const term of ['November', 'sponsored']) {
-    test(`AC-16: searching "${term}" finds nothing`, async ({ page }) => {
-      await page.goto('/');
+  test('AC-16: searching "sponsored" finds nothing', async ({ page }) => {
+    await page.goto('/');
 
-      await page.getByRole('button', { name: 'Search' }).click();
-      const dialog = page.getByRole('dialog', { name: 'Search' });
-      await dialog.getByRole('textbox').fill(term);
+    await page.getByRole('button', { name: 'Search' }).click();
+    const dialog = page.getByRole('dialog', { name: 'Search' });
+    await dialog.getByRole('textbox').fill('sponsored');
 
-      // Wait for Pagefind to settle on its "No results" message instead of sleeping.
-      await expect(dialog.getByText(/No results for/i)).toBeVisible();
-      await expect(dialog.getByRole('link')).toHaveCount(0);
-    });
-  }
+    // Wait for Pagefind to settle on its "No results" message instead of sleeping.
+    await expect(dialog.getByText(/No results for/i)).toBeVisible();
+    await expect(dialog.getByRole('link')).toHaveCount(0);
+  });
+
+  test('AC-16a: no page in the search index contains the banner', async ({ page }) => {
+    await page.goto('/');
+
+    // Pagefind also matches "November" to the standalone word "no", so results may exist; what
+    // matters is that none of their indexed text holds the banner.
+    const results = await searchIndex(page, 'November');
+
+    const withBanner = results
+      .filter((result) => collapseWhitespace(result.content).includes('launching November 2026'))
+      .map((result) => result.url);
+    expect(withBanner).toEqual([]);
+  });
+
+  test('AC-16b: the index returns the home page text for "affiliated" (AC-16a is not vacuous)', async ({
+    page,
+  }) => {
+    await page.goto('/');
+
+    const results = await searchIndex(page, 'affiliated');
+
+    const home = results.find((result) => /^\/(index\.html)?$/.test(result.url));
+    expect(home, `no home page in ${JSON.stringify(results.map((r) => r.url))}`).toBeDefined();
+    expect(collapseWhitespace(home?.content ?? '')).toContain('Not affiliated with AWS');
+  });
 
   test('AC-16: searching "data security" still finds the 1.3 task page', async ({ page }) => {
     await page.goto('/');
