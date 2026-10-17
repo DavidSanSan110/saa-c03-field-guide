@@ -1,0 +1,627 @@
+import { describe, expect, test } from 'vitest';
+import { parse } from 'yaml';
+import type { BankEntry } from './bank.ts';
+import {
+  findSimilar,
+  normalise,
+  shingles,
+  similarByDraft,
+  similarity,
+  withDedupe,
+} from './dedupe.ts';
+import type { SimilarPair, SimilarRef } from './dedupe.ts';
+import { names, shingleEntry, textOf } from './__mocks__/dedupe-fixtures.ts';
+
+const chars = (...codePoints: number[]): string => String.fromCodePoint(...codePoints);
+
+const RIGHT_QUOTE = chars(0x2019);
+const E_ACUTE = chars(0xe9);
+const E_ACUTE_UPPER = chars(0xc9);
+const SUPERSCRIPT_D = chars(0x1d48);
+
+/** Any error message but the one of an unimplemented stub: a real YAML or validation error. */
+const NOT_A_STUB = /^(?!not implemented)/;
+
+const set = (...values: string[]): Set<string> => new Set(values);
+
+describe('normalise', () => {
+  test('AC-1: lower-cases, removes apostrophes, splits on non-alphanumerics and applies NFKC', () => {
+    const text = `Don't  use S3-IA; it${RIGHT_QUOTE}s ${E_ACUTE_UPPER}T${E_ACUTE_UPPER} 2${SUPERSCRIPT_D}!`;
+
+    expect(normalise(text)).toEqual([
+      'dont',
+      'use',
+      's3',
+      'ia',
+      'its',
+      `${E_ACUTE}t${E_ACUTE}`,
+      '2d',
+    ]);
+  });
+
+  test('AC-1: a straight apostrophe is removed, not turned into a space', () => {
+    expect(normalise("don't")).toEqual(['dont']);
+  });
+
+  test('AC-1: a typographic apostrophe is removed, not turned into a space', () => {
+    expect(normalise(`don${RIGHT_QUOTE}t`)).toEqual(['dont']);
+  });
+
+  test('AC-1: apostrophes at the edges of a word are removed', () => {
+    expect(normalise("'quoted' users'")).toEqual(['quoted', 'users']);
+  });
+
+  test('AC-1: NFKC turns a modifier letter into its plain letter', () => {
+    expect(normalise(`2${SUPERSCRIPT_D}`)).toEqual(['2d']);
+  });
+
+  test('AC-1: NFKC composes a letter with a combining accent', () => {
+    expect(normalise(`cafe${chars(0x301)}`)).toEqual([`caf${E_ACUTE}`]);
+  });
+
+  test('AC-1: NFKC turns full-width characters into plain ones before lower-casing', () => {
+    expect(normalise(chars(0xff21, 0xff22, 0xff23, 0xff11))).toEqual(['abc1']);
+  });
+
+  test('AC-1: NFKC expands a ligature', () => {
+    expect(normalise(`${chars(0xfb01)}le`)).toEqual(['file']);
+  });
+
+  test('AC-1: upper case letters are lower-cased', () => {
+    expect(normalise('SSE-KMS Encryption')).toEqual(['sse', 'kms', 'encryption']);
+  });
+
+  test('AC-1: every run of other characters (punctuation, underscores, tabs, newlines) is one separator', () => {
+    expect(normalise('a_b--c  d\te\nf,,;;g')).toEqual(['a', 'b', 'c', 'd', 'e', 'f', 'g']);
+  });
+
+  test('AC-1: leading and trailing separators do not produce empty words', () => {
+    expect(normalise('  --hello world!!  ')).toEqual(['hello', 'world']);
+  });
+
+  test('AC-1: letters of other scripts and digits are words', () => {
+    expect(normalise('日本語 テスト 42')).toEqual(['日本語', 'テスト', '42']);
+  });
+
+  test.each([
+    ['an empty string', ''],
+    ['only spaces', '   '],
+    ['only punctuation', '--- ... !!!'],
+  ])('AC-1: %s gives no words', (_name, text) => {
+    expect(normalise(text)).toEqual([]);
+  });
+});
+
+describe('shingles', () => {
+  test('AC-2: a stem of 5 words gives its 3 shingles of 3 consecutive words', () => {
+    const result = shingles(textOf('one two three four five', []));
+
+    expect(result).toEqual(set('one two three', 'two three four', 'three four five'));
+  });
+
+  test('AC-2: the option shingles are added and none joins the stem to an option', () => {
+    const result = shingles(textOf('one two three four five', ['red green blue yellow']));
+
+    expect(result).toEqual(
+      set(
+        'one two three',
+        'two three four',
+        'three four five',
+        'red green blue',
+        'green blue yellow',
+      ),
+    );
+    expect(result.has('four five red')).toBe(false);
+    expect(result.has('five red green')).toBe(false);
+  });
+
+  test('AC-2: no shingle joins the last words of an option with the next option', () => {
+    const result = shingles(textOf('---', ['alpha beta', 'gamma delta', 'epsilon zeta eta theta']));
+
+    expect(result).toEqual(set('alpha beta', 'gamma delta', 'epsilon zeta eta', 'zeta eta theta'));
+  });
+
+  test('AC-2: shingles are made of normalised words joined by one space', () => {
+    const result = shingles(textOf("Don't Panic -- Now, SSE-C!", []));
+
+    expect(result).toEqual(set('dont panic now', 'panic now sse', 'now sse c'));
+  });
+
+  test('AC-2: a stem of exactly 3 words gives one shingle', () => {
+    expect(shingles(textOf('Which option fits', []))).toEqual(set('which option fits'));
+  });
+
+  test('AC-2: repeated shingles collapse in the set', () => {
+    expect(shingles(textOf('go go go go', []))).toEqual(set('go go go'));
+  });
+
+  test('AC-3: an option of 2 words contributes itself, normalised, as one shingle', () => {
+    expect(shingles(textOf('---', ['SSE-C']))).toEqual(set('sse c'));
+  });
+
+  test('AC-3: an option of 1 word contributes itself', () => {
+    expect(shingles(textOf('---', ['KMS']))).toEqual(set('kms'));
+  });
+
+  test('AC-3: an option of exactly 3 words contributes itself', () => {
+    expect(shingles(textOf('---', ['Amazon S3 Glacier']))).toEqual(set('amazon s3 glacier'));
+  });
+
+  test('AC-3: a stem of 1 or 2 words contributes itself as one shingle', () => {
+    expect(shingles(textOf('Which one?', []))).toEqual(set('which one'));
+    expect(shingles(textOf('Which', []))).toEqual(set('which'));
+  });
+
+  test.each([
+    ['an empty option', ''],
+    ['an option of only punctuation', '!!! --'],
+  ])('AC-3: %s contributes nothing', (_name, text) => {
+    expect(shingles(textOf('---', [text, 'kms']))).toEqual(set('kms'));
+  });
+
+  test('AC-3: a question without any word has no shingles', () => {
+    expect(shingles(textOf('---', ['', '...']))).toEqual(set());
+  });
+
+  test('AC-4: the same stem and options in a different order have similarity 1', () => {
+    const stem = 'A company must encrypt objects in Amazon S3 and keep the keys outside AWS';
+    const options = ['SSE-S3', 'SSE-KMS with a customer managed key', 'SSE-C', 'None of them'];
+    const shuffled = [
+      options[2] as string,
+      options[0] as string,
+      options[3] as string,
+      options[1] as string,
+    ];
+
+    const a = shingles(textOf(stem, options));
+    const b = shingles(textOf(stem, shuffled));
+
+    expect(similarity(a, b)).toBe(1);
+  });
+
+  test('AC-4: the shingle set does not depend on the option order', () => {
+    const a = shingles(textOf('Which is correct here', ['one two three', 'four five six']));
+    const b = shingles(textOf('Which is correct here', ['four five six', 'one two three']));
+
+    expect(a).toEqual(b);
+  });
+});
+
+describe('similarity', () => {
+  test('AC-5: {a,b,c} and {b,c,d} have Jaccard similarity 0.5', () => {
+    expect(similarity(set('a', 'b', 'c'), set('b', 'c', 'd'))).toBe(0.5);
+  });
+
+  test('AC-5: disjoint sets have similarity 0', () => {
+    expect(similarity(set('a', 'b'), set('c', 'd'))).toBe(0);
+  });
+
+  test('AC-5: two empty sets have similarity 0', () => {
+    expect(similarity(set(), set())).toBe(0);
+  });
+
+  test('AC-5: an empty set and a non-empty set have similarity 0', () => {
+    expect(similarity(set(), set('a'))).toBe(0);
+    expect(similarity(set('a'), set())).toBe(0);
+  });
+
+  test('AC-5: equal sets have similarity 1', () => {
+    expect(similarity(set('a', 'b'), set('b', 'a'))).toBe(1);
+  });
+
+  test('AC-5: it is symmetric, also for sets of different sizes', () => {
+    const small = set('a');
+    const big = set('a', 'b', 'c', 'd');
+
+    expect(similarity(small, big)).toBe(0.25);
+    expect(similarity(big, small)).toBe(0.25);
+  });
+
+  test('AC-5: it is the intersection over the union, not over the smaller set', () => {
+    expect(similarity(set('a', 'b', 'c', 'd'), set('a', 'b'))).toBe(0.5);
+  });
+
+  test('AC-5: it does not change its arguments', () => {
+    const a = set('a', 'b');
+    const b = set('b', 'c');
+
+    similarity(a, b);
+
+    expect(a).toEqual(set('a', 'b'));
+    expect(b).toEqual(set('b', 'c'));
+  });
+});
+
+/** Ids of a pair as `<a> <aFolder> | <b> <bFolder>`, for comparing lists of pairs. */
+function keyOf(pair: SimilarPair): string {
+  return `${pair.a.question.id} ${pair.aFolder} | ${pair.b.question.id} ${pair.bFolder}`;
+}
+
+describe('findSimilar', () => {
+  // A = c1..c3 + a1 (4 shingles), B = c1..c3 + b1, b2 (5 shingles): 3 shared of 6 in all.
+  const common = names('c', 3);
+  const half = {
+    a: shingleEntry('d1-1.3-0001', 'half-a', [...common, 'a1']),
+    b: shingleEntry('d1-1.3-0002', 'half-b', [...common, 'b1', 'b2']),
+  };
+
+  test('AC-6: a pair with exactly the threshold similarity is flagged (>=, not >)', () => {
+    const pairs = findSimilar([half.a], [half.b], 0.5);
+
+    expect(pairs.map(keyOf)).toEqual(['d1-1.3-0001 drafts | d1-1.3-0002 bank']);
+    expect(pairs[0]?.score).toBe(0.5);
+  });
+
+  test('AC-6: the same pair is flagged between two drafts', () => {
+    const pairs = findSimilar([half.a, half.b], [], 0.5);
+
+    expect(pairs.map(keyOf)).toEqual(['d1-1.3-0001 drafts | d1-1.3-0002 drafts']);
+  });
+
+  test('AC-6: a pair just above the threshold is flagged', () => {
+    expect(findSimilar([half.a], [half.b], 0.4999)).toHaveLength(1);
+  });
+
+  test('AC-6: a pair just below the threshold is not flagged', () => {
+    expect(findSimilar([half.a], [half.b], 0.5001)).toEqual([]);
+  });
+
+  test('AC-6: a similarity of 0.4996 is not flagged at 0.5, though it rounds to 0.50', () => {
+    // 1249 shared of 2500 in all: 0.4996.
+    const shared = names('s', 1249);
+    const a = shingleEntry('d1-1.3-0001', 'big-a', [...shared, ...names('a', 626)]);
+    const b = shingleEntry('d1-1.3-0002', 'big-b', [...shared, ...names('b', 625)]);
+
+    expect(findSimilar([a], [b], 0.5)).toEqual([]);
+    expect(findSimilar([a], [b], 0.4996)).toHaveLength(1);
+  });
+
+  test('AC-6: a threshold of 1 flags only identical questions', () => {
+    const twin = shingleEntry('d1-1.3-0003', 'twin', [...common, 'a1']);
+
+    const pairs = findSimilar([half.a], [half.b, twin], 1);
+
+    expect(pairs.map(keyOf)).toEqual(['d1-1.3-0001 drafts | d1-1.3-0003 bank']);
+    expect(pairs[0]?.score).toBe(1);
+  });
+
+  test('AC-6: questions without any shingle are never flagged (similarity 0)', () => {
+    const empty = shingleEntry('d1-1.3-0001', 'empty-a', []);
+    const alsoEmpty = shingleEntry('d1-1.3-0002', 'empty-b', []);
+
+    expect(findSimilar([empty], [alsoEmpty], 0.01)).toEqual([]);
+  });
+
+  test('AC-7: 3 drafts and 2 bank questions, all identical, give 3 + 6 = 9 pairs', () => {
+    const keys = names('k', 4);
+    const drafts = [
+      shingleEntry('d1-1.3-0002', 'draft-two', keys),
+      shingleEntry('d1-1.3-0003', 'draft-three', keys),
+      shingleEntry('d1-1.3-0001', 'draft-one', keys),
+    ];
+    const bank = [
+      shingleEntry('d1-1.3-0101', 'bank-one', keys),
+      shingleEntry('d1-1.3-0102', 'bank-two', keys),
+    ];
+
+    const pairs = findSimilar(drafts, bank, 0.5);
+
+    expect(pairs).toHaveLength(9);
+    expect(pairs.map(keyOf).sort()).toEqual(
+      [
+        'd1-1.3-0001 drafts | d1-1.3-0002 drafts',
+        'd1-1.3-0001 drafts | d1-1.3-0003 drafts',
+        'd1-1.3-0002 drafts | d1-1.3-0003 drafts',
+        'd1-1.3-0001 drafts | d1-1.3-0101 bank',
+        'd1-1.3-0001 drafts | d1-1.3-0102 bank',
+        'd1-1.3-0002 drafts | d1-1.3-0101 bank',
+        'd1-1.3-0002 drafts | d1-1.3-0102 bank',
+        'd1-1.3-0003 drafts | d1-1.3-0101 bank',
+        'd1-1.3-0003 drafts | d1-1.3-0102 bank',
+      ].sort(),
+    );
+    expect(pairs.every((pair) => pair.score === 1)).toBe(true);
+  });
+
+  test('AC-7: bank questions are not compared with each other', () => {
+    const keys = names('k', 4);
+    const bank = [
+      shingleEntry('d1-1.3-0101', 'bank-one', keys),
+      shingleEntry('d1-1.3-0102', 'bank-two', keys),
+    ];
+
+    expect(findSimilar([], bank, 0.5)).toEqual([]);
+  });
+
+  test('AC-7: a single draft is not compared with itself', () => {
+    const only = shingleEntry('d1-1.3-0001', 'only', names('k', 4));
+
+    expect(findSimilar([only], [], 0.5)).toEqual([]);
+  });
+
+  test('AC-7: no drafts and no bank give no pairs', () => {
+    expect(findSimilar([], [], 0.5)).toEqual([]);
+  });
+
+  test('AC-7: pairs are labelled with their folders', () => {
+    const keys = names('k', 4);
+    const draft = shingleEntry('d1-1.3-0001', 'draft', keys);
+    const other = shingleEntry('d1-1.3-0002', 'other', keys);
+    const bank = shingleEntry('d1-1.3-0003', 'bank', keys);
+
+    const pairs = findSimilar([draft, other], [bank], 0.5);
+
+    expect(pairs.every((pair) => pair.aFolder === 'drafts')).toBe(true);
+    expect(pairs.map((pair) => pair.bFolder).sort()).toEqual(['bank', 'bank', 'drafts']);
+    const crossing = pairs.find((pair) => pair.bFolder === 'bank' && pair.a === draft);
+    expect(crossing?.b).toBe(bank);
+  });
+
+  // The ids sort differently from the slugs (and so from the paths) and from the input order.
+  describe('order', () => {
+    const keys = names('k', 4);
+
+    test('AC-8: pairs of the same score are sorted by the first id, then by the second id', () => {
+      const drafts = [
+        shingleEntry('d1-1.3-0030', 'aa-first-slug', keys),
+        shingleEntry('d1-1.3-0010', 'bb-second-slug', keys),
+        shingleEntry('d1-1.3-0020', 'cc-third-slug', keys),
+      ];
+      const bank = [
+        shingleEntry('d1-1.3-0050', 'dd-bank', keys),
+        shingleEntry('d1-1.3-0040', 'ee-bank', keys),
+      ];
+
+      const pairs = findSimilar(drafts, bank, 0.5);
+
+      expect(pairs.map(keyOf)).toEqual([
+        'd1-1.3-0010 drafts | d1-1.3-0020 drafts',
+        'd1-1.3-0010 drafts | d1-1.3-0030 drafts',
+        'd1-1.3-0010 drafts | d1-1.3-0040 bank',
+        'd1-1.3-0010 drafts | d1-1.3-0050 bank',
+        'd1-1.3-0020 drafts | d1-1.3-0030 drafts',
+        'd1-1.3-0020 drafts | d1-1.3-0040 bank',
+        'd1-1.3-0020 drafts | d1-1.3-0050 bank',
+        'd1-1.3-0030 drafts | d1-1.3-0040 bank',
+        'd1-1.3-0030 drafts | d1-1.3-0050 bank',
+      ]);
+    });
+
+    test('AC-8: for a draft-draft pair, a is the draft with the smaller id', () => {
+      const larger = shingleEntry('d1-1.3-0090', 'aaa', keys);
+      const smaller = shingleEntry('d1-1.3-0005', 'zzz', keys);
+
+      const [pair] = findSimilar([larger, smaller], [], 0.5);
+
+      expect(pair?.a).toBe(smaller);
+      expect(pair?.b).toBe(larger);
+      expect(pair?.bFolder).toBe('drafts');
+    });
+
+    test('AC-8: a higher score comes first, whatever the ids', () => {
+      // Three separate groups: 3/4 = 0.75, 1 and 2/4 = 0.5; no shingle is shared between groups.
+      const drafts = [
+        shingleEntry('d1-1.3-0030', 'g1', names('g', 4)),
+        shingleEntry('d1-1.3-0010', 'g2', names('h', 4)),
+        shingleEntry('d1-1.3-0020', 'g3', names('k', 4)),
+      ];
+      const bank = [
+        shingleEntry('d1-1.3-0001', 'b1', names('g', 3)),
+        shingleEntry('d1-1.3-0002', 'b2', names('h', 2)),
+        shingleEntry('d1-1.3-0003', 'b3', names('k', 4)),
+      ];
+
+      const pairs = findSimilar(drafts, bank, 0.5);
+
+      expect(pairs.map(keyOf)).toEqual([
+        'd1-1.3-0020 drafts | d1-1.3-0003 bank',
+        'd1-1.3-0030 drafts | d1-1.3-0001 bank',
+        'd1-1.3-0010 drafts | d1-1.3-0002 bank',
+      ]);
+      expect(pairs.map((pair) => pair.score)).toEqual([1, 0.75, 0.5]);
+    });
+
+    test('AC-8: the order does not depend on the order of the inputs', () => {
+      const drafts = [
+        shingleEntry('d1-1.3-0030', 'one', keys),
+        shingleEntry('d1-1.3-0010', 'two', keys),
+      ];
+      const bank = [
+        shingleEntry('d1-1.3-0050', 'three', keys),
+        shingleEntry('d1-1.3-0040', 'four', keys),
+      ];
+
+      const forward = findSimilar(drafts, bank, 0.5).map(keyOf);
+      const backward = findSimilar([...drafts].reverse(), [...bank].reverse(), 0.5).map(keyOf);
+
+      expect(backward).toEqual(forward);
+    });
+  });
+});
+
+describe('similarByDraft', () => {
+  const keys = names('k', 4);
+  const entryA = shingleEntry('d1-1.3-0030', 'zz-a', keys);
+  const entryB = shingleEntry('d1-1.3-0010', 'yy-b', keys);
+  const entryC = shingleEntry('d1-1.3-0020', 'xx-c', keys);
+  const entryE = shingleEntry('d1-1.3-0040', 'ww-e', keys);
+  const bankX = shingleEntry('d1-1.3-0100', 'bank-x', keys);
+  const bankY = shingleEntry('d1-1.3-0050', 'bank-y', keys);
+  const drafts = [entryA, entryB, entryC, entryE];
+
+  const pair = (
+    a: BankEntry,
+    b: BankEntry,
+    bFolder: 'drafts' | 'bank',
+    score: number,
+  ): SimilarPair => ({ a, aFolder: 'drafts', b, bFolder, score });
+
+  const pairs = [
+    pair(entryA, bankX, 'bank', 0.6249),
+    pair(entryA, bankY, 'bank', 0.6249),
+    pair(entryB, entryA, 'drafts', 0.556),
+    pair(entryB, entryC, 'drafts', 0.8),
+  ];
+
+  const ref = (entry: BankEntry, folder: 'drafts' | 'bank', score: number): SimilarRef => ({
+    id: entry.question.id,
+    folder,
+    path: entry.path,
+    score,
+  });
+
+  test('AC-9: a draft lists every pair it is in, as a (a side) or as b, pointing at the other question', () => {
+    const result = similarByDraft(drafts, pairs);
+
+    expect(result.get(entryB.path)).toEqual([
+      ref(entryC, 'drafts', 0.8),
+      ref(entryA, 'drafts', 0.56),
+    ]);
+    expect(result.get(entryC.path)).toEqual([ref(entryB, 'drafts', 0.8)]);
+  });
+
+  test('AC-9: the score is rounded to 2 decimals', () => {
+    const result = similarByDraft(drafts, pairs);
+
+    expect(result.get(entryC.path)?.[0]?.score).toBe(0.8);
+    expect(result.get(entryA.path)?.map((item) => item.score)).toEqual([0.62, 0.62, 0.56]);
+  });
+
+  test('AC-9: 0.4996 is stored as 0.5 and 1 as 1', () => {
+    const near = pair(entryA, bankX, 'bank', 0.4996);
+    const exact = pair(entryB, bankX, 'bank', 1);
+
+    const result = similarByDraft([entryA, entryB], [near, exact]);
+
+    expect(result.get(entryA.path)?.map((item) => item.score)).toEqual([0.5]);
+    expect(result.get(entryB.path)?.map((item) => item.score)).toEqual([1]);
+  });
+
+  test('AC-9: refs are sorted by score (high first) and then by id', () => {
+    const result = similarByDraft(drafts, pairs);
+
+    // Y and X tie at 0.62 (Y has the smaller id); B has the lowest score and the smallest id.
+    expect(result.get(entryA.path)).toEqual([
+      ref(bankY, 'bank', 0.62),
+      ref(bankX, 'bank', 0.62),
+      ref(entryB, 'drafts', 0.56),
+    ]);
+  });
+
+  test('AC-9: a draft with no pair gets an empty list', () => {
+    const result = similarByDraft(drafts, pairs);
+
+    expect(result.get(entryE.path)).toEqual([]);
+  });
+
+  test('AC-9: without any pair, every draft gets an empty list', () => {
+    const result = similarByDraft(drafts, []);
+
+    expect([...result.keys()].sort()).toEqual(drafts.map((entry) => entry.path).sort());
+    expect([...result.values()]).toEqual([[], [], [], []]);
+  });
+
+  test('AC-9: only drafts get a list, not the bank entries', () => {
+    const result = similarByDraft(drafts, pairs);
+
+    expect([...result.keys()].sort()).toEqual(drafts.map((entry) => entry.path).sort());
+    expect(result.has(bankX.path)).toBe(false);
+    expect(result.has(bankY.path)).toBe(false);
+  });
+
+  test('AC-9: no drafts give an empty map', () => {
+    expect(similarByDraft([], []).size).toBe(0);
+  });
+});
+
+describe('withDedupe', () => {
+  const ref: SimilarRef = {
+    id: 'd1-1.3-0001',
+    folder: 'bank',
+    path: 'd1/1.3/sse-c.yaml',
+    score: 0.62,
+  };
+
+  test('AC-10: without an existing file, the text is a mapping with only the dedupe key', () => {
+    const text = withDedupe(undefined, 0.5, []);
+
+    expect(parse(text)).toEqual({ dedupe: { threshold: 0.5, similar: [] } });
+  });
+
+  test('AC-10: the similar list and the threshold are written as given', () => {
+    const other: SimilarRef = {
+      id: 'd1-1.3-0009',
+      folder: 'drafts',
+      path: 'd1/1.3/again.yaml',
+      score: 0.55,
+    };
+
+    const text = withDedupe(undefined, 0.3, [ref, other]);
+
+    expect(parse(text)).toEqual({ dedupe: { threshold: 0.3, similar: [ref, other] } });
+  });
+
+  test('AC-11: every other top-level key is kept with the same value', () => {
+    const existing = [
+      'verification:',
+      '  verified_by: claude',
+      '  checks:',
+      '    - { name: facts, ok: true }',
+      '    - { name: wording, ok: false }',
+      'notes: written by hand',
+      'count: 3',
+      '',
+    ].join('\n');
+
+    const result = parse(withDedupe(existing, 0.5, [ref])) as Record<string, unknown>;
+
+    expect(result.verification).toEqual({
+      verified_by: 'claude',
+      checks: [
+        { name: 'facts', ok: true },
+        { name: 'wording', ok: false },
+      ],
+    });
+    expect(result.notes).toBe('written by hand');
+    expect(result.count).toBe(3);
+    expect(result.dedupe).toEqual({ threshold: 0.5, similar: [ref] });
+    expect(Object.keys(result).sort()).toEqual(['count', 'dedupe', 'notes', 'verification']);
+  });
+
+  test('AC-11: an existing dedupe key is replaced, not merged', () => {
+    const existing = [
+      'dedupe:',
+      '  threshold: 0.9',
+      '  stale: true',
+      '  similar:',
+      '    - { id: gone, folder: bank, path: gone.yaml, score: 0.99 }',
+      'verification: { verified_by: claude }',
+      '',
+    ].join('\n');
+
+    const result = parse(withDedupe(existing, 0.5, [])) as Record<string, unknown>;
+
+    expect(result.dedupe).toEqual({ threshold: 0.5, similar: [] });
+    expect(result.verification).toEqual({ verified_by: 'claude' });
+  });
+
+  test('AC-11: the result parses as YAML with a single dedupe key', () => {
+    const text = withDedupe('dedupe: { threshold: 0.9, similar: [] }\n', 0.4, []);
+
+    expect(text.match(/^dedupe:/gm)).toHaveLength(1);
+    expect(parse(text)).toEqual({ dedupe: { threshold: 0.4, similar: [] } });
+  });
+
+  test('AC-12: invalid YAML throws', () => {
+    expect(() => withDedupe('a: [unclosed\n', 0.5, [])).toThrow(NOT_A_STUB);
+  });
+
+  test.each([
+    ['a sequence', '- a\n- b\n'],
+    ['a scalar', 'just text\n'],
+    ['a number', '42\n'],
+    ['null', 'null\n'],
+  ])('AC-12: a YAML document that is %s throws', (_name, existing) => {
+    expect(() => withDedupe(existing, 0.5, [])).toThrow(NOT_A_STUB);
+  });
+});
