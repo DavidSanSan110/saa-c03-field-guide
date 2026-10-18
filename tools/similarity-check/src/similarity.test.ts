@@ -610,4 +610,16 @@ describe('spec 024 stripUrls', () => {
   ])('AC-3: text with no http(s) URL is returned unchanged (%s)', (_label, text) => {
     expect(stripUrls(text)).toBe(text);
   });
+
+  test('AC-8: a comma and a dot inside or after a URL go with it, leaving no stray word', () => {
+    expect(stripUrls('x https://a.example/b,c. d')).toBe('x   d');
+  });
+
+  test.each([
+    ['a dot', 'x https://a.example/b. d', 'x   d'],
+    ['a comma', 'x https://a.example/b, d', 'x   d'],
+    ['a comma and a dot', 'x https://a.example/b,. d', 'x   d'],
+  ])('AC-8: a URL ending in %s before a space loses that character', (_label, text, expected) => {
+    expect(stripUrls(text)).toBe(expected);
+  });
 });
