@@ -11,6 +11,10 @@ pre-commit:
         gitleaks git --pre-commit --staged --redact --no-banner
     - name: guardrails
       run: pnpm -s guardrails paths --staged
+    - name: similarity-check
+      # Local only: it skips itself where private/similarity-corpus is missing (other clones, CI).
+      glob: '*.{md,mdx,yaml,yml,txt}'
+      run: pnpm -s similarity-check --skip-without-corpus {staged_files}
     - name: eslint
       glob: '*.{js,mjs,cjs,ts,tsx,astro}'
       run: pnpm -s eslint --fix --no-warn-ignored {staged_files}
