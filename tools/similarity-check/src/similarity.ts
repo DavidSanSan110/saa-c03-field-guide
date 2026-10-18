@@ -106,8 +106,10 @@ export function findMatches(text: string, index: CorpusIndex): Match[] {
   return matches;
 }
 
-/** Replaces every http(s) URL with one space, keeping line numbers. */
+/**
+ * Replaces every http(s) URL with one space, keeping line numbers. A URL runs up to the first
+ * whitespace or one of `"'`<>()[]{}`, so it never spans lines and the closing character stays.
+ */
 export function stripUrls(text: string): string {
-  void text;
-  throw new Error('not implemented');
+  return text.replace(/https?:\/\/[^\s"'`<>()[\]{}]*/giu, ' ');
 }
