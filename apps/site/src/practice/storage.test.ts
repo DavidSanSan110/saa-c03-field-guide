@@ -297,3 +297,94 @@ describe('createPracticeStorage: storage that throws', () => {
     }).not.toThrow();
   });
 });
+
+/** The same questions (same ids) with a different set of option keys. */
+function bankWithRenamedOption(): Question[] {
+  return BANK.map((q) => ({
+    ...q,
+    options: q.options.map((option) => (option.key === 'D' ? { ...option, key: 'E' } : option)),
+  }));
+}
+
+describe('createPracticeStorage: why the saved exam could not be restored', () => {
+  test('AC-33: a saved exam whose questions are missing from the bank reports "changed"', () => {
+    const helpers = createPracticeStorage(fakeStorage().storage);
+    helpers.saveSession(activeSession());
+
+    expect(helpers.loadSession(bankOf(50))).toEqual({ kind: 'unrestorable' });
+    expect(helpers.lastRestoreFailure()).toBe('changed');
+  });
+
+  test('AC-33: a saved exam whose option order no longer fits reports "changed"', () => {
+    const helpers = createPracticeStorage(fakeStorage().storage);
+    helpers.saveSession(activeSession());
+
+    expect(helpers.loadSession(bankWithRenamedOption())).toEqual({ kind: 'unrestorable' });
+    expect(helpers.lastRestoreFailure()).toBe('changed');
+  });
+
+  test('AC-33: corrupt JSON reports "other"', () => {
+    const { storage } = fakeStorage({ [SESSION_KEY]: '{not json' });
+    const helpers = createPracticeStorage(storage);
+
+    expect(helpers.loadSession(BANK)).toEqual({ kind: 'unrestorable' });
+    expect(helpers.lastRestoreFailure()).toBe('other');
+  });
+
+  test('AC-33: valid JSON of the wrong shape reports "other"', () => {
+    const { storage } = fakeStorage({ [SESSION_KEY]: JSON.stringify({ hello: 'world' }) });
+    const helpers = createPracticeStorage(storage);
+
+    expect(helpers.loadSession(BANK)).toEqual({ kind: 'unrestorable' });
+    expect(helpers.lastRestoreFailure()).toBe('other');
+  });
+
+  test('AC-33: a session saved with another version reports "other"', () => {
+    const otherVersion = { ...saveSession(activeSession()), version: 999 };
+    const { storage } = fakeStorage({ [SESSION_KEY]: JSON.stringify(otherVersion) });
+    const helpers = createPracticeStorage(storage);
+
+    expect(helpers.loadSession(BANK)).toEqual({ kind: 'unrestorable' });
+    expect(helpers.lastRestoreFailure()).toBe('other');
+  });
+
+  test('AC-33: there is no failure reason before anything was loaded', () => {
+    expect(createPracticeStorage(fakeStorage().storage).lastRestoreFailure()).toBeNull();
+  });
+
+  test('AC-33: there is no failure reason after a clean, successful load', () => {
+    const helpers = createPracticeStorage(fakeStorage().storage);
+    helpers.saveSession(activeSession());
+
+    expect(helpers.loadSession(BANK).kind).toBe('restored');
+    expect(helpers.lastRestoreFailure()).toBeNull();
+  });
+
+  test('AC-33: there is no failure reason after loading with nothing saved', () => {
+    const helpers = createPracticeStorage(fakeStorage().storage);
+
+    expect(helpers.loadSession(BANK)).toEqual({ kind: 'none' });
+    expect(helpers.lastRestoreFailure()).toBeNull();
+  });
+
+  test('AC-33: a stale reason does not survive a later successful load', () => {
+    const helpers = createPracticeStorage(fakeStorage().storage);
+    helpers.saveSession(activeSession());
+    helpers.loadSession(bankOf(50));
+    expect(helpers.lastRestoreFailure()).toBe('changed');
+
+    helpers.saveSession(activeSession());
+
+    expect(helpers.loadSession(BANK).kind).toBe('restored');
+    expect(helpers.lastRestoreFailure()).toBeNull();
+  });
+
+  test('AC-33: a stale reason does not survive a later load with nothing saved', () => {
+    const helpers = createPracticeStorage(fakeStorage({ [SESSION_KEY]: '{not json' }).storage);
+    helpers.loadSession(BANK);
+    expect(helpers.lastRestoreFailure()).toBe('other');
+
+    expect(helpers.loadSession(BANK)).toEqual({ kind: 'none' });
+    expect(helpers.lastRestoreFailure()).toBeNull();
+  });
+});
