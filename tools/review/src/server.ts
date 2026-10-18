@@ -205,12 +205,19 @@ export function startServer(opts: {
   drafts: string;
   reviewer: string;
   port: number;
+  /** Extra `Host` header values to accept besides 127.0.0.1:<port> and localhost:<port>. */
+  allowHosts?: string[];
 }): Promise<ReviewServer> {
   const root = opts.drafts;
   const token = randomBytes(24).toString('base64url');
   let port = 0;
 
-  const allowedHosts = (): string[] => [`127.0.0.1:${String(port)}`, `localhost:${String(port)}`];
+  const extraHosts = (opts.allowHosts ?? []).map((host) => host.toLowerCase());
+  const allowedHosts = (): string[] => [
+    `127.0.0.1:${String(port)}`,
+    `localhost:${String(port)}`,
+    ...extraHosts,
+  ];
 
   /** The queued draft with that id; the etag is the hash of the bytes its text was read from. */
   function find(id: string): Found {
@@ -405,7 +412,7 @@ export function startServer(opts: {
   }
 
   function route(req: IncomingMessage, res: ServerResponse): Promise<void> | void {
-    if (!allowedHosts().includes(req.headers.host ?? '')) {
+    if (!allowedHosts().includes((req.headers.host ?? '').toLowerCase())) {
       throw new HttpError(403, 'unexpected Host header');
     }
     const path = new URL(req.url ?? '/', 'http://localhost').pathname;

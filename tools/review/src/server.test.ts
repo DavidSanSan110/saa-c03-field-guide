@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { connect } from 'node:net';
 import { networkInterfaces } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -995,4 +996,243 @@ describe('the folder is read on every request', () => {
       await server.close();
     }
   });
+});
+describe('spec 025 allow extra Host', () => {
+  const d = draft({ id: 'd1-1.3-0007', slug: 'sse-c-keys' });
+  const sidecar = sidecarYaml({ verification: verification(d) });
+  const PHONE = 'phone.example.ts.net';
+
+  const own: Awaited<ReturnType<typeof startServer>>[] = [];
+
+  afterEach(async () => {
+    await Promise.all(own.splice(0).map((server) => server.close()));
+  });
+
+  /** Starts a server over the draft with the given `allowHosts` (omitted when undefined). */
+  async function startAllowing(allowHosts?: string[]) {
+    const dir = tempFolder(filesOf({ draft: d, sidecar }));
+    const server = await startServer({
+      drafts: dir,
+      reviewer: REVIEWER,
+      port: 0,
+      ...(allowHosts === undefined ? {} : { allowHosts }),
+    });
+    own.push(server);
+    return { server, dir, port: new URL(server.url).port };
+  }
+
+  /** A request with a chosen `Host` header, returning the status and the body. */
+  function asHost(
+    server: { url: string },
+    host: string,
+    opts: {
+      method?: 'GET' | 'POST';
+      path?: string;
+      headers?: Record<string, string>;
+      body?: string;
+    } = {},
+  ): Promise<{ status: number; text: string }> {
+    return new Promise((resolve, reject) => {
+      const req = request(
+        {
+          host: '127.0.0.1',
+          port: Number(new URL(server.url).port),
+          method: opts.method ?? 'GET',
+          path: opts.path ?? '/',
+          headers: { ...opts.headers, Host: host },
+        },
+        (res) => {
+          const chunks: Buffer[] = [];
+          res.on('data', (chunk: Buffer) => {
+            chunks.push(chunk);
+          });
+          res.on('end', () => {
+            resolve({ status: res.statusCode ?? 0, text: Buffer.concat(chunks).toString('utf8') });
+          });
+        },
+      );
+      req.on('error', reject);
+      req.end(opts.body);
+    });
+  }
+
+  function postAs(
+    server: { url: string },
+    host: string,
+    action: string,
+    body: unknown,
+    token: string | null,
+  ) {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token !== null) headers['X-Review-Token'] = token;
+    return asHost(server, host, {
+      method: 'POST',
+      path: `/api/questions/${d.id}/${action}`,
+      headers,
+      body: JSON.stringify(body),
+    });
+  }
+
+  test('AC-1: GET / with the allowed Host is 200 and serves the page', async () => {
+    const { server } = await startAllowing([PHONE]);
+    const reply = await asHost(server, PHONE);
+    expect(reply.status).toBe(200);
+    expect(reply.text).toContain(server.token);
+  });
+
+  test('AC-1: the allowed Host in another letter case is 200 too', async () => {
+    const { server } = await startAllowing([PHONE]);
+    const reply = await asHost(server, 'PHONE.Example.ts.net');
+    expect(reply.status).toBe(200);
+    expect(reply.text).toContain(server.token);
+  });
+
+  test('AC-1: an entry written in upper case matches a lower case Host', async () => {
+    const { server } = await startAllowing(['PHONE.Example.TS.net']);
+    expect((await asHost(server, PHONE)).status).toBe(200);
+  });
+
+  test('AC-1: the read-only API answers for the allowed Host', async () => {
+    const { server } = await startAllowing([PHONE]);
+    const reply = await asHost(server, PHONE, { path: '/api/queue' });
+    expect(reply.status).toBe(200);
+    expect(JSON.parse(reply.text)).toMatchObject({ items: [{ id: d.id }] });
+  });
+
+  test('AC-1: every entry of allowHosts is accepted', async () => {
+    const { server } = await startAllowing([PHONE, 'tablet.example.ts.net', '100.64.0.7']);
+    for (const host of [PHONE, 'tablet.example.ts.net', '100.64.0.7']) {
+      expect((await asHost(server, host)).status, host).toBe(200);
+    }
+  });
+
+  test('AC-2: a POST with the allowed Host and the right token succeeds', async () => {
+    const { server } = await startAllowing([PHONE]);
+    const reply = await postAs(server, PHONE, 'reveal', { answer: ['C'] }, server.token);
+    expect(reply.status).toBe(200);
+  });
+
+  test('AC-2: an approve with the allowed Host and the right token is applied', async () => {
+    const { server, dir } = await startAllowing([PHONE]);
+    const revealed = await postAs(server, PHONE, 'reveal', { answer: ['C'] }, server.token);
+    const etag = (JSON.parse(revealed.text) as { etag: string }).etag;
+    const approved = await postAs(
+      server,
+      PHONE,
+      'approve',
+      { etag, answer: ['C'], confirm: true },
+      server.token,
+    );
+    expect(approved.status).toBe(200);
+    expect(readText(dir, d.path)).toMatch(new RegExp(`reviewed_by: ${REVIEWER}`));
+  });
+
+  test('AC-2: a POST with the allowed Host and a wrong token is 403 and changes nothing', async () => {
+    const { server, dir } = await startAllowing([PHONE]);
+    const before = snapshot(dir);
+    const reply = await postAs(server, PHONE, 'reveal', { answer: ['C'] }, `${server.token}x`);
+    expect(reply.status).toBe(403);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test('AC-2: a POST with the allowed Host and no token is 403', async () => {
+    const { server } = await startAllowing([PHONE]);
+    const reply = await postAs(server, PHONE, 'reveal', { answer: ['C'] }, null);
+    expect(reply.status).toBe(403);
+  });
+
+  test('AC-3: Host evil.example is 403', async () => {
+    const { server } = await startAllowing([PHONE]);
+    expect((await asHost(server, 'evil.example')).status).toBe(403);
+  });
+
+  test('AC-3: the allowed name with a port the entry does not have is 403', async () => {
+    const { server } = await startAllowing([PHONE]);
+    expect((await asHost(server, `${PHONE}:4400`)).status).toBe(403);
+    expect((await asHost(server, `${PHONE}:${new URL(server.url).port}`)).status).toBe(403);
+  });
+
+  test('AC-3: an entry with a port matches only that exact host and port', async () => {
+    const { server } = await startAllowing(['phone.example.ts.net:8443']);
+    expect((await asHost(server, 'phone.example.ts.net:8443')).status).toBe(200);
+    expect((await asHost(server, 'PHONE.example.ts.net:8443')).status).toBe(200);
+    expect((await asHost(server, 'phone.example.ts.net')).status).toBe(403);
+    expect((await asHost(server, 'phone.example.ts.net:8444')).status).toBe(403);
+  });
+
+  test('AC-3: a Host that only contains or extends the allowed one is 403', async () => {
+    const { server } = await startAllowing([PHONE]);
+    for (const host of [`x${PHONE}`, `${PHONE}.evil.example`, 'example.ts.net']) {
+      expect((await asHost(server, host)).status, host).toBe(403);
+    }
+  });
+
+  test('AC-3: a POST with the right token but Host evil.example is 403 and changes nothing', async () => {
+    const { server, dir } = await startAllowing([PHONE]);
+    const before = snapshot(dir);
+    const reply = await postAs(server, 'evil.example', 'reveal', { answer: ['C'] }, server.token);
+    expect(reply.status).toBe(403);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test.each(['127.0.0.1', 'localhost'])('AC-3: Host %s:<port> still works', async (name) => {
+    const { server, port } = await startAllowing([PHONE]);
+    expect((await asHost(server, `${name}:${port}`)).status).toBe(200);
+  });
+
+  test('AC-3: 127.0.0.1 with another port is still 403', async () => {
+    const { server, port } = await startAllowing([PHONE]);
+    expect((await asHost(server, `127.0.0.1:${String(Number(port) + 1)}`)).status).toBe(403);
+  });
+
+  test('AC-4: without allowHosts the extra Host is 403', async () => {
+    const { server } = await startAllowing();
+    expect((await asHost(server, PHONE)).status).toBe(403);
+  });
+
+  test('AC-4: with allowHosts: [] the extra Host is 403', async () => {
+    const { server } = await startAllowing([]);
+    expect((await asHost(server, PHONE)).status).toBe(403);
+  });
+
+  test('AC-4: without allowHosts a POST with the right token and the extra Host is 403', async () => {
+    const { server, dir } = await startAllowing();
+    const before = snapshot(dir);
+    const reply = await postAs(server, PHONE, 'reveal', { answer: ['C'] }, server.token);
+    expect(reply.status).toBe(403);
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test('AC-4: without allowHosts 127.0.0.1:<port> and localhost:<port> work', async () => {
+    const { server, port } = await startAllowing();
+    expect((await asHost(server, `127.0.0.1:${port}`)).status).toBe(200);
+    expect((await asHost(server, `localhost:${port}`)).status).toBe(200);
+  });
+
+  test('AC-5: with allowHosts the url is still http://127.0.0.1:<port>/', async () => {
+    const { server } = await startAllowing([PHONE]);
+    expect(server.url).toMatch(/^http:\/\/127\.0\.0\.1:[1-9]\d*\/$/);
+  });
+
+  test('AC-5: with allowHosts the server does not accept connections on ::1', async () => {
+    const { server, port } = await startAllowing([PHONE]);
+    expect(server.url).toContain('127.0.0.1');
+    expect(await canConnect('::1', Number(port))).toBe(false);
+  });
+
+  const external = Object.values(networkInterfaces())
+    .flat()
+    .filter((info) => info?.family === 'IPv4' && !info.internal)
+    .map((info) => info?.address ?? '');
+
+  test.skipIf(external.length === 0)(
+    'AC-5: with allowHosts the server does not accept connections on a non-loopback address',
+    async () => {
+      const { port } = await startAllowing([PHONE, ...external]);
+      const results = await Promise.all(
+        external.map((address) => canConnect(address, Number(port))),
+      );
+      expect(results).not.toContain(true);
+    },
+  );
 });

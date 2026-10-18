@@ -1,6 +1,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
+import { request } from 'node:http';
 import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -228,5 +229,173 @@ describe('root package.json', () => {
 
   test('AC-22: the script points at a file that exists', () => {
     expect(existsSync(join(ROOT, 'tools', 'review', 'src', 'cli.ts'))).toBe(true);
+  });
+});
+describe('spec 025 --allow-host', () => {
+  const d = draft({ id: 'd1-1.3-0007', slug: 'sse-c-keys' });
+
+  /** GET / with a chosen `Host` header on the port of the printed url. */
+  function statusAsHost(url: string, host: string): Promise<number> {
+    return new Promise((resolve, reject) => {
+      const req = request(
+        { host: '127.0.0.1', port: Number(new URL(url).port), path: '/', headers: { Host: host } },
+        (res) => {
+          res.resume();
+          res.on('end', () => {
+            resolve(res.statusCode ?? 0);
+          });
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+  }
+
+  /** Waits until the output has `count` lines starting with `review: also accepting Host`. */
+  async function alsoLines(started: Started, count: number): Promise<string[]> {
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const lines = started
+        .output()
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith('review: also accepting Host'));
+      if (lines.length >= count || Date.now() > deadline) return lines;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+  }
+
+  test('AC-6: prints one "also accepting Host" line per --allow-host, after the URL line', async () => {
+    const dir = tempFolder(filesOf(d));
+    const started = await startCli(dir, [
+      '--reviewer',
+      'x',
+      '--port',
+      '0',
+      '--drafts',
+      dir,
+      '--allow-host',
+      'a.example',
+      '--allow-host',
+      'b.example:8443',
+    ]);
+    const lines = await alsoLines(started, 2);
+    expect(lines).toEqual([
+      'review: also accepting Host a.example',
+      'review: also accepting Host b.example:8443',
+    ]);
+    const output = started.output();
+    expect(output.indexOf('review: http://')).toBeGreaterThanOrEqual(0);
+    expect(output.indexOf('review: http://')).toBeLessThan(
+      output.indexOf('review: also accepting Host a.example'),
+    );
+  });
+
+  test('AC-6: a request with Host a.example to the printed port gets 200', async () => {
+    const dir = tempFolder(filesOf(d));
+    const { url } = await startCli(dir, [
+      '--reviewer',
+      'x',
+      '--port',
+      '0',
+      '--drafts',
+      dir,
+      '--allow-host',
+      'a.example',
+      '--allow-host',
+      'b.example:8443',
+    ]);
+    expect(await statusAsHost(url, 'a.example')).toBe(200);
+    expect(await statusAsHost(url, 'b.example:8443')).toBe(200);
+  });
+
+  test('AC-6: a Host that was not named is still 403', async () => {
+    const dir = tempFolder(filesOf(d));
+    const { url } = await startCli(dir, [
+      '--reviewer',
+      'x',
+      '--port',
+      '0',
+      '--drafts',
+      dir,
+      '--allow-host',
+      'a.example',
+    ]);
+    expect(await statusAsHost(url, 'evil.example')).toBe(403);
+    expect(await statusAsHost(url, 'b.example')).toBe(403);
+  });
+
+  test('AC-6: without --allow-host no "also accepting" line is printed and the extra Host is 403', async () => {
+    const dir = tempFolder(filesOf(d));
+    const started = await startCli(dir, ['--reviewer', 'x', '--port', '0', '--drafts', dir]);
+    expect(await statusAsHost(started.url, 'a.example')).toBe(403);
+    expect(started.output()).not.toContain('also accepting');
+  });
+
+  test('AC-6: a host name with a hyphen, a digit and a dot, and an IPv4 address, are accepted', async () => {
+    const dir = tempFolder(filesOf(d));
+    const started = await startCli(dir, [
+      '--reviewer',
+      'x',
+      '--port',
+      '0',
+      '--drafts',
+      dir,
+      '--allow-host',
+      'desktop-1.tail1234.ts.net',
+      '--allow-host',
+      '100.64.0.7:443',
+    ]);
+    expect(await alsoLines(started, 2)).toEqual([
+      'review: also accepting Host desktop-1.tail1234.ts.net',
+      'review: also accepting Host 100.64.0.7:443',
+    ]);
+  });
+
+  const BAD_VALUES: [string, string[]][] = [
+    ['no value', ['--allow-host']],
+    ['no value before another flag', ['--allow-host', '--port', '0']],
+    ['an empty value', ['--allow-host', '']],
+    ['a scheme', ['--allow-host', 'https://a.example']],
+    ['a space', ['--allow-host', 'a b']],
+    ['a slash', ['--allow-host', 'a/b']],
+    ['an @', ['--allow-host', 'user@a.example']],
+    ['an empty port', ['--allow-host', 'a.example:']],
+    ['a port of six digits', ['--allow-host', 'a.example:123456']],
+    ['a non-numeric port', ['--allow-host', 'a.example:http']],
+    ['a second colon', ['--allow-host', 'a.example:80:80']],
+    ['a bad value after a good one', ['--allow-host', 'a.example', '--allow-host', 'a b']],
+  ];
+
+  test.each(BAD_VALUES)('AC-7: --allow-host with %s exits 2 with the usage text', (_name, args) => {
+    const dir = tempFolder(filesOf(d));
+    const run = runCli(dir, ['--drafts', dir, '--reviewer', 'x', '--port', '0', ...args]);
+    expect(run.status).toBe(2);
+    expect(run.output).toMatch(/usage/i);
+    expect(run.output).toContain('--allow-host');
+  });
+
+  test('AC-7: a bad --allow-host does not start a server or touch a file', () => {
+    const dir = tempFolder(filesOf(d));
+    const before = snapshot(dir);
+    const run = runCli(dir, [
+      '--drafts',
+      dir,
+      '--reviewer',
+      'x',
+      '--port',
+      '0',
+      '--allow-host',
+      'a/b',
+    ]);
+    expect(run.status).toBe(2);
+    expect(run.output).not.toContain('review: http');
+    expect(snapshot(dir)).toEqual(before);
+  });
+
+  test('AC-7: the usage text of another usage error mentions --allow-host', () => {
+    const dir = tempFolder(filesOf(d));
+    const run = runCli(dir, ['--drafts', dir, '--port', '0']);
+    expect(run.status).toBe(2);
+    expect(run.output).toContain('--allow-host');
   });
 });
