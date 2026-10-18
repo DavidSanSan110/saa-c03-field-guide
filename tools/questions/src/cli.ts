@@ -1,4 +1,5 @@
-// Questions CLI: argument parsing, file I/O and exit codes only; the logic is in bank.ts.
+// Questions CLI: argument parsing, file I/O and exit codes only; the logic is in bank.ts and
+// dedupe.ts.
 import {
   copyFileSync,
   constants,
@@ -7,7 +8,9 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { dirname } from 'node:path';
 import { isTaskId } from '@field-guide/schema';
@@ -20,12 +23,16 @@ import {
   sidecarPath,
 } from './bank.ts';
 import type { BankResult, FileMap, Problem, PromoteMove } from './bank.ts';
+import { findSimilar, roundScore, similarByDraft, withDedupe } from './dedupe.ts';
 
 const USAGE = `Usage:
   questions check [options]                      read both folders and print every problem
   questions next-id <task> [options]             print the next free question id of a task
   questions promote [--dry-run] [<id>...] [options]
                                                  move reviewed drafts into the public bank
+  questions dedupe [--threshold <t>] [--write] [options]
+                                                 flag drafts that nearly repeat another question;
+                                                 --write records it in each draft's check file
 
 Options (every command):
   --drafts <dir>   drafts folder (default private/questions-drafts)
@@ -33,6 +40,7 @@ Options (every command):
 
 const DEFAULT_DRAFTS = 'private/questions-drafts';
 const DEFAULT_BANK = 'questions';
+const DEFAULT_THRESHOLD = 0.5;
 
 class UsageError extends Error {}
 
@@ -41,17 +49,21 @@ interface Options {
   drafts: string;
   bank: string;
   dryRun: boolean;
+  write: boolean;
+  threshold: number;
   positionals: string[];
 }
 
 function parseArgs(argv: string[]): Options {
   const [command, ...rest] = argv;
-  if (command !== 'check' && command !== 'next-id' && command !== 'promote') throw new UsageError();
+  if (!['check', 'next-id', 'promote', 'dedupe'].includes(command ?? '')) throw new UsageError();
   const options: Options = {
-    command,
+    command: command as string,
     drafts: DEFAULT_DRAFTS,
     bank: DEFAULT_BANK,
     dryRun: false,
+    write: false,
+    threshold: DEFAULT_THRESHOLD,
     positionals: [],
   };
   for (let i = 0; i < rest.length; i++) {
@@ -65,15 +77,26 @@ function parseArgs(argv: string[]): Options {
       else options.bank = folder;
     } else if (arg === '--dry-run' && command === 'promote') {
       options.dryRun = true;
+    } else if (arg === '--write' && command === 'dedupe') {
+      options.write = true;
+    } else if (arg === '--threshold' && command === 'dedupe') {
+      options.threshold = parseThreshold(rest[++i]);
     } else if (arg.startsWith('-')) {
       throw new UsageError();
     } else {
       options.positionals.push(arg);
     }
   }
-  const expected = command === 'check' ? 0 : command === 'next-id' ? 1 : undefined;
+  const expected = command === 'next-id' ? 1 : command === 'promote' ? undefined : 0;
   if (expected !== undefined && options.positionals.length !== expected) throw new UsageError();
   return options;
+}
+
+/** A plain decimal number in (0, 1]. */
+function parseThreshold(value: string | undefined): number {
+  const threshold = value !== undefined && /^(\d+\.?\d*|\.\d+)$/.test(value) ? Number(value) : NaN;
+  if (!(threshold > 0 && threshold <= 1)) throw new UsageError();
+  return threshold;
 }
 
 interface Folder {
@@ -114,6 +137,8 @@ function under(dir: string, path: string): string {
 }
 
 interface Folders {
+  /** The YAML files of the drafts folder, sidecars included. */
+  draftFiles: FileMap;
   drafts: BankResult;
   bank: BankResult;
   /** Every problem of both folders, printed with its folder, in the order drafts, bank, ids. */
@@ -133,7 +158,7 @@ function readFolders(options: Options): Folders {
       label(options.drafts),
     ),
   ];
-  return { drafts, bank, problems };
+  return { draftFiles: draftFolder.files, drafts, bank, problems };
 }
 
 function runCheck(options: Options): number {
@@ -143,6 +168,98 @@ function runCheck(options: Options): number {
     `drafts: ${drafts.entries.length}, bank questions: ${bank.entries.length}, problems: ${problems.length}`,
   );
   return problems.length > 0 ? 1 : 0;
+}
+
+function runDedupe(options: Options): number {
+  const { draftFiles, drafts, bank, problems } = readFolders(options);
+  if (problems.length > 0) {
+    for (const problem of problems) console.error(problem);
+    return 1;
+  }
+  const pairs = findSimilar(drafts.entries, bank.entries, options.threshold);
+
+  // Check every existing sidecar before writing any (all or nothing).
+  const sidecars = new Map<string, string>();
+  const bad: string[] = [];
+  if (options.write) {
+    const similar = similarByDraft(drafts.entries, pairs);
+    for (const { path } of drafts.entries) {
+      const target = sidecarPath(path);
+      try {
+        sidecars.set(
+          target,
+          withDedupe(draftFiles[target], options.threshold, similar.get(path) ?? []),
+        );
+      } catch (error) {
+        bad.push(
+          `${under(options.drafts, target)}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  if (bad.length > 0) {
+    for (const line of bad) console.error(line);
+    return 1;
+  }
+
+  for (const { a, b, bFolder, score: value } of pairs) {
+    const other = under(bFolder === 'drafts' ? options.drafts : options.bank, b.path);
+    console.log(
+      `${roundScore(value).toFixed(2)} ${a.question.id} ${under(options.drafts, a.path)} ~ ${b.question.id} ${other}`,
+    );
+  }
+  const n = drafts.entries.length;
+  const compared = n * bank.entries.length + (n * (n - 1)) / 2;
+  console.log(
+    `pairs: ${pairs.length} flagged of ${compared} compared (threshold ${String(options.threshold)})`,
+  );
+
+  const failure = writeSidecars(sidecars, options.drafts);
+  if (failure !== undefined) {
+    console.error(`questions: ${failure}; no sidecar was changed`);
+    return 1;
+  }
+  return pairs.length > 0 ? 1 : 0;
+}
+
+/**
+ * Writes each sidecar to a temporary file next to it and renames it into place. On a failure it
+ * puts back the old bytes of the sidecars already replaced, deletes the ones it created and the
+ * temporary files, and returns a message naming the failing sidecar; else undefined.
+ */
+function writeSidecars(sidecars: Map<string, string>, folder: string): string | undefined {
+  const done: { file: string; old: Buffer | undefined }[] = [];
+  let file = '';
+  let temp = '';
+  try {
+    for (const [path, text] of sidecars) {
+      file = under(folder, path);
+      temp = `${file}.${String(process.pid)}.tmp`;
+      const old = readOld(file);
+      writeFileSync(temp, text);
+      renameSync(temp, file);
+      done.push({ file, old });
+    }
+    return undefined;
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? 'unknown error';
+    rmSync(temp, { force: true });
+    for (const { file: written, old } of done.reverse()) {
+      if (old === undefined) rmSync(written, { force: true });
+      else writeFileSync(written, old);
+    }
+    return `could not write ${file} (${code})`;
+  }
+}
+
+/** The bytes of a file, or undefined when there is none. */
+function readOld(file: string): Buffer | undefined {
+  try {
+    return readFileSync(file);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw error;
+  }
 }
 
 function runNextId(options: Options): number {
@@ -271,6 +388,7 @@ export function main(argv: string[]): Promise<number> {
   try {
     const options = parseArgs(argv);
     if (options.command === 'check') return Promise.resolve(runCheck(options));
+    if (options.command === 'dedupe') return Promise.resolve(runDedupe(options));
     if (options.command === 'next-id') return Promise.resolve(runNextId(options));
     return Promise.resolve(runPromote(options));
   } catch (error) {
