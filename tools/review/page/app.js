@@ -433,6 +433,8 @@ function render() {
     editor.scrollTop = screen.scroll;
   }
   if (screen.name === 'reveal' && screen.rejecting) document.getElementById('reason').focus();
+  // Never leave the focus on the body (or on a button that is gone): the main view takes it.
+  if (!view.contains(document.activeElement)) view.focus();
 }
 
 // --- answer phase ----------------------------------------------------------------------------
@@ -618,6 +620,9 @@ async function doSave() {
     text: screen.text,
   });
   if (response.ok) return showReveal(screen.data, screen.back.answer);
+  // The file changed on disk: show the message and the question as it is now, editor closed.
+  if (response.status === 409)
+    return showReveal(screen.data, screen.back.answer, response.data.error);
   screen.errors = response.data.errors ?? [response.data.error ?? 'The draft was not saved.'];
   render();
 }
@@ -634,11 +639,13 @@ document.addEventListener('keydown', (event) => {
   if (state.busy || inTextField(event.target)) return;
   const screen = state.screen;
   const key = event.key.length === 1 ? event.key.toUpperCase() : event.key;
-  const onButton = event.target instanceof Element && event.target.closest('button') !== null;
+  // Enter on a button, a summary or a link keeps its own job (click, toggle, follow).
+  const onControl =
+    event.target instanceof Element && event.target.closest('button, summary, a') !== null;
   let handled = true;
 
   if (screen.name === 'answer') {
-    if (key === 'Enter' && !onButton) run(doReveal);
+    if (key === 'Enter' && !onControl) run(doReveal);
     else if (/^[A-F]$/.test(key)) keyPress(key);
     else handled = false;
   } else if (screen.name === 'reveal' && !screen.rejecting) {
