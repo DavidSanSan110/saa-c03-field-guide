@@ -1,0 +1,34 @@
+id: 'd2-2.2-0002'
+domain: 2
+task: '2.2'
+services:
+  - 'rds'
+difficulty: easy
+type: single
+stem: 'A logistics company runs its booking system on a single-AZ Amazon RDS for PostgreSQL instance. A recent Availability Zone disruption caused an outage. The company now requires that a failure of the database host or of its Availability Zone is handled automatically, that no committed transactions are lost, and that the application keeps using the same connection endpoint without code changes. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Convert the existing instance to Multi-AZ (one standby).'
+    correct: true
+    why: "RDS keeps a synchronous standby in another Availability Zone. If the primary or its zone fails, RDS fails over automatically and the DB endpoint's DNS name points to the new primary, so there is no data loss and no application change."
+  - key: B
+    text: 'Create a read replica in a second Availability Zone and promote it manually if the primary fails.'
+    correct: false
+    why: 'Read replicas replicate asynchronously, so recent transactions can be missing after promotion. Promotion is a manual step, and the promoted replica has its own endpoint that the application would have to be pointed to.'
+  - key: C
+    text: 'Keep the instance Single-AZ, raise the automated backup retention period to 35 days and rely on point-in-time restore.'
+    correct: false
+    why: 'Restoring from a backup creates a new DB instance with a new endpoint and takes time. It is a recovery mechanism, not automatic failover, and data after the latest restorable time is lost.'
+  - key: D
+    text: 'Enable Multi-AZ and also send the nightly reporting queries to the standby instance to use its idle capacity.'
+    correct: false
+    why: 'Multi-AZ gives the high availability that is needed, but the standby of a Multi-AZ DB instance deployment cannot serve read traffic. Reporting queries would have to go to a read replica.'
+cue: 'same endpoint, automatic failover, no data loss -> synchronous standby (Multi-AZ), not a read replica'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

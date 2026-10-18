@@ -1,0 +1,39 @@
+id: 'd1-1.1-0003'
+domain: 1
+task: '1.1'
+services:
+  - 's3'
+  - 'iam'
+difficulty: medium
+type: multiple
+stem: "A company owns an Amazon S3 bucket with partner reports. The security team has turned on all four S3 Block Public Access settings for the whole account and wants to keep them on. A partner company that has its own AWS account must now download objects from this bucket using an IAM role in the partner's account. Only that partner may get access, and the company wants to follow least privilege. What should the company do? (Choose two.)"
+options:
+  - key: A
+    text: "In the company's account, attach a bucket policy that allows s3:GetObject on the bucket objects to the partner's AWS account as the principal."
+    correct: true
+    why: 'A resource-based policy is the way to let another account use a bucket. Because the principal is one specific account (a fixed value), the policy is not considered public, so Block Public Access does not interfere.'
+  - key: B
+    text: "In the partner's account, attach an identity-based policy to the IAM role that allows s3:GetObject on the company's bucket."
+    correct: true
+    why: "For cross-account access, the permission has to come from both sides: the bucket owner's resource policy and the partner account's own policy for the identity that makes the call."
+  - key: C
+    text: 'Turn off Block Public Access for the account and add a bucket policy with Principal set to * so that the partner can read the objects.'
+    correct: false
+    why: 'This opens the data to everyone on the internet, not only the partner, and it removes the guardrail the security team wants to keep.'
+  - key: D
+    text: 'Turn off only the RestrictPublicBuckets setting at the account level so that cross-account requests are accepted.'
+    correct: false
+    why: 'A bucket policy that names a specific account is not public, so RestrictPublicBuckets does not block it, and there is no reason to weaken the account-wide protection. It also grants nothing by itself.'
+  - key: E
+    text: "Set up an IAM user for the partner inside the bucket owner's account, then hand over that user's long-term access key."
+    correct: false
+    why: "This relies on a long-term secret shared outside the company. A bucket policy plus the partner's role gives access with temporary credentials and without sharing keys."
+cue: "another AWS account + Block Public Access must stay on -> bucket policy for a specific account AND a policy on the partner's side"
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-walkthroughs-managing-access-example2.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

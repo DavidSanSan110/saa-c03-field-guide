@@ -1,0 +1,35 @@
+id: 'd3-3.2-0004'
+domain: 3
+task: '3.2'
+services:
+  - 'cloudfront'
+  - 'lambda'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A retailer serves a global storefront through Amazon CloudFront. For every viewer request it must rewrite legacy URL paths to new ones, normalize query-string parameter order so the cache hit ratio improves, and add security headers to responses. The logic is a few lines of JavaScript, needs no calls to other services, and must handle millions of requests per second with sub-millisecond overhead at the lowest possible cost. Which solution should the company use?'
+options:
+  - key: A
+    text: 'Associate a CloudFront Function with the viewer request and viewer response events of the distribution.'
+    correct: true
+    why: 'CloudFront Functions are built for lightweight JavaScript on viewer events: URL rewrites, cache-key normalization and header manipulation. They start in under a millisecond, scale to millions of requests per second and cost far less than Lambda@Edge.'
+  - key: B
+    text: 'Associate a Lambda@Edge function with the origin request and origin response events.'
+    correct: false
+    why: 'Lambda@Edge supports more complex logic (network access, request body, larger code), but it scales to a lower request rate per Region, has a longer startup time and costs more. It is overkill for a few lines of simple logic that CloudFront Functions can run natively.'
+  - key: C
+    text: 'Point the distribution at an Application Load Balancer and run the rewrite and header logic in a Lambda function behind it.'
+    correct: false
+    why: 'This runs the logic in a Region instead of at the edge, adds latency, and introduces Lambda concurrency limits and load balancer cost for a task that CloudFront can do natively.'
+  - key: D
+    text: 'Add Amazon API Gateway with a Lambda authorizer in front of the distribution to transform requests.'
+    correct: false
+    why: 'API Gateway is not designed to rewrite CDN requests at the edge and adds per-request cost and throttling limits. A Lambda authorizer is meant for authentication, not for URL rewriting or header injection.'
+cue: 'viewer request, URL rewrite, headers, cache-key, millions of req/s, lowest cost, no network access -> CloudFront Functions'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/edge-functions-choosing.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/edge-functions.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

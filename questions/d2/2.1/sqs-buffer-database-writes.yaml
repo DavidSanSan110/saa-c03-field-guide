@@ -1,0 +1,38 @@
+id: 'd2-2.1-0001'
+domain: 2
+task: '2.1'
+services:
+  - 'sqs'
+  - 'auto-scaling'
+  - 'rds'
+difficulty: medium
+type: single
+stem: "A ticketing company runs its order-intake API on an Auto Scaling group of EC2 instances. Each instance inserts the order straight into an Amazon RDS for PostgreSQL instance. When tickets for a popular event go on sale, traffic grows tenfold within seconds, the database reaches its I/O and connection limits, inserts time out, and some orders are lost. The business confirms that customers only need an 'order received' reply right away and get the final confirmation by email later. Which change stops orders from being lost while keeping the web tier responsive?"
+options:
+  - key: A
+    text: 'Create several RDS read replicas and have the web instances spread their inserts across the replicas.'
+    correct: false
+    why: 'Read replicas are read-only copies kept up to date by asynchronous replication from the primary. They cannot accept inserts, so this does nothing for the write overload.'
+  - key: B
+    text: 'Have the web instances send each order to an Amazon SQS queue and reply immediately. A second Auto Scaling group polls the queue, inserts into the database at a pace it can sustain, and deletes a message only after the insert has committed. Scale that worker group on the queue backlog.'
+    correct: true
+    why: "The queue absorbs the spike and stores the orders durably. Workers pull at the database's pace, and a message that is not deleted becomes visible again after the visibility timeout, so a failed insert is retried rather than lost. This works here because no synchronous write confirmation is needed."
+  - key: C
+    text: 'Publish each order to an Amazon SNS topic and subscribe an HTTPS endpoint on a worker fleet that writes to the database.'
+    correct: false
+    why: 'SNS pushes messages at the rate they are published and is not a store that workers drain at their own pace. Without a queue behind it, deliveries to an overloaded worker fleet are not held for the consumers, so orders can still be lost.'
+  - key: D
+    text: 'Raise the maximum size of the web Auto Scaling group so that each instance handles fewer requests.'
+    correct: false
+    why: 'More web instances means more simultaneous connections and inserts hitting the same database. The bottleneck is the write path, so this makes the overload worse.'
+cue: "Spikes overload the database and writes are lost; the client only needs an 'order received' reply and a later confirmation, so put a queue between the tiers and delete messages after a successful insert."
+references:
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-queue-types.html'
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html'
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-using-sqs-queue.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

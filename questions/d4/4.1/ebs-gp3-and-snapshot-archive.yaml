@@ -1,0 +1,41 @@
+id: 'd4-4.1-0004'
+domain: 4
+task: '4.1'
+services:
+  - 'ebs'
+difficulty: medium
+type: multiple
+stem: 'A company runs about 150 EC2 instances for transactional applications. All of their EBS volumes are gp2. Separately, the compliance team requires quarterly EBS snapshots to be retained for five years, and these snapshots are almost never restored (waiting for a restore to finish before using a snapshot would be acceptable). The company wants to reduce its EBS spending without changing application behavior or causing downtime. Which actions should a solutions architect take? Choose two.'
+options:
+  - key: A
+    text: 'Change the gp2 volumes to gp3 by using Elastic Volumes while the instances keep running.'
+    correct: true
+    why: 'gp3 costs up to 20 percent less per GiB than gp2, includes a 3,000 IOPS and 125 MiB/s baseline independent of volume size, and the type can be modified in place without interrupting the instance.'
+  - key: B
+    text: 'Move the quarterly compliance snapshots to the EBS Snapshots Archive tier.'
+    correct: true
+    why: 'The archive tier offers up to 75 percent lower storage cost for snapshots kept 90 days or longer and rarely accessed. The trade-offs are the 90-day minimum archive period and having to restore a snapshot to the standard tier before use, which fits this retention pattern.'
+  - key: C
+    text: 'Enable fast snapshot restore for all the quarterly snapshots.'
+    correct: false
+    why: 'Fast snapshot restore removes first-access latency when creating volumes, but it is billed per snapshot per AZ for every hour it is enabled. It adds cost and does not reduce storage cost.'
+  - key: D
+    text: 'Replace the gp2 volumes with io2 volumes.'
+    correct: false
+    why: 'io2 is a Provisioned IOPS type meant for workloads that need very high or guaranteed IOPS, and it is priced higher. These applications run on gp2 today, so io2 would raise the bill.'
+  - key: E
+    text: 'Switch the gp2 volumes to sc1 cold HDD volumes.'
+    correct: false
+    why: 'sc1 is a low-cost HDD type for large, sequential, infrequently accessed data. It is not bootable and is a poor fit for small random I/O, so it does not suit transactional applications.'
+cue: 'gp2 everywhere, no downtime -> gp3 via Elastic Volumes; rarely restored snapshots kept for years -> Snapshots Archive'
+references:
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/general-purpose.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/snapshot-archive.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/snapshot-archive-pricing.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-fast-snapshot-restore.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/hdd-vols.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

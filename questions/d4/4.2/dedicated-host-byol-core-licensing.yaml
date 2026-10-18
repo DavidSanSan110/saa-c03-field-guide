@@ -1,0 +1,36 @@
+id: 'd4-4.2-0003'
+domain: 4
+task: '4.2'
+services:
+  - 'ec2'
+  - 'dedicated-hosts'
+difficulty: medium
+type: single
+stem: 'A company is migrating an on-premises database server to Amazon EC2. The database software is licensed per physical core, and the company already owns enough licenses. Its auditors require evidence of how many sockets and physical cores the licensed software runs on. The company wants to reuse its existing licenses instead of paying for license-included instances. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Launch the instances as Dedicated Instances in a VPC with dedicated tenancy.'
+    correct: false
+    why: 'Dedicated Instances run on single-account hardware, but they give no visibility of sockets, cores or host ID and have no host affinity. They support bring-your-own-license only partially.'
+  - key: B
+    text: 'Allocate an EC2 Dedicated Host, import the machine image and launch the instances onto the host.'
+    correct: true
+    why: 'A Dedicated Host exposes the number of sockets and physical cores and supports host affinity and targeted placement. It supports per-socket and per-core bring-your-own-license use, which lets the company reuse the licenses it already owns.'
+  - key: C
+    text: 'Launch default-tenancy On-Demand instances and cover them with a Compute Savings Plan.'
+    correct: false
+    why: 'A Savings Plan only lowers the price of the usage. Shared-tenancy instances give no view of physical sockets or cores, so the per-core license terms cannot be demonstrated.'
+  - key: D
+    text: 'Create an On-Demand Capacity Reservation in the Availability Zone where the database will run.'
+    correct: false
+    why: 'A Capacity Reservation only guarantees capacity in an Availability Zone. It gives no physical server visibility or license benefit, and it cannot be used with Dedicated Hosts.'
+cue: 'license per physical core + audit of sockets and cores + reuse existing licenses -> Dedicated Host'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/dedicated-hosts-overview.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/dedicated-instance.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/dedicated-hosts-BYOL.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

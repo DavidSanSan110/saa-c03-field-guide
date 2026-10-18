@@ -1,0 +1,33 @@
+id: 'd1-1.2-0003'
+domain: 1
+task: '1.2'
+services:
+  - 'cloudfront'
+difficulty: easy # easy | medium | hard
+type: single # single | multiple
+stem: 'A streaming company has licensed a catalog of videos for viewing only in Germany, Austria and Switzerland. The videos are stored in Amazon S3 and delivered to viewers through a single Amazon CloudFront distribution. Viewers in any other country must be refused. The company wants the solution with the least operational effort and no custom application code. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Enable geographic restrictions on the CloudFront distribution with an allow list containing Germany, Austria and Switzerland.'
+    correct: true
+    why: 'The built-in geographic restriction works at country level for the whole distribution, and CloudFront returns an HTTP 403 to viewers located outside the allow list, with no code or infrastructure to run.'
+  - key: B
+    text: "Write a web application that sends each viewer's IP address to a third-party geolocation service and issues CloudFront signed URLs only to viewers in the three countries."
+    correct: false
+    why: 'This does enforce the rule, but it is meant for finer-than-country or per-file restrictions and needs custom code and a paid service, which the requirement of least effort and no custom code rules out.'
+  - key: C
+    text: 'Put the videos behind an AWS Global Accelerator accelerator and configure it to accept connections only from the three countries.'
+    correct: false
+    why: 'Global Accelerator provides static anycast IPs and routes traffic to endpoints over the AWS network; it does not filter users by country, and it is not how a CloudFront distribution is restricted.'
+  - key: D
+    text: "Edit the S3 bucket's security group to allow traffic only from the IP ranges of the three countries."
+    correct: false
+    why: "S3 buckets have no security groups, and security group rules accept IP ranges or other security groups, not countries. The viewers' requests arrive at the bucket from CloudFront anyway."
+cue: 'viewers allowed only in certain countries + one distribution + least effort, no code => CloudFront geographic restriction (allow list)'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/georestrictions.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

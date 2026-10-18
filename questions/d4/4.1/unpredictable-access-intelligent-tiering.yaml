@@ -1,0 +1,34 @@
+id: 'd4-4.1-0002'
+domain: 4
+task: '4.1'
+services:
+  - 's3'
+difficulty: easy
+type: single
+stem: 'An environmental research institute stores several hundred terabytes of satellite images in S3 Standard. Each image is a few megabytes. Most images are never opened for months, but after a major weather event scientists suddenly request imagery from years ago, and nobody can predict which images will be needed. Requests must still be answered in milliseconds, the team does not want per-GB retrieval fees, and it has no capacity to tune rules by hand. Which approach is the most cost-effective?'
+options:
+  - key: A
+    text: 'Create a lifecycle rule that transitions all objects to S3 Standard-IA after 30 days.'
+    correct: false
+    why: 'Standard-IA charges a per-GB retrieval fee, and objects do not return to a higher tier on their own after access. The sudden bursts of reads on old data would be expensive.'
+  - key: B
+    text: 'Store the images in S3 Intelligent-Tiering.'
+    correct: true
+    why: 'Intelligent-Tiering moves objects between access tiers by their actual access pattern, keeps millisecond access in the Frequent, Infrequent and Archive Instant Access tiers, has no retrieval fees and needs no rule tuning. The cost is a small per-object monitoring fee, which is minor for multi-MB objects.'
+  - key: C
+    text: 'Create a lifecycle rule that transitions all objects to S3 Glacier Flexible Retrieval after 90 days.'
+    correct: false
+    why: 'Flexible Retrieval objects must be restored first (minutes to hours), so requests could not be answered in milliseconds, and retrieval fees apply.'
+  - key: D
+    text: 'Enable S3 Storage Class Analysis on the bucket and manually adjust lifecycle rules to follow its recommendations.'
+    correct: false
+    why: 'Storage Class Analysis only helps decide when to move data from Standard to Standard-IA, needs a period of observation, and requires ongoing manual work. It cannot handle objects whose access pattern is unpredictable.'
+cue: 'unknown or unpredictable access, millisecond access, no retrieval fees, no manual tuning -> S3 Intelligent-Tiering'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-class-intro.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/intelligent-tiering-overview.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

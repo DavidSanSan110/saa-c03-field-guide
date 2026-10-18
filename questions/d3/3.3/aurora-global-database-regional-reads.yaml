@@ -1,0 +1,33 @@
+id: 'd3-3.3-0002'
+domain: 3
+task: '3.3'
+services:
+  - 'aurora'
+difficulty: medium
+type: single
+stem: 'A software company hosts its customer portal on an Amazon Aurora MySQL cluster in us-east-1. All writes originate from the head office in the US. Users in Europe and Asia-Pacific mostly read data and complain about slow page loads caused by cross-ocean database round trips. The company needs those users to read from a database in their own geography with data that lags the primary by about a second at most, and it also wants a documented way to promote another Region if us-east-1 becomes unavailable. Which solution is the best fit?'
+options:
+  - key: A
+    text: 'Convert the cluster to a Global Database and add secondary Aurora DB clusters in eu-west-1 and ap-southeast-1 for regional users to read from.'
+    correct: true
+    why: 'Aurora Global Database replicates storage changes from the primary Region to up to 10 read-only secondary Regions with typical lag under a second. Users read locally, and a secondary Region can be promoted if the primary Region has an outage.'
+  - key: B
+    text: 'Add more Aurora Replicas to the cluster in us-east-1 and let the applications connect through the reader endpoint.'
+    correct: false
+    why: 'More replicas add read capacity but every read still crosses the ocean, so the latency problem remains. All replicas also live in the same Region, so there is no Regional failover.'
+  - key: C
+    text: 'Enable a Multi-AZ configuration with a standby in each of the other two Regions.'
+    correct: false
+    why: 'Multi-AZ spreads instances over Availability Zones within one Region. It cannot place a database in another Region, so it does not address either requirement.'
+  - key: D
+    text: 'Copy a snapshot of the cluster to eu-west-1 and ap-southeast-1 each night and restore it there for the local users.'
+    correct: false
+    why: 'Snapshot restores give data up to a day old, far from the one-second lag requirement, and the recovery process is manual and slow instead of a continuously replicated secondary.'
+cue: 'read-heavy users in other geographies, local read latency, about one second lag, Region-level recovery -> Aurora Global Database'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

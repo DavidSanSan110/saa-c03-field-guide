@@ -1,0 +1,39 @@
+id: 'd3-3.1-0003'
+domain: 3
+task: '3.1'
+services:
+  - 's3'
+difficulty: medium
+type: multiple
+stem: 'A video production company has editing studios in several Asian cities. Each studio uploads raw footage files of about 20 GB each over the public internet to a single S3 general purpose bucket in us-east-1. Uploads are slow, and when a connection drops the whole file has to be sent again. The team only uploads a handful of files at a time. Which actions will speed up the uploads and make them more resilient? Choose two.'
+options:
+  - key: A
+    text: 'Upload the files with multipart upload so parts are sent in parallel and only failed parts are retried'
+    correct: true
+    why: 'Multipart upload is recommended for objects of 100 MB or more. Parts upload in parallel for better throughput, and a failed part can be resent without restarting the whole object.'
+  - key: B
+    text: 'Enable S3 Transfer Acceleration on the bucket and have the studios upload through the accelerate endpoint'
+    correct: true
+    why: 'Transfer Acceleration routes data to the nearest CloudFront edge location and then over an optimized path to the bucket, which helps clients that upload over long distances such as Asia to us-east-1.'
+  - key: C
+    text: 'Have the studios use byte-range fetches when uploading the files'
+    correct: false
+    why: 'Byte-range fetches are ranged GET requests used to download part of an object or download it in parallel; they do nothing for upload speed.'
+  - key: D
+    text: 'Spread the objects over many randomized key prefixes in the bucket'
+    correct: false
+    why: 'Per-prefix request rates (thousands of requests per second) are not the limit here, since only a few uploads run at a time. The bottleneck is the long-distance network path and single-stream transfers.'
+  - key: E
+    text: 'Switch the bucket to a different storage class so the data is written faster'
+    correct: false
+    why: 'The storage class affects cost and retrieval characteristics, not how fast data travels from the studio to the bucket over the internet.'
+cue: 'large files, far-away clients, restart on failure -> multipart upload + Transfer Acceleration (byte-range fetches are for downloads)'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/transfer-acceleration.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance-guidelines.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

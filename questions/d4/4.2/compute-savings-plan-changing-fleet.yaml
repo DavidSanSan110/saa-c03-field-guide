@@ -1,0 +1,37 @@
+id: 'd4-4.2-0001'
+domain: 4
+task: '4.2'
+services:
+  - 'ec2'
+  - 'savings-plans'
+  - 'fargate'
+difficulty: medium
+type: single
+stem: "A retail company runs about 40 m5 instances around the clock in eu-west-1 as the baseline of its web tier, and adds On-Demand instances for a few hours each evening. Over the next three years the engineering team expects to move part of the baseline to Graviton-based instance families, containerize some services on Amazon ECS with AWS Fargate, and possibly relocate workloads to another Region. The company is willing to commit to a three-year term for the steady baseline spend and wants the largest discount that does not lock it into today's instance configuration. Which purchasing approach meets these requirements?"
+options:
+  - key: A
+    text: 'Buy three-year Standard Reserved Instances for 40 m5 instances in eu-west-1 and keep running the evening peak on On-Demand.'
+    correct: false
+    why: 'Reserved Instances are tied to attributes such as instance type, Region, tenancy and platform. Moving to Graviton families, to another Region or to Fargate would leave the reservation unused or not applied, so the flexibility requirement is missed.'
+  - key: B
+    text: 'Buy an EC2 Instance Savings Plan for the m5 family in eu-west-1 sized to the baseline spend.'
+    correct: false
+    why: 'It has the deepest discount, but it is locked to one instance family in one Region. It flexes across size, OS and tenancy only, and it does not follow the workload to Graviton families, other Regions or Fargate.'
+  - key: C
+    text: 'Buy a three-year Compute Savings Plan with an hourly commitment equal to the baseline spend and let the evening peak run at On-Demand rates.'
+    correct: true
+    why: 'A Compute Savings Plan applies automatically across instance family, size, Region, OS and tenancy, and also to Fargate and Lambda usage. The hourly commitment covers the steady baseline and usage above the commitment is billed On-Demand.'
+  - key: D
+    text: 'Create On-Demand Capacity Reservations for 40 instances in each Availability Zone used by the web tier.'
+    correct: false
+    why: 'Capacity Reservations guarantee capacity in a specific Availability Zone but give no billing discount on their own. They are charged at the On-Demand rate whether or not instances run in them.'
+cue: 'three-year commitment on steady baseline + families, Regions and Fargate may change + largest discount without locking the configuration -> Compute Savings Plan'
+references:
+  - 'https://docs.aws.amazon.com/savingsplans/latest/userguide/plan-types.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-reserved-instances.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-capacity-reservations.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

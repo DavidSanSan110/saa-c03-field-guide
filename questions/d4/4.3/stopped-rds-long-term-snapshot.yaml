@@ -1,0 +1,33 @@
+id: 'd4-4.3-0001'
+domain: 4
+task: '4.3'
+services:
+  - 'rds'
+difficulty: medium
+type: single
+stem: 'A company runs a pre-production Amazon RDS for PostgreSQL DB instance with 2 TB of General Purpose SSD storage. The project that uses it has been paused and nobody will touch the database for the next four months. The data must be kept, and the team accepts that bringing the database back will take some time. Which approach has the lowest cost over the four months?'
+options:
+  - key: A
+    text: 'Stop the DB instance and leave it stopped until the project restarts.'
+    correct: false
+    why: 'A stopped instance still bills for its provisioned storage and backup storage, so the 2 TB keeps costing money. RDS also starts a stopped instance again on its own after seven consecutive days, so it would not stay stopped for four months.'
+  - key: B
+    text: 'Take a manual DB snapshot, delete the DB instance, and restore a new instance from the snapshot when the project resumes.'
+    correct: true
+    why: 'After the snapshot exists, the instance and its provisioned volume can be deleted, so you stop paying for compute and for the 2 TB volume. You only pay for snapshot storage, which is cheaper, and a restore creates a new instance later. Manual snapshots are kept until you delete them.'
+  - key: C
+    text: 'Change the DB instance class to the smallest available size and keep it running.'
+    correct: false
+    why: 'A smaller class cuts the compute charge but the instance still runs every hour, and the full 2 TB of provisioned storage is still billed. The data would sit unused on a running instance.'
+  - key: D
+    text: 'Turn on storage auto scaling and set a low maximum storage threshold on the instance.'
+    correct: false
+    why: 'Storage auto scaling only grows storage when space runs low. It never shrinks a volume and does nothing to reduce the cost of an idle database.'
+cue: 'unused for months, data must be kept -> a stopped RDS instance still pays for storage and restarts after 7 days -> snapshot, delete, restore later'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

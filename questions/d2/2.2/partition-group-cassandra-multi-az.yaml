@@ -1,0 +1,33 @@
+id: 'd2-2.2-0005'
+domain: 2
+task: '2.2'
+services:
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A fintech company is deploying a 45-node Apache Cassandra cluster on EC2 across three Availability Zones in one Region. Cassandra replicates data using rack awareness, so the company wants nodes grouped so that a single rack failure only affects a subset of the nodes, and it wants EC2 to tell the database which partition each node is in. Which placement approach should be used?'
+options:
+  - key: A
+    text: 'Launch all nodes into one cluster placement group.'
+    correct: false
+    why: 'A cluster placement group is confined to one Availability Zone and packs instances close together for network performance. A single hardware or zone failure could take out the whole ring.'
+  - key: B
+    text: 'Launch all nodes into a single spread placement group.'
+    correct: false
+    why: 'A spread placement group allows at most seven running instances per Availability Zone, so it tops out at 21 instances across three zones and cannot hold 45 nodes. It also does not expose partition information to the database.'
+  - key: C
+    text: 'Launch the nodes into a partition placement group with partitions in each of the three Availability Zones.'
+    correct: true
+    why: 'Each partition uses its own set of racks, so a hardware failure is contained within one partition. The group can span zones with up to seven partitions per zone, has no fixed instance cap beyond account limits, and shows which instance sits in which partition for topology-aware software such as Cassandra.'
+  - key: D
+    text: 'Do not use a placement group; let an Auto Scaling group spread the nodes evenly over the three Availability Zones.'
+    correct: false
+    why: 'Spreading across zones protects against a zone failure, but it gives no guarantee that nodes avoid sharing racks inside a zone and provides no partition information for rack-aware replication.'
+cue: 'large distributed datastore, rack-level failure isolation, topology visibility, multi-AZ -> partition placement group'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/placement-strategies.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

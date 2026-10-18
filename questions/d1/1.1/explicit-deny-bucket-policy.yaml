@@ -1,0 +1,34 @@
+id: 'd1-1.1-0002'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+  - 's3'
+difficulty: medium
+type: single
+stem: "A company stores reports in an Amazon S3 bucket in its AWS account. The bucket policy contains a single statement that denies s3:GetObject for all principals unless the request comes through a specific VPC endpoint. A developer's IAM user, in the same account, has an identity-based policy that allows s3:GetObject on every bucket. The developer runs the AWS CLI from a laptop on the office network and tries to download a report from the bucket. What is the result?"
+options:
+  - key: A
+    text: "The request succeeds, because the allow in the developer's identity-based policy is evaluated first and ends the evaluation."
+    correct: false
+    why: 'Evaluation is not first match wins. All applicable policies are considered together, and an allow never ends the evaluation early.'
+  - key: B
+    text: 'The request succeeds, because the developer and the bucket are in the same account and the IAM allow is enough in that case.'
+    correct: false
+    why: 'Being in the same account lets an identity policy or a resource policy grant access on its own, but it does not protect against a deny. A matching explicit deny in either policy still blocks the request.'
+  - key: C
+    text: 'The request is denied, because the explicit deny in the bucket policy overrides the allow in the identity-based policy.'
+    correct: true
+    why: 'The laptop is not using the VPC endpoint, so the deny condition applies. An explicit deny in any applicable policy always wins over an allow, whichever policy type contains it.'
+  - key: D
+    text: "The request is denied, because for same-account access the bucket policy must also contain an allow for the developer's IAM user."
+    correct: false
+    why: 'In the same account, permissions from the identity-based policy and the resource-based policy are combined (union), so an allow in either one is sufficient. The request is denied only because of the explicit deny, not because of a missing allow in the bucket policy.'
+cue: 'identity policy allows, bucket policy explicitly denies -> explicit deny always wins'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,39 @@
+id: 'd1-1.3-0002'
+domain: 1
+task: '1.3'
+services:
+  - 's3'
+  - 'kms'
+difficulty: hard
+type: multiple
+stem: 'An analytics company ingests tens of thousands of small objects per second into an Amazon S3 bucket whose default encryption is SSE-KMS with a customer managed key. During peak hours, uploads and downloads start failing with AWS KMS throttling errors, even though S3 itself is healthy. The company wants to keep SSE-KMS and the same key. Which actions will reduce or remove the throttling? (Choose two.)'
+options:
+  - key: A
+    text: 'Turn on S3 Bucket Keys for the bucket, so S3 derives object keys from one bucket-level key'
+    correct: true
+    why: 'With a Bucket Key, S3 obtains a short-lived bucket-level key from KMS and derives per-object data keys from it, which cuts the number of requests from S3 to KMS by up to 99 percent.'
+  - key: B
+    text: 'Request an increase of the AWS KMS cryptographic operations request-rate quota in Service Quotas'
+    correct: true
+    why: 'Each upload (GenerateDataKey) and download (Decrypt) counts against the KMS request quota for the account and Region. KMS request quotas are adjustable, so raising the quota gives more headroom.'
+  - key: C
+    text: 'Spread the objects across many more key prefixes in the bucket'
+    correct: false
+    why: 'Prefixes help S3 request distribution, but KMS throttling is based on all requests to KMS keys in the account and Region, regardless of the S3 prefix.'
+  - key: D
+    text: 'Switch the bucket to DSSE-KMS'
+    correct: false
+    why: 'DSSE-KMS still calls AWS KMS for each object and S3 Bucket Keys are not supported with it, so it does not reduce KMS traffic.'
+  - key: E
+    text: 'Replace the customer managed key with the AWS managed key (aws/s3)'
+    correct: false
+    why: 'KMS request quotas apply to both customer managed keys and AWS managed keys, so changing the key type does not lift the limit.'
+cue: 'SSE-KMS + KMS throttling at high request rates -> Bucket Keys and a quota increase'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-key.html'
+  - 'https://docs.aws.amazon.com/kms/latest/developerguide/requests-per-second.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

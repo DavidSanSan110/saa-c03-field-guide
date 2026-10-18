@@ -1,0 +1,33 @@
+id: 'd2-2.2-0003'
+domain: 2
+task: '2.2'
+services:
+  - 'aurora'
+difficulty: medium
+type: single
+stem: 'A media company runs an Amazon Aurora MySQL DB cluster that contains only one DB instance, the writer, in a single Availability Zone. The application connects through the cluster endpoint. The business wants the database to be back in service as quickly as possible, and without changing the connection string, if that Availability Zone becomes unavailable. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Scale the writer up to a larger instance class.'
+    correct: false
+    why: 'A bigger instance adds performance, not resilience. It is still the only compute node in one Availability Zone, so a zone failure leaves the cluster without a writer.'
+  - key: B
+    text: 'Raise the backup retention period of the cluster to 35 days.'
+    correct: false
+    why: 'Backups let you restore a new cluster, which is slow and gives a new endpoint. They do not provide a ready instance that takes over automatically.'
+  - key: C
+    text: 'Add an Aurora Replica in a different Availability Zone.'
+    correct: true
+    why: 'The cluster volume is already stored across three zones, but with no other instance the writer would have to be recreated. With a replica in another zone, Aurora promotes it automatically, usually within a minute, and the cluster endpoint always points to the current writer.'
+  - key: D
+    text: 'Copy a snapshot of the cluster to another Region every night.'
+    correct: false
+    why: 'Cross-Region snapshots are for Region-level disaster recovery. They require a restore into a new cluster and a new endpoint, which is far slower than a failover inside the Region.'
+cue: 'single writer instance, AZ outage, same connection string -> Aurora Replica in another AZ'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.AuroraHighAvailability.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

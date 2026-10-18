@@ -1,0 +1,39 @@
+id: 'd3-3.4-0001'
+domain: 3
+task: '3.4'
+services:
+  - 'global-accelerator'
+  - 'route-53'
+  - 'cloudfront'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: "A studio runs the real-time backend of a multiplayer mobile game behind Network Load Balancers in us-east-1 and ap-southeast-1. Players connect over UDP from all over the world and complain about latency and jitter when their traffic crosses long stretches of the public internet. The studio's partner telecom operators also require a small, fixed set of IP addresses to allow in their firewalls, and the studio wants to add or remove Regions later without asking the operators to update those rules. Which approach needs the LEAST ongoing operational work?"
+options:
+  - key: A
+    text: 'Create a CloudFront distribution with the Network Load Balancers as custom origins and give the operators the CloudFront IP ranges.'
+    correct: false
+    why: 'CloudFront is built for HTTP and HTTPS content delivery, so it cannot carry the UDP game traffic. Its edge IP ranges are also large and change, which does not give the operators a small fixed set to allow.'
+  - key: B
+    text: 'Create Route 53 latency-based alias records that point to the two Network Load Balancers and give the operators the load balancer IP addresses.'
+    correct: false
+    why: 'Latency-based routing only changes which DNS answer a client gets. Packets still travel over the public internet end to end, and the load balancer addresses are per Region and can change, so the operators would have to update their rules whenever Regions are added or removed.'
+  - key: C
+    text: 'Create a Global Accelerator standard accelerator with a UDP listener, add an endpoint group in each Region with the Network Load Balancer as its endpoint, and give the operators the two static anycast IP addresses.'
+    correct: true
+    why: 'Global Accelerator listeners support UDP. Clients enter the AWS network at the nearest edge location through anycast and are carried over the AWS global network to the closest healthy Regional endpoint, which reduces latency and jitter. The two static IPs stay the same when endpoints or Regions change.'
+  - key: D
+    text: 'Allocate an Elastic IP address for each Network Load Balancer subnet in both Regions and publish these addresses to the operators and players.'
+    correct: false
+    why: 'Elastic IPs give fixed addresses per Region, but players are still not steered to the nearest Region and traffic still crosses the public internet. Every new Region adds new addresses that the operators must allow.'
+cue: 'UDP traffic from global players plus a small fixed set of IPs to allowlist and Regions that may change -> Global Accelerator static anycast IPs, not CloudFront (HTTP) or DNS routing.'
+references:
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/what-is-global-accelerator.html'
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/introduction-benefits-of-migrating.html'
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/about-listeners.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesOrigin.html'
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-policy-latency.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

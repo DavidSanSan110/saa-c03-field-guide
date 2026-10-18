@@ -1,0 +1,36 @@
+id: 'd2-2.2-0008'
+domain: 2
+task: '2.2'
+services:
+  - 'ebs'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A manufacturing company runs a legacy application on a few EC2 instances with EBS data volumes in a single Region. Its disaster recovery plan must allow the application to be rebuilt in a second Region if the primary Region becomes unavailable. An RPO of 24 hours is acceptable, the recovery time can be a few hours, and the company wants the lowest ongoing cost with automated backups. Which approach should be used?'
+options:
+  - key: A
+    text: 'Take daily snapshots with Amazon Data Lifecycle Manager and configure the policy to copy them to the second Region, then restore the volumes there during a disaster.'
+    correct: true
+    why: 'A Data Lifecycle Manager policy automates snapshot creation and retention, and snapshot copies in the second Region keep the data outside the failed Region. You pay only for snapshot storage until a disaster, and the volumes can be restored from the copies when needed.'
+  - key: B
+    text: 'Take daily snapshots in the primary Region only, because snapshots are stored in Amazon S3 and are therefore available in every Region.'
+    correct: false
+    why: 'Snapshots are Regional resources. They are not usable in another Region until they are copied there, so a Region outage would leave no accessible backup.'
+  - key: C
+    text: 'Create io2 volumes with Multi-Attach enabled and attach them to standby instances in the second Region.'
+    correct: false
+    why: 'Multi-Attach only works between instances in the same Availability Zone, so it cannot connect a volume to instances in another Region.'
+  - key: D
+    text: 'Run a full-size copy of the fleet in the second Region at all times and synchronise the data continuously at the application level.'
+    correct: false
+    why: 'This could meet the objectives but at a far higher cost than needed. The requirement allows a 24-hour RPO and a few hours of recovery, which a backup-and-restore approach satisfies at a much lower price.'
+cue: 'rebuild in another Region, RPO 24 h, lowest cost -> scheduled EBS snapshots copied cross-Region (backup and restore)'
+references:
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-copy-snapshot.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/snapshot-lifecycle.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volumes-multi.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

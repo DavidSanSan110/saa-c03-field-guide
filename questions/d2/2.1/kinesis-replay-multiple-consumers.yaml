@@ -1,0 +1,37 @@
+id: 'd2-2.1-0005'
+domain: 2
+task: '2.1'
+services:
+  - 'kinesis'
+  - 'sqs'
+  - 'sns'
+difficulty: medium
+type: single
+stem: 'A ride-hailing company receives GPS pings from 200,000 vehicles. Pings from the same vehicle must be processed in order. Three independent applications (fraud detection, billing and analytics) each need to read the complete flow of pings. When the team deploys a new version of the analytics application, it must be able to reprocess the last 7 days of pings from the beginning. Which ingestion design meets these requirements?'
+options:
+  - key: A
+    text: 'Send the pings to one SQS standard queue and let the three applications poll it.'
+    correct: false
+    why: 'The three applications would compete for messages and each ping would reach only one of them. Standard queues also give only best-effort ordering, and deleted messages cannot be replayed.'
+  - key: B
+    text: 'Send the pings to an SQS FIFO queue using the vehicle ID as the message group, and have each application consume from it.'
+    correct: false
+    why: 'FIFO keeps order per group, but consumers still share one queue, so each message goes to a single application. A message is removed once it has been consumed, so there is nothing to replay.'
+  - key: C
+    text: 'Write the pings to a Kinesis data stream using the vehicle ID as the partition key, raise the retention period to at least 7 days, and run each application as its own consumer of the stream.'
+    correct: true
+    why: 'Records with the same partition key go to the same shard and keep their order. Each application reads the stream independently, and the data stays in the stream until the retention period ends (24 hours by default, up to 365 days), so a new consumer can start from the oldest record. Enhanced fan-out gives each consumer its own 2 MB/s of read throughput per shard if the shared limit becomes a constraint.'
+  - key: D
+    text: 'Publish the pings to an SNS topic and subscribe one SQS queue per application.'
+    correct: false
+    why: 'Fan-out gives every application a copy, but there is no ordering guarantee per vehicle with standard queues, and once an application deletes a message it cannot be read again, so the 7-day reprocessing requirement is not met.'
+cue: 'Ordering per key, several independent consumers of the same data, and reprocessing of past data: Kinesis Data Streams with a partition key and extended retention, not a queue.'
+references:
+  - 'https://docs.aws.amazon.com/streams/latest/dev/key-concepts.html'
+  - 'https://docs.aws.amazon.com/streams/latest/dev/building-consumers.html'
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-queue-types.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

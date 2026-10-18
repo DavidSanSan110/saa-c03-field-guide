@@ -1,0 +1,38 @@
+id: 'd2-2.1-0004'
+domain: 2
+task: '2.1'
+services:
+  - 's3'
+  - 'sns'
+  - 'sqs'
+difficulty: medium
+type: single
+stem: 'A photo-sharing company stores uploads in an Amazon S3 bucket under the prefix uploads/. Every new object must be handled independently by three back-end applications: thumbnail generation, content moderation and search indexing. Each application should process every upload at its own pace without losing events when it is slow or offline, and the company expects to add more consumers later without touching the bucket configuration. Which design meets these requirements?'
+options:
+  - key: A
+    text: 'Add three separate event notification configurations on the bucket for s3:ObjectCreated:* with the prefix uploads/, one per application.'
+    correct: false
+    why: 'S3 does not accept notification configurations whose prefix and suffix filters overlap for the same event types, so identical filters on the same event type are rejected. Every new consumer would also need a bucket configuration change.'
+  - key: B
+    text: 'Send the S3 event notification to one Amazon SNS topic, and subscribe a separate SQS queue for each application to that topic.'
+    correct: true
+    why: 'S3 supports an SNS topic as a destination, so the event is published once. SNS delivers a copy to every subscribed queue, each queue stores the events until its application processes them, and new consumers are added by subscribing another queue without touching the bucket.'
+  - key: C
+    text: 'Send the S3 event notification to a single SQS standard queue and let all three applications poll it.'
+    correct: false
+    why: 'Consumers of one queue compete for messages, so each event reaches only one of the three applications instead of all of them.'
+  - key: D
+    text: 'Send the S3 event notification to an Amazon SNS FIFO topic so that the three applications receive uploads in order.'
+    correct: false
+    why: 'Only standard SNS topics are supported as S3 event notification destinations; SNS FIFO topics are not. Ordering was not a requirement either.'
+cue: 'One S3 event must reach several independent consumers that need durability and room to add more later: S3 to SNS topic to one SQS queue per consumer.'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-how-to-event-types-and-destinations.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/notification-how-to-filtering.html'
+  - 'https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html'
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

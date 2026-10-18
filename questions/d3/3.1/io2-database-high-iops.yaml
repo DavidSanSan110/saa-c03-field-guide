@@ -1,0 +1,34 @@
+id: 'd3-3.1-0001'
+domain: 3
+task: '3.1'
+services:
+  - 'ebs'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A trading firm runs a self-managed relational database on a single Nitro-based EC2 instance. Load testing shows the database needs about 150,000 sustained IOPS on one 10 TiB volume, with consistent sub-millisecond latency, and the firm wants the highest EBS durability available. Which EBS configuration meets these requirements?'
+options:
+  - key: A
+    text: 'A gp3 volume with IOPS and throughput provisioned to their maximum values'
+    correct: false
+    why: 'gp3 lets you provision IOPS independently of size, but its per-volume ceiling (80,000 IOPS) is below the 150,000 required, and its durability is lower than io2 Block Express.'
+  - key: B
+    text: 'An io1 volume provisioned at its maximum IOPS'
+    correct: false
+    why: 'io1 is a Provisioned IOPS SSD, but it tops out at 64,000 IOPS per volume, so it cannot reach 150,000 IOPS, and it offers lower durability than io2.'
+  - key: C
+    text: 'An io2 Block Express volume provisioned with 150,000 IOPS'
+    correct: true
+    why: 'io2 Block Express supports up to 256,000 IOPS per volume on Nitro instances, is designed for consistent sub-millisecond latency, and has 99.999% durability, so it satisfies every requirement.'
+  - key: D
+    text: 'An st1 Throughput Optimized HDD volume, sized large enough to deliver the IOPS'
+    correct: false
+    why: 'st1 is optimized for large sequential throughput (big data, log processing) and is capped at 500 IOPS per volume; adding size does not raise that ceiling, and HDD cannot give sub-millisecond latency.'
+cue: 'sustained IOPS far above 16,000 / 64,000 on one volume, sub-millisecond latency, highest durability -> io2 Block Express'
+references:
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volume-types.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

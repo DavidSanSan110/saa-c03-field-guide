@@ -1,0 +1,33 @@
+id: 'd1-1.3-0003'
+domain: 1
+task: '1.3'
+services:
+  - 's3'
+difficulty: easy
+type: single
+stem: "An audit of a company's Amazon S3 access logs shows that some legacy clients still call a bucket through plain HTTP endpoints. The security team wants every request that is not made over TLS to be rejected by S3 itself, without having to change the IAM policies of each client. What should a solutions architect do?"
+options:
+  - key: A
+    text: 'Add a bucket policy statement that denies s3:* to all principals on the bucket and its objects when the aws:SecureTransport condition key is false'
+    correct: true
+    why: 'An explicit Deny on requests where aws:SecureTransport is false blocks every HTTP request to the bucket, whatever other permissions the caller has.'
+  - key: B
+    text: 'Change the bucket default encryption to SSE-KMS'
+    correct: false
+    why: 'Default encryption protects data at rest. It says nothing about whether the connection to S3 uses TLS.'
+  - key: C
+    text: 'Turn on S3 Block Public Access for the bucket'
+    correct: false
+    why: 'Block Public Access limits public ACLs and policies. It does not look at whether a request arrived over HTTP or HTTPS.'
+  - key: D
+    text: 'Add a bucket policy that denies s3:PutObject when the x-amz-server-side-encryption header is missing'
+    correct: false
+    why: 'This forces an at-rest encryption setting on uploads only. HTTP uploads that send the header, and all HTTP reads, would still be accepted.'
+cue: 'reject non-TLS requests at the bucket -> Deny with aws:SecureTransport = false'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/security-best-practices.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
