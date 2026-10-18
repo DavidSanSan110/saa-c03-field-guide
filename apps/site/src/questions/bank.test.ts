@@ -610,3 +610,117 @@ describe('several problems at once', () => {
     expect(error.message).toContain('d1/1.1/bad.yaml: ');
   });
 });
+
+describe('review round 1 regressions', () => {
+  const notAPage = (link: string): string =>
+    `${LINK_PATH}: links.guide '${link}' is not a guide page`;
+  const only = (path: string): string =>
+    `${path}: only question files (d<domain>/<task>/<slug>.yaml) belong in questions/`;
+  const symlinkLine = (path: string): string => `${path}: symbolic links are not allowed`;
+
+  test.each(['/d1/a/b//', '/d1//a/b'])(
+    'AC-15: the guide link %s has an empty segment, so it is not a guide page',
+    (link) => {
+      put('d1/a/b.mdx', '# b\n', dirs.docsDir);
+      putLinked({ guide: link });
+
+      expect(check()).toEqual([notAPage(link)]);
+    },
+  );
+
+  test('AC-15: the same page written without empty segments still passes', () => {
+    put('d1/a/b.mdx', '# b\n', dirs.docsDir);
+    putLinked({ guide: '/d1/a/b' });
+
+    expect(check()).toEqual([]);
+  });
+
+  test.each(['..', '.', '../questions'])(
+    'AC-16: the lab link %s is a problem although it is an existing folder',
+    (lab) => {
+      mkdirSync(dirs.labsDir, { recursive: true });
+      putLinked({ lab });
+
+      const problems = check();
+
+      expect(problems).toHaveLength(1);
+      expect(problems[0]?.startsWith(`${LINK_PATH}: links.lab`)).toBe(true);
+    },
+  );
+
+  test('AC-17: stray files come back in code-unit order, not locale order', () => {
+    put('a.txt', 'stray\n');
+    put('Z.txt', 'stray\n');
+
+    // A locale compare would give a.txt first; code units put 'Z' (0x5A) before 'a' (0x61).
+    expect(check()).toEqual([only('Z.txt'), only('a.txt')]);
+  });
+
+  test('AC-18: a directory junction to a folder is a problem and its contents are not walked', () => {
+    putQuestion('d1/1.1/ok.yaml', question('d1-1.1-0001'));
+    put('outside/d1/1.1/inner.yaml', stringify(question('d1-1.1-0002')), root);
+    put('outside/stray.txt', 'stray', root);
+    mkdirSync(questionsDir, { recursive: true });
+    // No skip: a junction needs no privilege on Windows, and is a normal symlink on Linux.
+    symlinkSync(join(root, 'outside'), join(questionsDir, 'linked-dir'), 'junction');
+
+    expect(check()).toEqual([symlinkLine('linked-dir')]);
+  });
+
+  test('AC-18: a junction inside a task folder is reported with its path and not followed', () => {
+    put('outside/inner.yaml', stringify(question('d1-1.1-0002')), root);
+    put('outside/stray.txt', 'stray', root);
+    mkdirSync(join(questionsDir, 'd1', '1.1'), { recursive: true });
+    symlinkSync(join(root, 'outside'), join(questionsDir, 'd1', '1.1', 'sub'), 'junction');
+
+    expect(check()).toEqual([symlinkLine('d1/1.1/sub')]);
+  });
+
+  test('AC-18: loading a bank with a junction throws, names it, and never adds the target question', () => {
+    putQuestion('d1/1.1/ok.yaml', question('d1-1.1-0001'));
+    put('outside/1.1/inner.yaml', stringify(question('d1-1.1-0002')), root);
+    symlinkSync(join(root, 'outside'), join(questionsDir, 'd1', 'linked'), 'junction');
+
+    const error = thrownBy(() => loadQuestionBank(questionsDir, dirs));
+
+    expect(error.message).toContain(symlinkLine('d1/linked'));
+    expect(error.message).not.toContain('inner.yaml');
+  });
+
+  test('AC-19: a folder named diagrams/x.yaml/ does not satisfy diagram: x', () => {
+    mkdirSync(join(dirs.diagramsDir, 'x.yaml'), { recursive: true });
+    putLinked({ diagram: 'x' });
+
+    expect(check()).toEqual([`${LINK_PATH}: links.diagram 'x' has no diagrams/x.yaml`]);
+  });
+
+  test.each(['b.md', 'b.mdx'])(
+    'AC-19: a folder named docs/d1/a/%s/ does not satisfy guide: /d1/a/b',
+    (name) => {
+      mkdirSync(join(dirs.docsDir, 'd1', 'a', name), { recursive: true });
+      putLinked({ guide: '/d1/a/b' });
+
+      expect(check()).toEqual([notAPage('/d1/a/b')]);
+    },
+  );
+
+  test('AC-19: a folder named docs/d1/a/index.md/ does not satisfy guide: /d1/a', () => {
+    mkdirSync(join(dirs.docsDir, 'd1', 'a', 'index.md'), { recursive: true });
+    putLinked({ guide: '/d1/a' });
+
+    expect(check()).toEqual([notAPage('/d1/a')]);
+  });
+
+  test.each(['/D1/a/b', '/d1/A/b', '/d1/a/B', '/d1/a/B#part', '/D1/a/b/'])(
+    'AC-20: the guide link %s has an uppercase letter, so it is a problem even if the lowercase page exists',
+    (link) => {
+      put('d1/a/b.mdx', '# b\n', dirs.docsDir);
+      putLinked({ guide: link });
+
+      const problems = check();
+
+      expect(problems).toHaveLength(1);
+      expect(problems[0]?.startsWith(`${LINK_PATH}: links.guide`)).toBe(true);
+    },
+  );
+});
