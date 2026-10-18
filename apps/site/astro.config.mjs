@@ -7,6 +7,9 @@ import { shouldInjectFixtures } from './src/diagram/fixtures-route.ts';
 import { buildSidebar } from './src/sidebar.ts';
 
 const diagramsDir = fileURLToPath(new URL('../../diagrams/', import.meta.url));
+const questionsDir = fileURLToPath(new URL('../../questions/', import.meta.url));
+const docsDir = fileURLToPath(new URL('./src/content/docs/', import.meta.url));
+const labsDir = fileURLToPath(new URL('../../labs/', import.meta.url));
 
 // Diagram support (specs 012 and 013): hands the configured publicDir (icon check) and the diagrams/ folder
 // (FlowDiagram.astro) to the components, reloads the dev page when a diagrams/*.yaml file changes (pages read
@@ -31,6 +34,10 @@ const diagrams = {
           define: {
             __FIELD_GUIDE_PUBLIC_DIR__: JSON.stringify(fileURLToPath(config.publicDir)),
             __FIELD_GUIDE_DIAGRAMS_DIR__: JSON.stringify(diagramsDir),
+            // Question bank (spec 026): the folders src/pages/practice/bank.json.ts reads.
+            __FIELD_GUIDE_QUESTIONS_DIR__: JSON.stringify(questionsDir),
+            __FIELD_GUIDE_DOCS_DIR__: JSON.stringify(docsDir),
+            __FIELD_GUIDE_LABS_DIR__: JSON.stringify(labsDir),
           },
         },
       });

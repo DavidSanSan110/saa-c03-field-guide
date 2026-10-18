@@ -71,6 +71,9 @@ importers:
       '@field-guide/diagram-engine':
         specifier: workspace:*
         version: link:../../packages/diagram-engine
+      '@field-guide/questions':
+        specifier: workspace:*
+        version: link:../../tools/questions
       '@field-guide/schema':
         specifier: workspace:*
         version: link:../../packages/schema
