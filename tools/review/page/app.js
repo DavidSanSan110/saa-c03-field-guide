@@ -428,6 +428,9 @@ function render() {
     const editor = document.getElementById('editor');
     editor.value = screen.text;
     editor.focus();
+    // At the top on opening; where it was after a refused save.
+    editor.setSelectionRange(screen.caret, screen.caret);
+    editor.scrollTop = screen.scroll;
   }
   if (screen.name === 'reveal' && screen.rejecting) document.getElementById('reason').focus();
 }
@@ -593,6 +596,8 @@ async function doEdit() {
     back: screen,
     etag: response.data.etag,
     text: response.data.text,
+    caret: 0,
+    scroll: 0,
     errors: [],
   };
   render();
@@ -605,6 +610,9 @@ function cancelEdit() {
 
 async function doSave() {
   const screen = state.screen;
+  const editor = document.getElementById('editor');
+  screen.caret = editor.selectionStart;
+  screen.scroll = editor.scrollTop;
   const response = await api(questionUrl(screen.data.id, 'edit'), {
     etag: screen.etag,
     text: screen.text,

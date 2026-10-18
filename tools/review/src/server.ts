@@ -35,7 +35,7 @@ const MAX_BODY = 1_000_000;
 const REJECTED = 'rejected';
 const LOG_FILE = 'review-log.jsonl';
 
-const PAGE_DIR = new URL('./page/', import.meta.url);
+const PAGE_DIR = new URL('../page/', import.meta.url);
 const ASSETS: Record<string, { file: string; type: string }> = {
   '/': { file: 'index.html', type: 'text/html; charset=utf-8' },
   '/app.js': { file: 'app.js', type: 'text/javascript; charset=utf-8' },
