@@ -205,6 +205,8 @@ export function startServer(opts: {
   drafts: string;
   reviewer: string;
   port: number;
+  /** Extra `Host` header values to accept besides 127.0.0.1:<port> and localhost:<port>. */
+  allowHosts?: string[];
 }): Promise<ReviewServer> {
   const root = opts.drafts;
   const token = randomBytes(24).toString('base64url');
