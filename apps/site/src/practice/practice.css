@@ -68,16 +68,11 @@ html[data-practice-screen] .content-panel + .content-panel {
 .pt *::after {
   box-sizing: border-box;
 }
-.pt p,
-.pt ul,
-.pt ol,
-.pt dl,
-.pt dd,
-.pt li {
+/* Zero specificity, so the component margins below win. */
+.pt :where(p, ul, ol, dl, dd, li) {
   margin: 0;
 }
-.pt ul,
-.pt ol {
+.pt :where(ul, ol) {
   padding: 0;
   list-style: none;
 }
@@ -829,6 +824,8 @@ html[data-practice-screen] .content-panel + .content-panel {
 
 /* ---------- confirmation dialog ---------- */
 .pt-dialog {
+  /* Starlight resets every margin to 0, which would pin the modal to the top-left corner. */
+  margin: auto;
   width: min(28rem, calc(100vw - 2rem));
   padding: 1.5rem;
   border: 1px solid var(--pt-card-border);
