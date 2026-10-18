@@ -133,9 +133,8 @@ export function ExamScreen({ session, now, onAnswer, onFlag, onGoTo, onEnd }: Pr
                       choose(key);
                     }}
                   />
-                  <span className="pt-opt-key" aria-hidden="true">
-                    {letterAt(position)}
-                  </span>
+                  <span className="pt-opt-key">{letterAt(position)}</span>
+                  <span className="pt-sr">: </span>
                   <span className="pt-opt-text">{option.text}</span>
                 </label>
               );

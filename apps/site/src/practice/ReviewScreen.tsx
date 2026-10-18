@@ -31,10 +31,9 @@ function ConfirmDialog(props: {
       role="alertdialog"
       aria-labelledby="pt-confirm-title"
       aria-describedby="pt-confirm-text"
-      onCancel={(event) => {
-        event.preventDefault();
-        props.onCancel();
-      }}
+      // Escape and Cancel both close the dialog natively; the browser then gives focus back to the
+      // button that opened it, and `close` tells the screen to drop the dialog.
+      onClose={props.onCancel}
     >
       <h2 className="pt-h2" id="pt-confirm-title">
         Submit the exam?
@@ -43,7 +42,13 @@ function ConfirmDialog(props: {
         You have {props.unanswered} unanswered and {props.flagged} flagged questions. Submit anyway?
       </p>
       <div className="pt-actions">
-        <button type="button" className="pt-btn pt-btn-secondary" onClick={props.onCancel}>
+        <button
+          type="button"
+          className="pt-btn pt-btn-secondary"
+          onClick={() => {
+            dialog.current?.close();
+          }}
+        >
           Cancel
         </button>
         <button type="button" className="pt-btn pt-btn-primary" onClick={props.onSubmit}>

@@ -18,6 +18,8 @@ export const PROGRESS_KEY = 'field-guide:practice:progress';
 export type SessionLoad =
   { kind: 'none' } | { kind: 'restored'; session: Session } | { kind: 'unrestorable' };
 
+export type RestoreFailure = 'changed' | 'other';
+
 /**
  * The storage helpers. No method throws, whatever the underlying storage does; when it fails the
  * app keeps working without saving.
@@ -32,6 +34,12 @@ export interface PracticeStorage {
   loadSession(bank: readonly Question[]): SessionLoad;
   /** Stores the session (`saveSession` as JSON). */
   saveSession(session: Session): void;
+  /**
+   * Why the last `loadSession` returned `unrestorable`: `changed` when the saved questions are
+   * missing from the bank or differ from it, `other` for unreadable, invalid or foreign-version
+   * data. `null` when the last load was not unrestorable.
+   */
+  lastRestoreFailure(): RestoreFailure | null;
   /** Removes the saved exam. */
   clearSession(): void;
   /** The stored attempt history; `emptyProgress()` when absent or unreadable. */
@@ -77,15 +85,25 @@ export function createPracticeStorage(storage: Storage | undefined): PracticeSto
       });
   };
 
+  let failure: RestoreFailure | null = null;
+
   return {
     available,
     loadSession(bank) {
+      failure = null;
       const text = read(SESSION_KEY);
       if (text === null) return { kind: 'none' };
       const restored = attempt(undefined, () => restoreSession(JSON.parse(text) as unknown, bank));
       if (restored?.ok === true) return { kind: 'restored', session: restored.session };
       remove(SESSION_KEY);
+      failure =
+        restored?.ok === false && (restored.reason === 'missing' || restored.reason === 'changed')
+          ? 'changed'
+          : 'other';
       return { kind: 'unrestorable' };
+    },
+    lastRestoreFailure() {
+      return failure;
     },
     saveSession(session) {
       write(SESSION_KEY, JSON.stringify(saveSession(session)));

@@ -94,8 +94,11 @@ html[data-practice-screen] .content-panel + .content-panel {
   outline: 2px solid var(--sl-color-text-accent);
   outline-offset: 2px;
 }
+.pt-loading {
+  /* Same height as the fallback in pages/practice/index.astro, so the page does not shrink and grow. */
+  min-height: 40rem;
+}
 .pt-status {
-  min-height: 12rem;
   color: var(--pt-muted);
 }
 

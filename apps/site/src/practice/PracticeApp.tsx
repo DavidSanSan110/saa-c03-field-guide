@@ -17,7 +17,7 @@ import { ResultsScreen } from './ResultsScreen.tsx';
 import { ReviewScreen } from './ReviewScreen.tsx';
 import { StartScreen } from './StartScreen.tsx';
 import { createPracticeStorage } from './storage.ts';
-import type { PracticeStorage } from './storage.ts';
+import type { PracticeStorage, RestoreFailure } from './storage.ts';
 
 interface Ready {
   state: 'ready';
@@ -25,7 +25,7 @@ interface Ready {
   storage: PracticeStorage;
   /** The saved exam waiting to be resumed. */
   saved: Session | null;
-  restoreFailed: boolean;
+  restoreFailed: RestoreFailure | null;
 }
 type Loaded = { state: 'loading' } | { state: 'error' } | Ready;
 
@@ -73,6 +73,7 @@ export default function PracticeApp() {
   const [loaded, setLoaded] = useState<Loaded>({ state: 'loading' });
   const [session, setSession] = useState<Session | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [focusStart, setFocusStart] = useState(false);
   const [progress, setProgress] = useState<Progress>(emptyProgress);
   const progressRef = useRef(progress);
   const [now, setNow] = useState(Date.now);
@@ -101,7 +102,7 @@ export default function PracticeApp() {
           bank,
           storage,
           saved,
-          restoreFailed: stored.kind === 'unrestorable',
+          restoreFailed: stored.kind === 'unrestorable' ? storage.lastRestoreFailure() : null,
         });
       },
       () => {
@@ -166,7 +167,7 @@ export default function PracticeApp() {
 
   if (loaded.state === 'loading') {
     return (
-      <div className="pt">
+      <div className="pt pt-loading">
         <p className="pt-status" role="status">
           Loading questions…
         </p>
@@ -197,7 +198,8 @@ export default function PracticeApp() {
     const clock = Date.now();
     setNow(clock);
     setReviewing(false);
-    patch({ restoreFailed: false });
+    patch({ restoreFailed: null });
+    setFocusStart(false);
     setSession(
       startSession(exam, {
         mode: 'exam',
@@ -215,6 +217,7 @@ export default function PracticeApp() {
 
   function discard(): void {
     storage.clearSession();
+    setFocusStart(true);
     patch({ saved: null });
   }
 
@@ -238,6 +241,7 @@ export default function PracticeApp() {
                 }
           }
           restoreFailed={restoreFailed}
+          focusStart={focusStart}
           lastAttempt={progress.attempts.at(-1)}
           canSave={storage.available}
           onStart={start}
@@ -278,6 +282,7 @@ export default function PracticeApp() {
         <ResultsScreen
           session={session}
           onNew={() => {
+            setFocusStart(true);
             setSession(null);
           }}
         />
