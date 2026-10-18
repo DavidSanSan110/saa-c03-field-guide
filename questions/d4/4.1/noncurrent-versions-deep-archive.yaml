@@ -1,0 +1,35 @@
+id: 'd4-4.1-0001'
+domain: 4
+task: '4.1'
+services:
+  - 's3'
+difficulty: medium
+type: single
+stem: 'A legal-tech company keeps contract documents in an S3 bucket with versioning enabled. When someone overwrites or deletes a document by mistake, the previous version must be recoverable immediately for the first 30 days after it stops being the current version. From day 31 until the end of the first year, the business accepts a recovery time of up to 48 hours. After one year the old versions must be permanently removed. Recoveries are very rare, and the company wants the lowest storage cost that meets these rules. Which S3 Lifecycle configuration should a solutions architect create?'
+options:
+  - key: A
+    text: 'Add a NoncurrentVersionTransition action that moves noncurrent versions to S3 Glacier Flexible Retrieval 30 days after they become noncurrent, plus a NoncurrentVersionExpiration action at 365 days.'
+    correct: false
+    why: 'It meets the timing rules, but Glacier Flexible Retrieval costs more per GB than Glacier Deep Archive. A 48-hour recovery window is exactly what Deep Archive is for, so this is not the lowest-cost option.'
+  - key: B
+    text: 'Add a NoncurrentVersionTransition action that moves noncurrent versions to S3 Glacier Deep Archive as soon as they become noncurrent, plus a NoncurrentVersionExpiration action at 365 days.'
+    correct: false
+    why: 'Deep Archive objects are not available in real time and must be restored first (hours). That breaks the requirement for immediate recovery during the first 30 days.'
+  - key: C
+    text: 'Add a NoncurrentVersionTransition action that moves noncurrent versions to S3 Glacier Deep Archive 30 days after they become noncurrent, plus a NoncurrentVersionExpiration action at 365 days.'
+    correct: true
+    why: "Noncurrent versions stay in a class with millisecond access for the first 30 days, then go to the cheapest class, whose standard restore (about 12 hours) fits the 48-hour allowance. They remain well beyond Deep Archive's 180-day minimum before being permanently deleted at 365 days."
+  - key: D
+    text: 'Add a Transition action that moves objects to S3 Glacier Deep Archive 30 days after creation, plus an Expiration action at 365 days.'
+    correct: false
+    why: 'In a versioned bucket, Transition and Expiration act on the current version. This would archive and then hide the live documents instead of managing the old versions, and it ignores the noncurrent-version requirement.'
+cue: 'versioning, noncurrent versions, immediate for 30 days then up to 48 hours, lowest cost -> NoncurrentVersionTransition to Deep Archive after 30 days + NoncurrentVersionExpiration'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/intro-lifecycle-rules.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/lifecycle-transition-general-considerations.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/restoring-objects-retrieval-options.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,35 @@
+id: 'd2-2.2-0004'
+domain: 2
+task: '2.2'
+services:
+  - 'route53'
+  - 'cloudwatch'
+difficulty: hard
+type: single
+stem: 'An insurance company runs an internal claims API on EC2 instances that have only private IP addresses in a VPC in one Region. A standby copy of the stack is kept in a second Region. Internal clients resolve api.corp.example through a private hosted zone that contains a primary and a secondary failover record. The company wants Route 53 to return the secondary record automatically when the primary stack is unhealthy, without exposing the instances to the internet. What should the solutions architect configure?'
+options:
+  - key: A
+    text: 'Create a Route 53 health check that targets the private IP address of the primary instances and attach it to the primary failover record.'
+    correct: false
+    why: 'Route 53 health checkers run outside the VPC and cannot probe private, non-routable addresses, so this health check would always report the endpoint as unhealthy or never succeed.'
+  - key: B
+    text: 'Publish a CloudWatch metric that reflects the health of the primary stack, create an alarm on it, and create a Route 53 health check that monitors the alarm and is associated with the primary record.'
+    correct: true
+    why: 'A health check based on a CloudWatch alarm does not need network access to the resource. When the alarm goes into the ALARM state, the health check turns unhealthy and Route 53 answers with the secondary record.'
+  - key: C
+    text: 'Create a calculated health check that combines endpoint health checks for each private instance with an AND rule.'
+    correct: false
+    why: 'A calculated health check only aggregates the results of other health checks. Its children would still be endpoint checks that cannot reach the private instances.'
+  - key: D
+    text: 'Convert both records to simple routing and set the record TTL to 0 so clients re-resolve on every call.'
+    correct: false
+    why: 'Simple routing has no health evaluation and no failover behaviour, so Route 53 would keep returning the failed address regardless of TTL.'
+cue: 'private IPs only, private hosted zone, failover record -> health check that monitors a CloudWatch alarm'
+references:
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-private-hosted-zones.html'
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/health-checks-creating-values.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

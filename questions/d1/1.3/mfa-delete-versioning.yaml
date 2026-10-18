@@ -1,0 +1,33 @@
+id: 'd1-1.3-0005'
+domain: 1
+task: '1.3'
+services:
+  - 's3'
+difficulty: medium
+type: single
+stem: "A company stores contracts in a versioned Amazon S3 bucket. After an incident in which stolen access keys were used to wipe out data, the security team wants the bucket's versioning configuration itself to require a one-time code from a physical or virtual MFA device before anyone can permanently delete an object version or suspend versioning. Which action meets this requirement?"
+options:
+  - key: A
+    text: 'Sign in as the AWS account root user (the bucket owner) and enable MFA Delete with the AWS CLI or API, passing the MFA device serial number and a current code'
+    correct: true
+    why: "MFA Delete is part of the bucket's versioning configuration. Turning it on is reserved for the root user of the owning account, and it cannot be enabled from the console, only through the CLI or API with the device serial and code."
+  - key: B
+    text: 'Have an IAM administrator enable MFA Delete from the Versioning section of the S3 console'
+    correct: false
+    why: 'MFA Delete cannot be configured in the console, and an IAM administrator cannot turn it on: only the bucket owner (root) can.'
+  - key: C
+    text: 'Enable S3 Object Lock in governance mode on the bucket'
+    correct: false
+    why: 'Object Lock is a retention feature. Governance mode lets users with the bypass permission delete versions with no MFA code, and it does not gate changes to the versioning state.'
+  - key: D
+    text: 'Enable S3 Versioning, which by itself requires MFA for permanent deletes of versions'
+    correct: false
+    why: 'Versioning alone does not demand a second factor. MFA Delete must be turned on separately in the versioning configuration.'
+cue: 'MFA code to permanently delete a version or suspend versioning -> MFA Delete, root only, CLI/API only'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/MultiFactorAuthenticationDelete.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

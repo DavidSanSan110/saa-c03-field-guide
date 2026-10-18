@@ -1,0 +1,36 @@
+id: 'd2-2.1-0006'
+domain: 2
+task: '2.1'
+services:
+  - 'amazon-mq'
+  - 'sqs'
+difficulty: easy
+type: single
+stem: 'A logistics company runs an Apache ActiveMQ broker in its data center. Several Java services exchange messages with it through JMS over the OpenWire protocol, and handheld scanners publish through MQTT. The company is moving these workloads to AWS and wants the broker to be managed (patching, failover, upgrades) without changing the application code or the client protocols. What is the most operationally efficient approach?'
+options:
+  - key: A
+    text: 'Replace the broker with Amazon SQS queues and rewrite the services and scanner firmware to use the AWS SDK.'
+    correct: false
+    why: 'SQS is managed and scalable, but it has its own API rather than JMS-over-OpenWire or MQTT. Moving to it means re-engineering every producer and consumer, which the company wants to avoid.'
+  - key: B
+    text: 'Use an Amazon SNS topic with Amazon SQS subscriptions to deliver messages between the services and the scanners.'
+    correct: false
+    why: 'SNS and SQS are cloud-native services with their own APIs and do not speak OpenWire or MQTT. The clients would still have to be rewritten.'
+  - key: C
+    text: 'Self-host ActiveMQ on EC2, using Auto Scaling and a Network Load Balancer in front.'
+    correct: false
+    why: 'This keeps the protocols, but the company would operate the instances, patching, broker upgrades, storage and failover itself, which is the overhead it wants to remove.'
+  - key: D
+    text: 'Migrate to an Amazon MQ for ActiveMQ broker.'
+    correct: true
+    why: 'Amazon MQ is a managed message broker for ActiveMQ and RabbitMQ that exposes the standard wire protocols (including OpenWire and MQTT), so existing clients keep working. AWS handles maintenance, version upgrades and failover with an active/standby broker pair.'
+cue: 'Existing broker with open protocols (JMS/OpenWire/MQTT/AMQP), managed service, no code changes: Amazon MQ rather than SQS or SNS.'
+references:
+  - 'https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/welcome.html'
+  - 'https://docs.aws.amazon.com/amazon-mq/latest/developer-guide/amazon-mq-basic-elements.html'
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

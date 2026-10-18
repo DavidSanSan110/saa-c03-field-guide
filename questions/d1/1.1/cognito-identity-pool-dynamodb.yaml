@@ -1,0 +1,37 @@
+id: 'd1-1.1-0005'
+domain: 1
+task: '1.1'
+services:
+  - 'cognito'
+  - 'dynamodb'
+  - 'iam'
+difficulty: medium
+type: single
+stem: "A company is building a mobile app for thousands of consumers who sign in with their Google accounts. The app uses the AWS SDK to read and write a user's own records directly in an Amazon DynamoDB table, with no custom backend in between. The table uses the user's unique identifier as the partition key. The company must make sure that a user can never access items that belong to another user. Which solution meets these requirements?"
+options:
+  - key: A
+    text: 'Use an Amazon Cognito user pool for sign-in and let the app call DynamoDB with the ID token that the user pool issues.'
+    correct: false
+    why: 'A user pool authenticates users and issues JWTs, but DynamoDB does not accept those tokens. Something has to exchange the token for temporary AWS credentials, which is the role of an identity pool.'
+  - key: B
+    text: 'Create an IAM user for each app user and give each one a policy that names their own partition key value.'
+    correct: false
+    why: 'Creating and maintaining thousands of IAM users with long-term keys on devices does not scale and is not secure. Federation with temporary credentials is the intended pattern.'
+  - key: C
+    text: 'Embed the access key of a single IAM user with read and write access to the table in the app, and filter items by user in the application code.'
+    correct: false
+    why: 'Every installation would hold powerful long-term credentials, and the isolation between users would rely only on client code that a user can bypass.'
+  - key: D
+    text: 'Use an Amazon Cognito identity pool that trusts Google sign-in, and attach to the authenticated role a policy that uses the Cognito identity variable in a dynamodb:LeadingKeys condition.'
+    correct: true
+    why: "The identity pool exchanges the Google token for temporary credentials of an IAM role. The policy variable for the Cognito identity limits the allowed partition key values to the caller's own id, so each user can reach only their own items (fine-grained access control)."
+cue: 'mobile users sign in with Google + app calls DynamoDB directly + only own items -> identity pool, temporary credentials, policy variable on user id'
+references:
+  - 'https://docs.aws.amazon.com/cognito/latest/developerguide/what-is-amazon-cognito.html'
+  - 'https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-identity.html'
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_examples_dynamodb_rows.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

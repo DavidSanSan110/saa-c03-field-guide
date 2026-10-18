@@ -1,0 +1,36 @@
+id: 'd2-2.2-0006'
+domain: 2
+task: '2.2'
+services:
+  - 'efs'
+  - 'ebs'
+  - 'ec2'
+difficulty: easy
+type: single
+stem: 'A publishing company runs a content-management site on a fleet of Linux EC2 instances that sit behind an Application Load Balancer and are spread over three Availability Zones. Editors upload images through whichever instance receives the request, and every instance must be able to serve every uploaded image. The solution must keep working if one Availability Zone is lost and should need as little operational effort as possible. Which storage option should be used?'
+options:
+  - key: A
+    text: 'A Provisioned IOPS EBS volume with Multi-Attach enabled, attached to all instances.'
+    correct: false
+    why: 'Multi-Attach only works for io1 or io2 volumes attached to instances in the same Availability Zone, so it cannot serve a fleet spread over three zones. It also requires a cluster-aware file system.'
+  - key: B
+    text: 'An Amazon EFS file system using Regional (Standard) storage, with a mount target in each Availability Zone.'
+    correct: true
+    why: 'EFS is a managed NFS file system that many instances in several Availability Zones can mount at the same time. Regional storage keeps data redundantly across zones, so uploads remain visible to all instances and survive a zone loss.'
+  - key: C
+    text: 'An Amazon EFS One Zone file system in the Availability Zone with the most instances.'
+    correct: false
+    why: 'A One Zone file system stores data in a single Availability Zone, so losing that zone loses access to the images, and instances in other zones would cross zone boundaries to reach it.'
+  - key: D
+    text: 'A separate EBS volume on each instance, kept in sync by a scheduled rsync job between instances.'
+    correct: false
+    why: 'EBS volumes are tied to one instance and one Availability Zone. Synchronising them by script is fragile, leaves a window where images are missing on some instances, and is far more operational work than a shared file system.'
+cue: 'shared files for instances in many AZs, survive AZ loss -> EFS Regional, not EBS'
+references:
+  - 'https://docs.aws.amazon.com/efs/latest/ug/how-it-works.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volumes-multi.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

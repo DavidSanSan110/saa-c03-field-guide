@@ -1,0 +1,37 @@
+id: 'd3-3.4-0002'
+domain: 3
+task: '3.4'
+services:
+  - 'route-53'
+  - 'vpn'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A manufacturer has connected its data center to a VPC with a Site-to-Site VPN. Servers in the VPC must resolve names such as erp.corp.example, which are served by the DNS servers in the data center. Servers in the data center must also resolve names such as api.internal.example, which exist only in a Route 53 private hosted zone associated with the VPC. The company wants a managed, scalable design without DNS servers that it has to patch and scale itself. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create a Route 53 Resolver inbound endpoint and point both the VPC and the data center DNS servers at it, using one conditional forwarding rule on each side.'
+    correct: false
+    why: 'An inbound endpoint only accepts queries coming from outside the VPC. It gives no way for VPC resources to send queries for corp.example to the on-premises DNS servers, so the first requirement is not met.'
+  - key: B
+    text: 'Create a Route 53 Resolver outbound endpoint with a forwarding rule for corp.example that targets the on-premises DNS servers, and configure the on-premises DNS servers to forward api.internal.example to the outbound endpoint IP addresses.'
+    correct: false
+    why: 'An outbound endpoint is the source of queries leaving the VPC; it does not listen for queries from the data center. Queries for the private hosted zone names from on-premises need an inbound endpoint.'
+  - key: C
+    text: 'Create a Route 53 Resolver outbound endpoint with a forwarding rule for corp.example that targets the on-premises DNS servers, and create an inbound endpoint whose IP addresses the on-premises DNS servers use as conditional forwarding targets for internal.example.'
+    correct: true
+    why: 'The outbound endpoint plus a forwarding rule sends VPC queries for the on-premises domain over the VPN to the data center resolvers. The inbound endpoint gives the data center resolvers private IP addresses in the VPC to forward queries to, and Resolver answers them from the private hosted zone. Both are managed and scale without servers to run.'
+  - key: D
+    text: 'Self-manage BIND forwarders on EC2 (with Auto Scaling), change the VPC DHCP option set to use them, and have the on-premises servers forward to their addresses.'
+    correct: false
+    why: 'This can be made to work, but the company would have to patch, monitor and scale its own DNS servers, which is exactly what it wants to avoid. Resolver endpoints provide the same forwarding as a managed capability.'
+cue: 'Hybrid DNS over VPN or Direct Connect: on-premises resolves AWS names -> inbound endpoint; VPC resolves on-premises names -> outbound endpoint plus forwarding rule.'
+references:
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver.html'
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-overview-DSN-queries-to-vpc.html'
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-overview-forward-network-to-vpc.html'
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/resolver-forwarding-outbound-queries.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,39 @@
+id: 'd1-1.2-0002'
+domain: 1
+task: '1.2'
+services:
+  - 'cloudfront'
+  - 's3'
+  - 'kms'
+difficulty: medium # easy | medium | hard
+type: multiple # single | multiple
+stem: 'A media company stores product images in an Amazon S3 bucket. Objects are encrypted with server-side encryption using a customer managed AWS KMS key. The images must be delivered worldwide through an Amazon CloudFront distribution, and the bucket must not be readable by anyone except that one distribution. Which combination of steps meets these requirements? (Choose two.)'
+options:
+  - key: A
+    text: "Create an origin access control that signs requests, attach it to the distribution's S3 origin, and add a bucket policy that lets the cloudfront.amazonaws.com service principal call s3:GetObject only when AWS:SourceArn is this distribution's ARN."
+    correct: true
+    why: 'OAC makes CloudFront sign its requests to S3, and the SourceArn condition limits the bucket policy grant to this single distribution, so the bucket stays private for everyone else.'
+  - key: B
+    text: "Add a statement to the KMS key policy that lets the cloudfront.amazonaws.com service principal use the key (for example kms:Decrypt), conditioned on this distribution's ARN."
+    correct: true
+    why: 'Because the objects use SSE-KMS, S3 needs the caller to be allowed to use the key; the key policy must grant the distribution that permission or reads fail even though the bucket policy allows them.'
+  - key: C
+    text: 'Create an origin access identity, attach it to the S3 origin, and grant the identity s3:GetObject in the bucket policy.'
+    correct: false
+    why: 'OAI is the legacy mechanism and does not support SSE-KMS encrypted objects, so it does not fit a bucket encrypted with a customer managed KMS key.'
+  - key: D
+    text: 'Turn on static website hosting for the bucket and configure the website endpoint as a custom origin of the distribution.'
+    correct: false
+    why: "A bucket used as a website endpoint has to be a custom origin, and neither OAC nor OAI can be applied to it, so access cannot be tied to the distribution's identity."
+  - key: E
+    text: 'Disable S3 Block Public Access and add a bucket policy that allows s3:GetObject to all principals so CloudFront can read the objects.'
+    correct: false
+    why: 'This makes every object readable by anyone who knows the S3 URL, which breaks the requirement that only the distribution may read the bucket.'
+cue: 'bucket readable only by one CloudFront distribution + SSE-KMS => OAC (not OAI), SourceArn condition, and the KMS key policy too'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

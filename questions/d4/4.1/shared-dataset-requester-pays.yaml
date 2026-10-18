@@ -1,0 +1,33 @@
+id: 'd4-4.1-0003'
+domain: 4
+task: '4.1'
+services:
+  - 's3'
+difficulty: medium
+type: single
+stem: "A non-profit genomics foundation publishes a 40 TB reference dataset in an S3 bucket for dozens of partner universities, each with its own AWS account. Downloads are heavy, and the foundation's data transfer bill is growing. The foundation is happy to keep paying for storing the data, but wants each university to pay for its own requests and downloads. Which solution meets this requirement?"
+options:
+  - key: A
+    text: "Enable Requester Pays on the bucket, grant the universities' IAM principals read access, and have them include the request-payer parameter in their requests."
+    correct: true
+    why: 'With Requester Pays, the authenticated requester is charged for the requests and the data download, and the bucket owner pays only for storage. Requesters must acknowledge the charges (x-amz-request-payer header, or --request-payer in the CLI).'
+  - key: B
+    text: 'Enable Requester Pays on the bucket and make the objects publicly readable so that anyone can download them without signing in.'
+    correct: false
+    why: 'Requester Pays does not allow anonymous access. S3 must authenticate the requester to know whom to bill, so unsigned requests cannot be used.'
+  - key: C
+    text: 'Enable S3 Transfer Acceleration on the bucket so that the universities download over the AWS edge network.'
+    correct: false
+    why: 'Transfer Acceleration is a speed feature. It does not change who is billed, so the bucket owner would still carry the download costs.'
+  - key: D
+    text: "Configure replication from the bucket to a new bucket in each university's account."
+    correct: false
+    why: 'The foundation would be running and paying for the replication of 40 TB to dozens of buckets, and would still have to keep the source dataset up to date. It does not make the requesters pay for their own downloads.'
+cue: 'owner pays storage, requesters pay downloads and requests, shared dataset -> Requester Pays (authenticated requests only)'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/RequesterPaysBuckets.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

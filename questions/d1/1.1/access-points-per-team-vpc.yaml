@@ -1,0 +1,36 @@
+id: 'd1-1.1-0004'
+domain: 1
+task: '1.1'
+services:
+  - 's3'
+  - 'vpc'
+difficulty: medium
+type: single
+stem: "A company keeps a shared data lake in one Amazon S3 bucket. The finance, marketing and data-science teams each own a prefix and need different read and write permissions. Today the bucket policy has grown into a long document that is risky to edit. In addition, the data-science team's workloads run in a VPC and the security team requires that this team can reach the data only from inside that VPC. Which solution simplifies permission management with the LEAST operational overhead while meeting the network requirement?"
+options:
+  - key: A
+    text: "Create one S3 access point per team with its own policy scoped to the team's prefix, give the data-science access point a VPC network origin, and change the bucket policy to delegate access control to the access points."
+    correct: true
+    why: 'Each access point has its own policy and endpoint, so team permissions are managed separately instead of in one large bucket policy. A VPC network origin makes the access point reachable only from the specified VPC, and delegating from the bucket keeps a single place for the rules.'
+  - key: B
+    text: 'Create a separate bucket for each team, enable cross-Region replication from the shared bucket, and write a new bucket policy for each bucket.'
+    correct: false
+    why: 'This duplicates data and multiplies the policies to manage. It increases cost and operational work and does not give a simple VPC-only restriction.'
+  - key: C
+    text: 'Keep one bucket policy and add a statement for each team, then add a Deny statement for the data-science team based on the aws:SourceIp of the office network.'
+    correct: false
+    why: "This keeps growing the single policy that is hard to maintain. An IP range of an office does not express 'only from inside the VPC', so the network requirement is not met."
+  - key: D
+    text: 'Create an S3 Object Lambda access point for every team that filters the objects each team is allowed to see.'
+    correct: false
+    why: 'Object Lambda is meant to transform objects as they are retrieved (for example, redacting data), not to manage team permissions at scale. It adds Lambda functions to maintain and does not restrict network origin by itself.'
+cue: 'many teams on one bucket, huge bucket policy, VPC-only for one team -> access point per team, VPC origin'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-points.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-points-policies.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/creating-access-points.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

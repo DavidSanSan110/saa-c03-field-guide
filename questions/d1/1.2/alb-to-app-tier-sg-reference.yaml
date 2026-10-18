@@ -1,0 +1,35 @@
+id: 'd1-1.2-0001'
+domain: 1
+task: '1.2'
+services:
+  - 'ec2'
+  - 'elb'
+  - 'vpc'
+difficulty: easy # easy | medium | hard
+type: single # single | multiple
+stem: 'A retail company runs its web application on an Auto Scaling group of EC2 instances in private subnets. An internet-facing Application Load Balancer in the public subnets forwards requests to the instances on TCP port 8080. The group scales out and in many times a day, so instance IP addresses constantly change. A security review requires that the instances accept traffic on port 8080 only from the load balancer, with no manual updates to rules when capacity changes. Which configuration meets these requirements?'
+options:
+  - key: A
+    text: "Add an inbound rule to the instances' security group that allows TCP 8080 with the load balancer's security group as the source."
+    correct: true
+    why: 'A rule whose source is another security group applies to every network interface associated with that group, so it keeps working as ALB nodes and instances come and go, and nothing else in the VPC is admitted.'
+  - key: B
+    text: "Add an inbound rule to the instances' security group that allows TCP 8080 from the CIDR blocks of the public subnets where the load balancer is deployed."
+    correct: false
+    why: "It works for the ALB, but it also lets any other resource placed in those subnets reach port 8080, which is broader than 'only from the load balancer' and ties the rule to the subnet layout."
+  - key: C
+    text: "Add an inbound rule to the instances' security group for each private IP address currently used by the load balancer nodes, and update the rules when they change."
+    correct: false
+    why: "The load balancer's node addresses change as it scales, so this brings back the manual maintenance the requirement rules out; the load balancer's security group can be referenced instead."
+  - key: D
+    text: "Keep the default inbound rules on the instances' security group and add a deny rule for 0.0.0.0/0 on TCP 8080 with an exception for the load balancer."
+    correct: false
+    why: "Security groups contain only allow rules; there is no deny rule or exception to configure. Blocking a source would need a network ACL, which is stateless and does not follow the load balancer's changing addresses."
+cue: 'instance IPs constantly change + accept traffic only from the load balancer + no manual rule updates => reference the ALB security group as the source'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,34 @@
+id: 'd4-4.3-0002'
+domain: 4
+task: '4.3'
+services:
+  - 'aurora'
+  - 'rds'
+difficulty: medium
+type: single
+stem: 'A retailer runs its production workload on a 5 TB Amazon Aurora MySQL cluster. Each week the QA team needs an isolated copy of the current production data to run a two-day regression test, and then the copy is thrown away. Testers change only a small fraction of the data. The company wants to keep both the storage cost and the time to prepare each copy as low as possible, and production must not be affected. What should a solutions architect recommend?'
+options:
+  - key: A
+    text: 'Each week, restore a new Aurora cluster from the latest automated snapshot and delete it after the tests.'
+    correct: false
+    why: 'Restoring a snapshot works and gives an isolated cluster, but it physically copies the data into a new full-size volume. It takes longer and uses more storage than a clone, which only allocates new storage for pages that change.'
+  - key: B
+    text: 'Create an Aurora clone of the production cluster each week, run the tests on the clone, and delete the clone afterwards.'
+    correct: true
+    why: "A clone uses a copy-on-write protocol: it shares the source data pages and only allocates storage for pages changed by either cluster. It is created quickly, is an independent cluster, and testers' small changes add little storage."
+  - key: C
+    text: 'Add an Aurora Replica to the production cluster and point the QA team at its reader endpoint.'
+    correct: false
+    why: 'A replica shares the production volume and is read-only, so testers cannot write test data. Their queries also add load to the production cluster, and it is not an isolated copy.'
+  - key: D
+    text: 'Add an Aurora Global Database secondary cluster in another Region and let the QA team test there.'
+    correct: false
+    why: 'A secondary Region is built for cross-Region reads and disaster recovery. It keeps a full replica of the data and adds replication and compute costs, and it is read-only, so it is both more expensive and unsuitable for a throwaway read/write test copy.'
+cue: 'weekly throwaway copy of production, few changes, lowest storage cost and fastest -> Aurora cloning (copy-on-write) over snapshot restore'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Managing.Clone.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

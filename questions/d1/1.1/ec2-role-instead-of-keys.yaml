@@ -1,0 +1,36 @@
+id: 'd1-1.1-0001'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+  - 'ec2'
+  - 's3'
+difficulty: easy
+type: single
+stem: "A company runs an order-processing application on Amazon EC2 instances that Auto Scaling launches and replaces. It writes receipts to an Amazon S3 bucket. A security review found that the developers copied an IAM user's access key ID and secret access key into a configuration file baked into the AMI. The company wants to remove long-term credentials from the instances and avoid any manual key rotation as instances are replaced. Which solution meets these requirements?"
+options:
+  - key: A
+    text: 'Create an IAM role with a policy that allows writing to the bucket, put the role in an instance profile, and associate it with the launch template of the Auto Scaling group.'
+    correct: true
+    why: 'Instances launched from the template receive temporary credentials for the role automatically, delivered to the SDK through the instance metadata service, and refreshed without any action by the team. No long-term secret exists on the instance, and permission changes to the role reach every instance.'
+  - key: B
+    text: 'Keep the IAM user but store its access keys in AWS Secrets Manager, and have the application fetch them at startup and rotate them every 30 days.'
+    correct: false
+    why: 'The application would still use long-term IAM user keys, and it would need AWS credentials of its own just to call Secrets Manager. Rotation adds operational work, and the underlying problem (a static key that can be stolen) remains.'
+  - key: C
+    text: 'Encrypt the configuration file with an AWS KMS key and bake the encrypted file into the AMI, decrypting it at boot.'
+    correct: false
+    why: 'The instance can decrypt the file, so anyone with access to the instance can still read the plaintext keys. This only hides the file at rest; it does not remove the long-term credentials.'
+  - key: D
+    text: "Inject the IAM user's key pair (ID and secret) into every instance from the user data script of the launch template."
+    correct: false
+    why: 'User data is readable from the instance and from the launch template, so the keys are still long-lived and exposed. Moving the secret from the AMI to user data changes where it lives, not the risk.'
+cue: 'remove long-term credentials from the instances ... without manual key rotation -> IAM role (instance profile) on EC2'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/iam-roles-for-amazon-ec2.html'
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

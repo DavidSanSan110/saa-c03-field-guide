@@ -1,0 +1,38 @@
+id: 'd1-1.3-0004'
+domain: 1
+task: '1.3'
+services:
+  - 's3'
+difficulty: hard
+type: multiple
+stem: 'A brokerage keeps trade records in a versioned Amazon S3 bucket. Regulators require every record to be immutable for seven years, and nobody, including administrators and the AWS account root user, may delete it or shorten that period. Separately, the legal team has asked that a subset of records involved in a lawsuit stay protected until the case is closed, and nobody knows when that will be. Which combination of S3 features meets both requirements? (Choose two.)'
+options:
+  - key: A
+    text: 'Object Lock retention of seven years using governance mode'
+    correct: false
+    why: 'In governance mode, users holding the s3:BypassGovernanceRetention permission can delete the objects or change the lock settings, so it fails the requirement that no one can.'
+  - key: B
+    text: 'Object Lock retention of seven years using compliance mode'
+    correct: true
+    why: 'In compliance mode a protected version stays undeletable and unchangeable for everyone, the root user too, and the mode cannot be changed nor the period shortened during retention.'
+  - key: C
+    text: 'An Object Lock legal hold on the affected object versions'
+    correct: true
+    why: 'A legal hold gives WORM protection with no expiry date, independent of the retention period, until someone with s3:PutObjectLegalHold removes it. This fits an open-ended case.'
+  - key: D
+    text: 'Enable MFA Delete on the bucket'
+    correct: false
+    why: 'MFA Delete only adds a second factor to permanent version deletes. The bucket owner can still delete versions with a valid code, so the data is not immutable.'
+  - key: E
+    text: 'An S3 Glacier Vault Lock policy attached to the bucket'
+    correct: false
+    why: 'Vault Lock policies apply to vaults in the standalone Glacier service, not to objects in an S3 bucket.'
+cue: 'even root cannot delete + indefinite hold with unknown end date -> compliance mode plus legal hold'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html'
+  - 'https://docs.aws.amazon.com/amazonglacier/latest/dev/vault-lock.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

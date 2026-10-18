@@ -1,0 +1,40 @@
+id: 'd3-3.5-0001'
+domain: 3
+task: '3.5'
+services:
+  - 'firehose'
+  - 'lambda'
+  - 'glue'
+  - 's3'
+  - 'athena'
+difficulty: medium
+type: single
+stem: 'A logistics company has thousands of delivery vehicles that send telemetry to the cloud as CSV lines, several times per second per vehicle. Data analysts want to query the telemetry with Amazon Athena, and they need the data in Amazon S3 as a columnar format within a few minutes of being produced. Nobody needs to re-read old records from the ingestion layer, and the operations team is small and does not want to manage servers or write consumer code. Which design needs the LEAST operational work?'
+options:
+  - key: A
+    text: 'Send the records to a Kinesis data stream. Run a Kinesis Client Library application on an EC2 Auto Scaling group that parses the CSV, builds Parquet files and uploads them to S3.'
+    correct: false
+    why: 'It would work technically, but you would write and operate the consumer fleet (KCL code, instances, scaling, checkpointing). The replay capability of a data stream is not needed here, so this adds a lot of overhead for no benefit.'
+  - key: B
+    text: 'Send the records to an Amazon Data Firehose stream with a Lambda function that converts each CSV batch to JSON, enable record format conversion to Parquet using a table schema in the AWS Glue Data Catalog, and deliver to an S3 bucket.'
+    correct: true
+    why: 'Firehose is fully managed and serverless, buffers and delivers to S3 in near real time, and can call Lambda to turn CSV into JSON. Its format conversion only accepts JSON as input and uses a Glue Data Catalog schema to write Parquet, so the Lambda step plus the Glue table gives columnar files in S3 with no servers to run.'
+  - key: C
+    text: 'Send the records to an Amazon Data Firehose stream that delivers the raw CSV to S3, and add an S3 Lifecycle rule that converts the objects to Parquet after one day.'
+    correct: false
+    why: 'S3 Lifecycle rules only transition or expire objects; they cannot change the file format. The data would also stay as CSV and not be in columnar format within minutes.'
+  - key: D
+    text: 'Send each record to an Amazon SQS standard queue and use a Lambda function triggered by the queue to write every message to S3 as its own object, then query it with Athena.'
+    correct: false
+    why: 'Nothing here converts the data to Parquet, and writing one tiny object per message creates a huge number of small files that slow Athena queries and raise request costs. Firehose batching is the managed way to avoid this.'
+cue: 'CSV in, columnar format in S3 within minutes, no replay, no servers or consumer code, least operational overhead -> Firehose + Lambda transform + Parquet conversion with Glue schema'
+references:
+  - 'https://docs.aws.amazon.com/firehose/latest/dev/record-format-conversion.html'
+  - 'https://docs.aws.amazon.com/firehose/latest/dev/data-transformation.html'
+  - 'https://docs.aws.amazon.com/firehose/latest/dev/what-is-this-service.html'
+  - 'https://docs.aws.amazon.com/streams/latest/dev/introduction.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

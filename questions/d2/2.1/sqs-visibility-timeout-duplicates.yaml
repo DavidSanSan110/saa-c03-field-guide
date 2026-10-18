@@ -1,0 +1,35 @@
+id: 'd2-2.1-0002'
+domain: 2
+task: '2.1'
+services:
+  - 'sqs'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A media company queues video-transcoding jobs in an Amazon SQS standard queue that still uses its default settings. Worker instances in an Auto Scaling group receive a job, transcode it, and delete the message when the output is saved. Most jobs take 2 to 5 minutes. The operations team notices that many videos are transcoded two or three times, even though no worker crashes and the jobs eventually succeed. Which change fixes the duplicate processing with the least effort?'
+options:
+  - key: A
+    text: 'Migrate to a FIFO queue and enable content-based deduplication.'
+    correct: false
+    why: 'Deduplication only prevents the same message from being sent into the queue twice. The messages here are sent once and are redelivered because they became visible again, a behavior that FIFO queues have too, so a migration would not solve it.'
+  - key: B
+    text: "Set the queue's visibility timeout above the longest expected job time, and have workers call ChangeMessageVisibility to extend it for unusually long jobs."
+    correct: true
+    why: 'The default visibility timeout is 30 seconds. A job that runs longer than that is still being processed when its message becomes visible again, so another worker receives it. A timeout that covers the processing time, extended on demand for outliers, keeps the message hidden until the worker deletes it.'
+  - key: C
+    text: 'Turn on long polling by setting the receive wait time to 20 seconds.'
+    correct: false
+    why: 'Long polling reduces empty responses and API calls by letting a receive request wait for messages. It has no effect on how long a received message stays hidden.'
+  - key: D
+    text: 'Increase the message retention period to 14 days.'
+    correct: false
+    why: 'Retention controls how long an unconsumed message is kept before SQS deletes it. It does not stop a message from being delivered again while it is being processed.'
+cue: 'Jobs run for minutes on a queue with default settings and the same message is handled more than once without any crash: the 30-second visibility timeout is shorter than the processing time.'
+references:
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html'
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-queue-types.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

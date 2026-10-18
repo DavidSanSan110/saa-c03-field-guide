@@ -1,0 +1,36 @@
+id: 'd3-3.1-0004'
+domain: 3
+task: '3.1'
+services:
+  - 'fsx'
+  - 's3'
+difficulty: medium
+type: single
+stem: 'A genomics company stores its sequencing datasets in Amazon S3. Once a week it runs a multi-day analysis on hundreds of Linux compute nodes that need a shared file system with sub-millisecond latency and very high aggregate throughput. The datasets should appear as files to the nodes, the results must be written back to S3, and the file system is deleted after each run. The company wants to keep cost low. Which solution fits best?'
+options:
+  - key: A
+    text: 'Amazon FSx for Lustre scratch file system linked to the S3 bucket'
+    correct: true
+    why: 'FSx for Lustre is built for HPC workloads, offers sub-millisecond latency, presents S3 objects as files, and can write results back to S3. Scratch deployments suit temporary, short-term processing and cost less because data is not replicated.'
+  - key: B
+    text: 'Amazon FSx for Lustre persistent file system linked to the S3 bucket'
+    correct: false
+    why: 'Persistent file systems replicate data and replace failed servers, which is meant for longer-term storage and workloads that run indefinitely. That extra resilience is not needed for a temporary file system that is deleted after each run, so it raises cost.'
+  - key: C
+    text: 'Amazon EFS file system with the Max I/O performance mode, loaded from S3 with a script before each run'
+    correct: false
+    why: 'EFS is a general-purpose shared NFS file system and does not natively present an S3 bucket as files; you would have to copy data in and out yourself, and it is not the parallel file system designed for HPC.'
+  - key: D
+    text: 'An io2 volume with Multi-Attach enabled, shared by all the compute nodes'
+    correct: false
+    why: 'Multi-Attach supports at most 16 Nitro instances in a single Availability Zone, far fewer than hundreds of nodes, and it requires a cluster-aware file system and has no link to S3.'
+cue: 'HPC, S3 dataset appears as files, results back to S3, temporary run -> FSx for Lustre scratch'
+references:
+  - 'https://docs.aws.amazon.com/fsx/latest/LustreGuide/what-is.html'
+  - 'https://docs.aws.amazon.com/fsx/latest/LustreGuide/using-fsx-lustre.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volumes-multi.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

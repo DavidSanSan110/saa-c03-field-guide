@@ -1,0 +1,36 @@
+id: 'd3-3.1-0002'
+domain: 3
+task: '3.1'
+services:
+  - 'efs'
+  - 'ebs'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A media company runs a content management system on Linux EC2 instances that Auto Scaling spreads over three Availability Zones. Every instance must read and write the same uploaded images and documents, the data volume is hard to predict and may reach several terabytes, and the team does not want to provision or resize storage. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create a Regional Amazon EFS file system and mount it on all instances using NFS'
+    correct: true
+    why: 'EFS is a shared, POSIX-compatible NFS file system that many Linux instances can mount at the same time across Availability Zones. It grows and shrinks automatically, so no capacity has to be provisioned.'
+  - key: B
+    text: 'Create one io2 volume with Multi-Attach enabled and attach it to every instance, formatted with ext4'
+    correct: false
+    why: 'Multi-Attach only works for instances in the same Availability Zone (up to 16 Nitro instances), so it cannot serve three AZs. Standard file systems like ext4 are also not designed for simultaneous access by several servers.'
+  - key: C
+    text: 'Give each instance its own gp3 volume and run a scheduled job that copies new files between the instances'
+    correct: false
+    why: 'Each gp3 volume is private to one instance and bound to one AZ, so users could see different content until the next sync, and every volume still has to be sized in advance.'
+  - key: D
+    text: 'Store the files on instance store volumes and replicate them between instances with rsync'
+    correct: false
+    why: 'Instance store is ephemeral: data is lost when an instance stops or terminates, which happens routinely in an Auto Scaling group, and it is local to a single host rather than shared.'
+cue: 'many Linux instances, several AZs, same files, no capacity planning -> EFS (EBS Multi-Attach is single-AZ)'
+references:
+  - 'https://docs.aws.amazon.com/efs/latest/ug/whatisefs.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volumes-multi.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

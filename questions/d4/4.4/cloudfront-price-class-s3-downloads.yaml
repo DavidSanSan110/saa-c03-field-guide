@@ -1,0 +1,38 @@
+id: 'd4-4.4-0001'
+domain: 4
+task: '4.4'
+services:
+  - 'cloudfront'
+  - 's3'
+  - 'global-accelerator'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A training company stores large video lessons in a single Amazon S3 bucket in one Region, and learners download them directly from the bucket. The same popular files are requested many times a day. Almost all learners live in two continents, and the company accepts slower downloads for the few learners elsewhere. The monthly data transfer bill is high, and the company wants to reduce cost while improving download speed for most learners, without changing the application code. Which solution is the MOST cost-effective?'
+options:
+  - key: A
+    text: 'Put a Global Accelerator (standard type) in front with the bucket added as an endpoint, so that learners use the two static IP addresses.'
+    correct: false
+    why: 'A standard accelerator only takes load balancers, EC2 instances or Elastic IPs as endpoints; a bucket is not one of them. It also adds a fixed hourly fee plus a data transfer premium and does not cache, so repeated downloads would still come from the bucket.'
+  - key: B
+    text: 'Create an Amazon CloudFront distribution with the bucket as the origin and leave the price class at its default so that every edge location can serve the files.'
+    correct: false
+    why: 'Caching and the lower CloudFront data transfer rate help, but serving from all edge locations puts no ceiling on the rates paid. The company already said it tolerates slower downloads outside its two main continents, so a lower price class would cut cost further.'
+  - key: C
+    text: 'Enable S3 Cross-Region Replication to a bucket in a Region near each group of learners and send each learner to the nearest bucket.'
+    correct: false
+    why: 'Each extra copy adds storage and replication charges, learners still pay S3 data transfer rates, and the application would need routing logic to pick a bucket. The task also asks for no code changes.'
+  - key: D
+    text: 'Create an Amazon CloudFront distribution with the bucket as the origin, restrict the bucket to the distribution with origin access control, and choose a price class that covers only the Regions where most learners are.'
+    correct: true
+    why: 'Popular files are cached at edge locations, so the bucket is hit less often, and for frequently accessed content CloudFront data transfer costs less than serving from S3 directly. A price class other than All limits serving to the cheaper edge locations; viewers outside them may see slower performance, which the company accepts.'
+cue: 'same popular files requested many times, a few learners elsewhere can be slower, reduce transfer cost -> CloudFront with a restricted price class, not Global Accelerator'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistS3AndCustomOrigins.html'
+  - 'https://docs.aws.amazon.com/cloudfront/latest/APIReference/API_DistributionConfig.html'
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/what-is-global-accelerator.html'
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/introduction-pricing.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

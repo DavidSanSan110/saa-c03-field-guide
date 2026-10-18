@@ -1,0 +1,40 @@
+id: 'd4-4.2-0002'
+domain: 4
+task: '4.2'
+services:
+  - 'ec2'
+  - 'spot-fleet'
+  - 'sqs'
+difficulty: medium
+type: multiple
+stem: 'A media company transcodes uploaded videos with worker instances that pull jobs from an Amazon SQS queue. Each job is idempotent, writes checkpoints to Amazon S3, and can be repeated on another instance without harm. Jobs take from 20 minutes to 2 hours and have no strict deadline. The workers need roughly 200 vCPUs in total, and the company wants the lowest possible compute cost while keeping interruptions manageable. Which actions should a solutions architect take? Choose two.'
+options:
+  - key: A
+    text: 'Request the workers through a Spot Fleet that uses the priceCapacityOptimized allocation strategy.'
+    correct: true
+    why: 'This strategy picks the Spot pools with the most available capacity, so interruptions are less likely, and then takes the cheapest of those pools. Spot is the right fit for stateless, restartable batch work.'
+  - key: B
+    text: 'List many instance types and sizes in the launch specifications and enable every Availability Zone of the VPC.'
+    correct: true
+    why: 'A Spot capacity pool is an instance type in an Availability Zone. The more pools the fleet may choose from, the easier it is to find capacity and the lower the chance of interruption.'
+  - key: C
+    text: 'Use the lowestPrice allocation strategy with a single instance type in one Availability Zone.'
+    correct: false
+    why: 'lowestPrice only looks at price and not at capacity, so it has the highest interruption risk. Restricting the request to one pool makes this worse.'
+  - key: D
+    text: 'Buy three-year Standard Reserved Instances covering the full 200 vCPUs.'
+    correct: false
+    why: 'Reserved Instances are meant for steady, predictable usage. Variable, interruptible queue work costs far less on Spot, and a fixed three-year commitment risks paying for idle capacity.'
+  - key: E
+    text: 'Allocate Dedicated Hosts so the workers cannot be interrupted.'
+    correct: false
+    why: 'Dedicated Hosts are the most expensive option and are meant for per-core licensing or compliance. They add cost that this scenario does not need.'
+cue: 'idempotent, checkpointed, no deadline, lowest cost -> Spot with priceCapacityOptimized and many capacity pools'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-fleet-allocation-strategy.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-best-practices.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

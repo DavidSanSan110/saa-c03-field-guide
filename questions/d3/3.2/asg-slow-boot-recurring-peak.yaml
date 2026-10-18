@@ -1,0 +1,44 @@
+id: 'd3-3.2-0003'
+domain: 3
+task: '3.2'
+services:
+  - 'ec2-auto-scaling'
+  - 'ec2'
+difficulty: hard # easy | medium | hard
+type: multiple # single | multiple
+stem: 'An online learning platform runs its web tier on EC2 instances managed by Auto Scaling, fronted by an Application Load Balancer. Every weekday at about the same time, traffic climbs sharply as classes begin. Each new instance needs roughly eight minutes after launch to load large data files to disk before it can serve traffic, so users see slow responses at the start of each class while a target tracking policy catches up. The team wants to fix this without paying for a fleet that is running at full size all day. Which actions should a solutions architect take? Choose two.'
+options:
+  - key: A
+    text: "Add a predictive scaling policy based on the group's historical load, with instances pre-launched ahead of the forecasted increase."
+    correct: true
+    why: 'The traffic repeats daily and the application is slow to initialize, which is the use case predictive scaling targets. It forecasts capacity from past load and launches instances ahead of the peak, so they are ready when users arrive. Keeping the existing dynamic policy handles unexpected extra load.'
+  - key: B
+    text: 'Configure a warm pool of pre-initialized instances for the Auto Scaling group, kept in the Stopped or Hibernated state, with a lifecycle hook that waits for initialization to finish.'
+    correct: true
+    why: 'A warm pool is designed for long boot times: instances are initialized in advance and kept stopped (paying only for storage) or hibernated, so a scale-out event only needs a quick warm start instead of an eight-minute cold boot.'
+  - key: C
+    text: 'Increase the cooldown period of the scaling policy to 15 minutes.'
+    correct: false
+    why: 'A longer cooldown only delays the next scaling action, so the group would react to the traffic spike even more slowly. It does nothing about the eight-minute initialization time of each instance.'
+  - key: D
+    text: "Set the group's minimum and desired capacity to the peak size around the clock."
+    correct: false
+    why: 'This would remove the delay but breaks the requirement not to run a full-size fleet all day, so it wastes money during the long off-peak periods.'
+  - key: E
+    text: 'Launch the instances in a cluster placement group.'
+    correct: false
+    why: 'A cluster placement group lowers network latency between instances. It has no effect on how long an instance takes to initialize or on when scaling starts.'
+  - key: F
+    text: 'Change the group to use Spot Instances only.'
+    correct: false
+    why: 'Spot Instances lower the price per hour but do not shorten the boot time or make scaling start sooner, and they can be interrupted.'
+cue: 'same peak every weekday, slow initialization, not full fleet all day -> predictive scaling + warm pool'
+references:
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-predictive-scaling.html'
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/predictive-scaling-policy-overview.html'
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/ec2-auto-scaling-warm-pools.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

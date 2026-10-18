@@ -1,0 +1,34 @@
+id: 'd3-3.2-0001'
+domain: 3
+task: '3.2'
+services:
+  - 'ec2'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'An engineering firm runs computational fluid dynamics simulations on a fleet of 32 EC2 instances. The nodes exchange large volumes of data with each other continuously, so the job finishes sooner when node-to-node latency is as low as possible and per-flow network throughput is as high as possible. A node failure can simply be handled by re-running the job. Which deployment gives the best network performance between the nodes?'
+options:
+  - key: A
+    text: 'Launch all 32 instances in one cluster placement group in a single Availability Zone, using one instance type that supports enhanced networking, in a single launch request.'
+    correct: true
+    why: 'A cluster placement group packs instances close together in one AZ, giving low latency and a higher per-flow limit (up to 10 Gbps with enhanced networking, against 5 Gbps outside the group). Using one instance type and one launch request also lowers the risk of insufficient-capacity errors. Losing the group to a hardware failure is acceptable here because the job can be re-run.'
+  - key: B
+    text: 'Launch the instances in a spread placement group so that each instance runs on distinct hardware.'
+    correct: false
+    why: 'Spread groups put each instance on separate racks to reduce correlated failures, are limited to seven running instances per AZ, and do nothing to lower latency between nodes. They are meant for a few critical instances, not tightly coupled compute.'
+  - key: C
+    text: 'Launch the instances in a partition placement group with seven partitions, spread across three Availability Zones.'
+    correct: false
+    why: 'Partition groups isolate sets of instances on separate racks for large distributed stores such as HDFS, Cassandra or Kafka. Placing nodes in different partitions and AZs increases the distance between them, which is the opposite of what the workload needs.'
+  - key: D
+    text: 'Spread the nodes over three Availability Zones with Auto Scaling and put a Network Load Balancer in front.'
+    correct: false
+    why: 'Multi-AZ distribution improves availability, but a cluster placement group cannot span AZs and is what provides the high-bisection, low-latency network segment. A load balancer is also irrelevant to direct node-to-node communication.'
+cue: 'tightly coupled, node-to-node, lowest latency, highest throughput, failure tolerable -> cluster placement group'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/placement-strategies.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/placement-groups.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

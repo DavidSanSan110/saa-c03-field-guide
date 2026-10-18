@@ -1,0 +1,38 @@
+id: 'd3-3.2-0002'
+domain: 3
+task: '3.2'
+services:
+  - 'ecs'
+  - 'fargate'
+  - 'eventbridge'
+  - 'lambda'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A media company has a containerized video re-indexing job that runs every night and takes about two hours to complete. The team prototyped it as an AWS Lambda function but each run is stopped before it finishes, even with the maximum memory configured. The team wants to keep the existing container image without rewriting the code, pay only while the job runs, and avoid managing servers. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Keep the Lambda function, set its memory to 10,240 MB and its timeout to the maximum, and trigger it with a nightly schedule.'
+    correct: false
+    why: 'The maximum Lambda timeout is 900 seconds (15 minutes) and cannot be raised, whatever the memory. A two-hour job will still be cut off.'
+  - key: B
+    text: 'Run the image as an Amazon ECS task on AWS Fargate, started each night by an Amazon EventBridge Scheduler schedule.'
+    correct: true
+    why: 'Fargate runs the existing container without any instances to provision or patch, and billing is only for the task while it runs. EventBridge Scheduler can start an ECS RunTask on a cron schedule, and a container task is not bound by the 15-minute Lambda limit.'
+  - key: C
+    text: 'Run the image on an ECS cluster with the EC2 launch type, using an Auto Scaling group of instances that stays running all day.'
+    correct: false
+    why: 'This would work technically, but the team must provision and patch the instances, and paying for them around the clock for a two-hour nightly job is neither serverless nor cost-effective.'
+  - key: D
+    text: 'Enable provisioned concurrency on the Lambda function so that the execution environment is already initialized when the schedule fires.'
+    correct: false
+    why: 'Provisioned concurrency removes cold-start latency; it does not change the 15-minute execution limit. The job would still be terminated at the timeout.'
+cue: 'job runs hours, Lambda stops at 15 min, keep container image, no servers -> ECS on Fargate + scheduler'
+references:
+  - 'https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html'
+  - 'https://docs.aws.amazon.com/AmazonECS/latest/developerguide/AWS_Fargate.html'
+  - 'https://docs.aws.amazon.com/AmazonECS/latest/developerguide/scheduled_tasks.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

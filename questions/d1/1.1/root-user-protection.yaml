@@ -1,0 +1,34 @@
+id: 'd1-1.1-0007'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+difficulty: easy
+type: single
+stem: "A startup has just created a new standalone AWS account. Three engineers need to deploy and manage resources every day. The company wants to follow IAM best practices to protect the account's root user. Which approach should the company take?"
+options:
+  - key: A
+    text: 'Enable MFA on the root user, do not create access keys for it, and give the engineers their own IAM identities with only the permissions they need for daily work.'
+    correct: true
+    why: 'The root user has unrestricted access, so it should be protected with MFA, have no access keys, and be kept for the few tasks that require it. Daily work happens under separate identities with least privilege.'
+  - key: B
+    text: 'Share the root user password with the three engineers through a team password manager and rotate it every 90 days.'
+    correct: false
+    why: 'Sharing root credentials removes accountability and gives everyone unrestricted access to the account. Rotation does not make daily use of the root user acceptable.'
+  - key: C
+    text: 'Create an access key for the root user and store it in the CI/CD pipeline so that deployments run without a person signing in.'
+    correct: false
+    why: 'Root access keys give full control of the account, including billing, and should not be created. Automation should use an IAM role with temporary credentials.'
+  - key: D
+    text: 'Use a long, complex root password as the only protection and sign in as the root user for daily work, since it is faster.'
+    correct: false
+    why: 'A password alone is a single factor, and using the root user for routine tasks exposes the most privileged identity in the account. MFA and a separate administrative identity are expected.'
+cue: 'root user + new account -> MFA, no access keys, do not use for daily tasks'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/root-user-best-practices.html'
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/best-practices.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

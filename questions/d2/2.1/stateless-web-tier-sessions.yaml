@@ -1,0 +1,45 @@
+id: 'd2-2.1-0007'
+domain: 2
+task: '2.1'
+services:
+  - 'elb'
+  - 'auto-scaling'
+  - 'elasticache'
+difficulty: medium
+type: multiple
+stem: "An online store serves traffic through an Application Load Balancer to EC2 instances managed by Auto Scaling. Shopping carts are kept in each instance's memory and the target group uses sticky sessions. Customers lose their carts when an instance fails or is removed during scale-in, and a few instances are overloaded because heavy users stay pinned to them. The company wants to scale in and out freely without affecting customers. Which two actions should a solutions architect take? Choose two."
+options:
+  - key: A
+    text: 'Keep the session identifier in a cookie and store the cart data in an Amazon ElastiCache cluster shared by all instances.'
+    correct: true
+    why: 'Moving the session data out of the instance makes the web tier stateless. Any instance can read the cart by session ID, so losing or adding instances no longer loses state.'
+  - key: B
+    text: 'After the session data is external, turn off stickiness on the target group so that the load balancer distributes requests with its routing algorithm.'
+    correct: true
+    why: 'With stickiness on, only the first request is routed by the algorithm and later ones are bound to the same target, which causes the uneven load. Once state lives in a shared store, stickiness is no longer needed and requests spread across all healthy instances.'
+  - key: C
+    text: 'Increase the stickiness duration to the maximum of 7 days so that customers stay on the same instance.'
+    correct: false
+    why: 'If the pinned instance becomes unhealthy or is deregistered, the load balancer picks another target anyway and the in-memory cart is gone. A longer duration also keeps heavy users on the same instance longer.'
+  - key: D
+    text: 'Enable instance scale-in protection on all instances in the Auto Scaling group.'
+    correct: false
+    why: 'This stops scaling in altogether, which defeats the purpose of the group, and does nothing for carts lost when an instance fails or when an Availability Zone has a problem.'
+  - key: E
+    text: 'Switch the target group routing algorithm to least outstanding requests and keep stickiness enabled.'
+    correct: false
+    why: 'With stickiness enabled the algorithm is used only to choose the first target, so the imbalance remains. The cart still lives in instance memory and is lost with the instance.'
+  - key: F
+    text: 'Add more EC2 instances to the Auto Scaling group so that each instance holds fewer customer carts.'
+    correct: false
+    why: "Smaller per-instance load does not remove the dependency on one instance's memory. A failed or terminated instance still takes its customers' carts with it."
+cue: 'Carts lost when instances are replaced and uneven load from sticky sessions: externalize session state (ElastiCache or DynamoDB) and drop stickiness so the web tier is stateless.'
+references:
+  - 'https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-target-group-attributes.html'
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/WhatIs.html'
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/elasticache-use-cases.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,33 @@
+id: 'd3-3.3-0003'
+domain: 3
+task: '3.3'
+services:
+  - 'documentdb'
+difficulty: easy
+type: single
+stem: 'A media company runs a self-managed MongoDB replica set on Amazon EC2 instances to store JSON content metadata. The operations team spends a lot of time on patching, backups and scaling reads. The developers want a fully managed AWS database with read replicas and automatically growing storage, and they want to keep using the existing MongoDB drivers and application code with as few changes as possible. Which database should the company choose?'
+options:
+  - key: A
+    text: 'Amazon DynamoDB'
+    correct: false
+    why: "DynamoDB is a managed NoSQL service, but it has its own API and requires key and access-pattern design up front, so the application's MongoDB queries and drivers would have to be rewritten."
+  - key: B
+    text: 'Amazon DocumentDB (with MongoDB compatibility)'
+    correct: true
+    why: 'DocumentDB is a managed document database that works with MongoDB drivers and tools. Its storage grows automatically in 10 GB increments, and it supports up to 15 replica instances with a reader endpoint, which covers the operational and read scaling needs with minimal code change.'
+  - key: C
+    text: 'Amazon Keyspaces (for Apache Cassandra)'
+    correct: false
+    why: 'Keyspaces is a wide-column store queried with CQL and Cassandra drivers. It is not compatible with the MongoDB wire protocol or document queries.'
+  - key: D
+    text: 'Amazon Neptune'
+    correct: false
+    why: 'Neptune stores graphs of relationships queried with graph languages. It is not a replacement for a MongoDB document store.'
+cue: 'self-managed MongoDB, keep MongoDB drivers and code, JSON documents, managed read replicas -> DocumentDB'
+references:
+  - 'https://docs.aws.amazon.com/documentdb/latest/developerguide/what-is.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

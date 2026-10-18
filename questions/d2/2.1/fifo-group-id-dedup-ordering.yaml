@@ -1,0 +1,42 @@
+id: 'd2-2.1-0003'
+domain: 2
+task: '2.1'
+services:
+  - 'sqs'
+difficulty: hard
+type: multiple
+stem: "A bank's ledger service receives account transactions (deposits, withdrawals, transfers) from several channel gateways. Transactions for the same account must be applied in the order they were submitted, while transactions for different accounts are independent. The bank wants a fleet of many consumer instances working in parallel. The gateways retry SendMessage after network timeouts, and a retried transaction must never end up in the queue twice. Which two actions meet these requirements? Choose two."
+options:
+  - key: A
+    text: 'Use an SQS FIFO queue and set the MessageGroupId of every message to the account number.'
+    correct: true
+    why: "FIFO ordering is guaranteed within a message group. Using the account number as the group keeps each account's transactions in order, and messages of different groups can be handed to different consumers at the same time."
+  - key: B
+    text: 'Use an SQS standard queue and have the consumers sort transactions by timestamp before applying them.'
+    correct: false
+    why: 'A standard queue may deliver a message more than once and out of order, and parallel consumers can receive neighboring messages simultaneously. Sorting in the application cannot reliably restore the order and does not remove duplicates.'
+  - key: C
+    text: 'Use an SQS FIFO queue and give all messages the same MessageGroupId so that the consumers can share the work freely.'
+    correct: false
+    why: 'With a single group, no further message of that group is delivered until the in-flight one is deleted or becomes visible again. This forces strictly sequential processing and removes the parallelism the bank wants.'
+  - key: D
+    text: 'On the FIFO queue, set MessageDeduplicationId to a unique transaction ID that the gateway reuses on every retry of the same transaction.'
+    correct: true
+    why: 'A retry that carries the same deduplication ID within the deduplication interval is accepted without creating a second message, and it does not disturb the order. A new ID on each retry would defeat this.'
+  - key: E
+    text: 'Use an SQS FIFO queue and generate a random MessageGroupId for each individual message to maximize parallelism.'
+    correct: false
+    why: 'Every message would be its own group, and FIFO ordering is only enforced inside a group. Two transactions of the same account could be processed concurrently or out of order.'
+  - key: F
+    text: 'Use an SQS FIFO queue and have each consumer instance pass the account range it owns as the message group when calling ReceiveMessage.'
+    correct: false
+    why: 'A consumer cannot ask for messages of a specific message group. SQS decides which groups a receive call returns, so account ownership cannot be pinned to instances this way.'
+cue: 'Order per account, parallel consumers, retried sends without duplicates: FIFO queue with the account as MessageGroupId plus a stable MessageDeduplicationId.'
+references:
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-understanding-logic.html'
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-queue-types.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

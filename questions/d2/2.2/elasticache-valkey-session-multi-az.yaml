@@ -1,0 +1,42 @@
+id: 'd2-2.2-0007'
+domain: 2
+task: '2.2'
+services:
+  - 'elasticache'
+difficulty: medium
+type: multiple
+stem: 'An online ticketing company is moving user session data out of its web servers and into Amazon ElastiCache so the web tier can be stateless. The session store must survive the loss of an Availability Zone with only a few seconds of interrupted writes, and the application must not need an endpoint change when a failover happens. Which combination of actions meets these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Create a Valkey or Redis OSS replication group with at least one replica in a different Availability Zone and enable Multi-AZ with automatic failover.'
+    correct: true
+    why: 'With Multi-AZ enabled, ElastiCache promotes the replica with the least replication lag when the primary or its zone fails, typically within seconds, and then provisions a replacement replica.'
+  - key: B
+    text: "Have the application send its writes to the replication group's primary endpoint."
+    correct: true
+    why: 'ElastiCache propagates the DNS name of the promoted replica to the primary endpoint, so an application that uses it keeps working after failover without any endpoint change.'
+  - key: C
+    text: 'Create a Memcached cluster with nodes in several Availability Zones.'
+    correct: false
+    why: 'Memcached nodes shard the data but do not replicate it and have no automatic failover. If a node or its zone fails, the sessions stored on it are lost.'
+  - key: D
+    text: 'Run a single-node Valkey or Redis OSS cluster and take a daily backup.'
+    correct: false
+    why: 'A single node has no replica to promote. After a failure a new node starts empty or must be restored from a snapshot, causing a long outage and loss of recent sessions.'
+  - key: E
+    text: 'Configure the application with the node endpoint of the current primary instead of the primary endpoint.'
+    correct: false
+    why: 'An individual node endpoint stays tied to that node. After a failover the promoted replica has a different node endpoint, so the application would have to be reconfigured.'
+  - key: F
+    text: 'Place the primary and all replicas in the same Availability Zone to keep replication latency low.'
+    correct: false
+    why: 'Multi-AZ requires a replica in a different Availability Zone from the primary. Keeping every node in one zone gives no protection against that zone failing.'
+cue: 'session store, survive AZ loss, no endpoint change -> Redis/Valkey replication group with Multi-AZ failover, use the primary endpoint'
+references:
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/AutoFailover.html'
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/SelectEngine.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,35 @@
+id: 'd3-3.3-0001'
+domain: 3
+task: '3.3'
+services:
+  - 'lambda'
+  - 'rds'
+  - 'rds-proxy'
+difficulty: medium
+type: single
+stem: "A ticketing company runs its order API on AWS Lambda. Each invocation queries and updates a MySQL database on Amazon RDS (Multi-AZ). During flash sales, thousands of functions start at the same moment, and the database logs 'too many connections' errors while its CPU and memory climb sharply. The team wants the API to keep scaling without errors, wants to avoid rewriting the data access logic, and does not want to pay for a much larger DB instance. Which solution meets these requirements?"
+options:
+  - key: A
+    text: 'Create an RDS read replica and change the functions to send all of their queries to the replica endpoint.'
+    correct: false
+    why: 'A replica accepts only reads, so the order updates would fail. Each invocation would also still open its own connection, so the connection surge would only move to the replica.'
+  - key: B
+    text: 'Create an RDS Proxy for the DB instance, place the Lambda functions in the same VPC, and change the connection string to the proxy endpoint.'
+    correct: true
+    why: 'RDS Proxy holds a shared pool of open connections that many short-lived callers borrow, which prevents connection oversubscription and the CPU and memory cost of opening a new connection per invocation. It needs only an endpoint change, and because the proxy is never publicly accessible, the functions must run in the VPC.'
+  - key: C
+    text: 'Move the DB instance to a larger instance class so that the max_connections limit is higher.'
+    correct: false
+    why: 'This raises the ceiling but does not stop the connection churn, and it contradicts the requirement not to pay for a much larger instance. A large enough spike would hit the new limit again.'
+  - key: D
+    text: 'Keep the Multi-AZ deployment and add an ElastiCache cluster that the functions query before they reach the database.'
+    correct: false
+    why: 'A cache offloads repeated reads only, requires changes to the application code, and does nothing for the writes that still open a new connection for every invocation. The standby of a Multi-AZ deployment also does not serve traffic.'
+cue: "thousands of Lambda functions at once, 'too many connections', no rewrite of data access logic -> pool connections with RDS Proxy (functions in the VPC)"
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

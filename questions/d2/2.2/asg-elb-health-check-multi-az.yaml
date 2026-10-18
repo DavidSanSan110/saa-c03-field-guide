@@ -1,0 +1,40 @@
+id: 'd2-2.2-0001'
+domain: 2
+task: '2.2'
+services:
+  - 'auto-scaling'
+  - 'elb'
+  - 'ec2'
+difficulty: medium
+type: multiple
+stem: 'A retailer runs a stateless storefront on EC2 instances that Auto Scaling manages, with an Application Load Balancer in front. The load balancer has nodes enabled in three Availability Zones, but the Auto Scaling group was configured with subnets from only one of them. During the last incident the web process on two instances hung while the EC2 status checks stayed green. The load balancer stopped sending them traffic, but the instances stayed in the group and capacity shrank until staff replaced them by hand. The company wants the storefront to keep running if a whole Availability Zone is lost, and wants hung instances replaced without human action. Which combination of changes meets these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Add subnets from the other two Availability Zones to the Auto Scaling group so that instances are spread across all three zones.'
+    correct: true
+    why: 'The group launches instances in the zone with the fewest instances and, if a zone becomes unavailable, launches replacements in the remaining enabled zones. Spreading the group over several zones is what removes the single-AZ failure point.'
+  - key: B
+    text: 'Turn on Elastic Load Balancing health checks for the Auto Scaling group.'
+    correct: true
+    why: 'By default the group only looks at EC2 status checks and ignores what the load balancer thinks. With ELB health checks enabled, an instance the load balancer reports as unhealthy is marked unhealthy by the group and replaced automatically.'
+  - key: C
+    text: 'Launch the instances into a cluster placement group to keep them close together.'
+    correct: false
+    why: 'A cluster placement group lives in a single Availability Zone, so it concentrates the fleet in one failure domain. It also does nothing to detect or replace a hung application.'
+  - key: D
+    text: 'Associate an Elastic IP address with every instance so a failed instance can be recognised by its address.'
+    correct: false
+    why: 'Elastic IPs are disassociated when an instance is terminated and are not automatically attached to its replacement. They add manual work and neither spread the fleet over zones nor detect application hangs.'
+  - key: E
+    text: 'Raise the deregistration delay on the target group to 3600 seconds.'
+    correct: false
+    why: 'The deregistration delay only controls how long in-flight requests get to finish while a target is being removed. It does not add zones to the group and does not cause a hung instance to be replaced.'
+cue: 'ASG subnets in only one AZ; instances hung but EC2 status checks green and ELB marks them unhealthy'
+references:
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-benefits.html'
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/health-checks-overview.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
