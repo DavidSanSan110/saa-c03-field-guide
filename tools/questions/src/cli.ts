@@ -1,5 +1,5 @@
-// Questions CLI: argument parsing, file I/O and exit codes only; the logic is in bank.ts and
-// dedupe.ts.
+// Questions CLI: argument parsing, file I/O, the fetch and exit codes only; the logic is in bank.ts,
+// dedupe.ts, sidecar.ts, brief.ts and verify.ts.
 import {
   copyFileSync,
   constants,
@@ -12,8 +12,10 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname } from 'node:path';
-import { isTaskId } from '@field-guide/schema';
+import { dirname, resolve } from 'node:path';
+import { isTaskId, validateQuestion } from '@field-guide/schema';
+import type { Question, TaskId } from '@field-guide/schema';
+import { parse } from 'yaml';
 import {
   collectIds,
   findIdCollisions,
@@ -23,7 +25,18 @@ import {
   sidecarPath,
 } from './bank.ts';
 import type { BankResult, FileMap, Problem, PromoteMove } from './bank.ts';
+import { feedingSections, completedDate, nextIds, parseSectionMap, renderBrief } from './brief.ts';
 import { findSimilar, roundScore, similarByDraft, withDedupe } from './dedupe.ts';
+import { withSidecarKey } from './sidecar.ts';
+import {
+  judge,
+  pageToCheck,
+  parseResults,
+  questionDigest,
+  quoteCheckOf,
+  renderBlind,
+} from './verify.ts';
+import type { VerifierResult } from './verify.ts';
 
 const USAGE = `Usage:
   questions check [options]                      read both folders and print every problem
@@ -33,6 +46,13 @@ const USAGE = `Usage:
   questions dedupe [--threshold <t>] [--write] [options]
                                                  flag drafts that nearly repeat another question;
                                                  --write records it in each draft's check file
+  questions brief <task> [--count <n>] [--notes <dir>] [--map <file>]
+                                                 print the brief of the question writer for a task
+                                                 (studied sections only)
+  questions blind [--pending] [<file>...]        print drafts without their key, for the verifier
+  questions verdict <results.yaml> [--write] [--no-fetch]
+                                                 compare the verifier's answers and quotes with the
+                                                 keys; --write records it in each draft's check file
 
 Options (every command):
   --drafts <dir>   drafts folder (default private/questions-drafts)
@@ -41,6 +61,11 @@ Options (every command):
 const DEFAULT_DRAFTS = 'private/questions-drafts';
 const DEFAULT_BANK = 'questions';
 const DEFAULT_THRESHOLD = 0.5;
+const DEFAULT_NOTES = 'private/notes-import';
+const DEFAULT_COUNT = 10;
+const MAX_COUNT = 50;
+const FETCH_TIMEOUT_MS = 20_000;
+const COMMANDS = ['check', 'next-id', 'promote', 'dedupe', 'brief', 'blind', 'verdict'];
 
 class UsageError extends Error {}
 
@@ -51,12 +76,17 @@ interface Options {
   dryRun: boolean;
   write: boolean;
   threshold: number;
+  count: number;
+  notes: string;
+  map: string | undefined;
+  pending: boolean;
+  noFetch: boolean;
   positionals: string[];
 }
 
 function parseArgs(argv: string[]): Options {
   const [command, ...rest] = argv;
-  if (!['check', 'next-id', 'promote', 'dedupe'].includes(command ?? '')) throw new UsageError();
+  if (!COMMANDS.includes(command ?? '')) throw new UsageError();
   const options: Options = {
     command: command as string,
     drafts: DEFAULT_DRAFTS,
@@ -64,6 +94,11 @@ function parseArgs(argv: string[]): Options {
     dryRun: false,
     write: false,
     threshold: DEFAULT_THRESHOLD,
+    count: DEFAULT_COUNT,
+    notes: DEFAULT_NOTES,
+    map: undefined,
+    pending: false,
+    noFetch: false,
     positionals: [],
   };
   for (let i = 0; i < rest.length; i++) {
@@ -77,8 +112,19 @@ function parseArgs(argv: string[]): Options {
       else options.bank = folder;
     } else if (arg === '--dry-run' && command === 'promote') {
       options.dryRun = true;
-    } else if (arg === '--write' && command === 'dedupe') {
+    } else if (arg === '--write' && (command === 'dedupe' || command === 'verdict')) {
       options.write = true;
+    } else if (arg === '--no-fetch' && command === 'verdict') {
+      options.noFetch = true;
+    } else if (arg === '--pending' && command === 'blind') {
+      options.pending = true;
+    } else if (arg === '--count' && command === 'brief') {
+      options.count = parseCount(rest[++i]);
+    } else if ((arg === '--notes' || arg === '--map') && command === 'brief') {
+      const value = rest[++i];
+      if (value === undefined || value.startsWith('--')) throw new UsageError();
+      if (arg === '--notes') options.notes = value;
+      else options.map = value;
     } else if (arg === '--threshold' && command === 'dedupe') {
       options.threshold = parseThreshold(rest[++i]);
     } else if (arg.startsWith('-')) {
@@ -87,9 +133,24 @@ function parseArgs(argv: string[]): Options {
       options.positionals.push(arg);
     }
   }
-  const expected = command === 'next-id' ? 1 : command === 'promote' ? undefined : 0;
+  const expected = ['next-id', 'brief', 'verdict'].includes(command as string)
+    ? 1
+    : ['promote', 'blind'].includes(command as string)
+      ? undefined
+      : 0;
   if (expected !== undefined && options.positionals.length !== expected) throw new UsageError();
+  if (command === 'brief' && !isTaskId(options.positionals[0])) throw new UsageError();
+  if (command === 'blind' && !options.pending && options.positionals.length === 0) {
+    throw new UsageError();
+  }
   return options;
+}
+
+/** A plain integer from 1 to 50. */
+function parseCount(value: string | undefined): number {
+  const count = value !== undefined && /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!(count >= 1 && count <= MAX_COUNT)) throw new UsageError();
+  return count;
 }
 
 /** A plain decimal number in (0, 1]. */
@@ -107,12 +168,13 @@ interface Folder {
 
 /**
  * The YAML files under `dir` as `relative POSIX path -> text`; a missing folder is empty, with a
- * notice. Links are listed in `links` instead of being followed.
+ * notice (on stderr unless `notice` says otherwise). Links are listed in `links` instead of being
+ * followed.
  */
-function readFolder(dir: string): Folder {
+function readFolder(dir: string, notice: (line: string) => void = console.error): Folder {
   const folder: Folder = { files: {}, links: [] };
   if (!existsSync(dir)) {
-    console.error(`no folder at ${dir}, treated as empty`);
+    notice(`no folder at ${dir}, treated as empty`);
     return folder;
   }
   const walk = (relative: string): void => {
@@ -145,9 +207,9 @@ interface Folders {
   problems: string[];
 }
 
-function readFolders(options: Options): Folders {
-  const draftFolder = readFolder(options.drafts);
-  const bankFolder = readFolder(options.bank);
+function readFolders(options: Options, notice?: (line: string) => void): Folders {
+  const draftFolder = readFolder(options.drafts, notice);
+  const bankFolder = readFolder(options.bank, notice);
   const drafts = readBank(draftFolder.files, { publicOnly: false });
   const bank = readBank(bankFolder.files, { publicOnly: true });
   const label = (dir: string) => (problem: Problem) => `${dir}/${problem.file}: ${problem.message}`;
@@ -262,22 +324,281 @@ function readOld(file: string): Buffer | undefined {
   }
 }
 
-function runNextId(options: Options): number {
-  const task = options.positionals[0];
-  if (!isTaskId(task)) throw new UsageError();
+/**
+ * Both folders for allocating ids. Ids behind a link are unknown, so allocating without them could
+ * hand out a used id: the links are printed and nothing is returned.
+ */
+function readIdFolders(options: Options): { draftFolder: Folder; bankFolder: Folder } | undefined {
   const draftFolder = readFolder(options.drafts);
   const bankFolder = readFolder(options.bank);
-  // Ids behind a link are unknown, so allocating without them could hand out a used id.
   const links = [
     ...draftFolder.links.map(({ file, message }) => `${options.drafts}/${file}: ${message}`),
     ...bankFolder.links.map(({ file, message }) => `${options.bank}/${file}: ${message}`),
   ];
-  if (links.length > 0) {
-    for (const link of links) console.error(link);
-    return 1;
-  }
+  for (const link of links) console.error(link);
+  return links.length > 0 ? undefined : { draftFolder, bankFolder };
+}
+
+function runNextId(options: Options): number {
+  const task = options.positionals[0];
+  if (!isTaskId(task)) throw new UsageError();
+  const folders = readIdFolders(options);
+  if (folders === undefined) return 1;
+  const { draftFolder, bankFolder } = folders;
   console.log(nextId(task, [...collectIds(draftFolder.files), ...collectIds(bankFolder.files)]));
   return 0;
+}
+
+/** The text of a file; undefined when there is no such file (or it is a folder). */
+function readTextIfFile(path: string): string | undefined {
+  try {
+    return readFileSync(path, 'utf8');
+  } catch (error) {
+    if (['ENOENT', 'EISDIR', 'ENOTDIR'].includes((error as NodeJS.ErrnoException).code ?? '')) {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+/**
+ * The notes of the finished sections that feed the task, in feed order, or undefined (with the
+ * reason on stderr) when the map or the notes folder cannot be used.
+ */
+function readStudiedNotes(
+  options: Options,
+  task: TaskId,
+): { folder: string; text: string }[] | undefined {
+  if (!existsSync(options.notes)) {
+    console.error(`no notes folder at ${options.notes}`);
+    return undefined;
+  }
+  const mapFile = options.map ?? under(options.notes, 'sections.yaml');
+  const mapText = readTextIfFile(mapFile);
+  if (mapText === undefined) {
+    console.error(`no section map at ${mapFile}`);
+    return undefined;
+  }
+  const { map, problems } = parseSectionMap(mapText);
+  if (map === undefined) {
+    for (const problem of problems) console.error(`${mapFile}: ${problem}`);
+    return undefined;
+  }
+  const finished: { folder: string; text: string }[] = [];
+  for (const folder of feedingSections(map, task)) {
+    const text = readTextIfFile(under(under(options.notes, folder), 'notes.md'));
+    if (text === undefined) console.error(`skipped ${folder}: no notes.md`);
+    else if (completedDate(text) === undefined) console.error(`skipped ${folder}: not finished`);
+    else finished.push({ folder, text });
+  }
+  return finished;
+}
+
+type Where = 'bank' | 'draft' | 'rejected';
+
+/** The questions of the task in a folder, as brief lines. */
+function existingOf(
+  files: FileMap,
+  where: Where,
+  task: TaskId,
+): { id: string; where: Where; stem: string }[] {
+  return readBank(files, { publicOnly: where === 'bank' })
+    .entries.filter((entry) => entry.question.task === task)
+    .map(({ question }) => ({ id: question.id, where, stem: question.stem }));
+}
+
+function runBrief(options: Options): number {
+  const task = options.positionals[0];
+  if (!isTaskId(task)) throw new UsageError();
+  const notes = readStudiedNotes(options, task);
+  if (notes === undefined) return 1;
+  if (notes.length === 0) {
+    console.error(`no finished section feeds task ${task} (studied gate)`);
+    return 1;
+  }
+  const folders = readIdFolders(options);
+  if (folders === undefined) return 1;
+  const { draftFolder, bankFolder } = folders;
+
+  const ids = nextIds(
+    task,
+    [...collectIds(draftFolder.files), ...collectIds(bankFolder.files)],
+    options.count,
+  );
+  // Rejected drafts live below rejected/; readBank skips that prefix, so read them on their own.
+  const rejected: FileMap = {};
+  for (const [path, text] of Object.entries(draftFolder.files)) {
+    if (path.startsWith('rejected/')) rejected[path.slice('rejected/'.length)] = text;
+  }
+  const existing = [
+    ...existingOf(bankFolder.files, 'bank', task),
+    ...existingOf(draftFolder.files, 'draft', task),
+    ...existingOf(rejected, 'rejected', task),
+  ];
+  process.stdout.write(renderBrief({ task, ids, draftsDir: options.drafts, existing, notes }));
+  return 0;
+}
+
+/** A question file given to `blind`: the question, or the problems of the file. */
+function readQuestionFile(path: string): { question: Question } | { problems: string[] } {
+  const text = readTextIfFile(path);
+  if (text === undefined) return { problems: [`${path}: cannot read this file`] };
+  let data: unknown;
+  try {
+    data = parse(text);
+  } catch (error) {
+    return { problems: [`${path}: invalid YAML: ${error instanceof Error ? error.message : ''}`] };
+  }
+  const result = validateQuestion(data);
+  return result.ok
+    ? { question: result.question }
+    : { problems: result.errors.map((message) => `${path}: ${message}`) };
+}
+
+/** True when the sidecar holds a verification of the question as it is now. */
+function isVerified(sidecar: string | undefined, question: Question): boolean {
+  if (sidecar === undefined) return false;
+  try {
+    const data = parse(sidecar) as { verification?: { digest?: unknown } } | null;
+    return data?.verification?.digest === questionDigest(question);
+  } catch {
+    return false;
+  }
+}
+
+function runBlind(options: Options): number {
+  const questions = new Map<string, Question>();
+  const problems: string[] = [];
+  for (const path of options.positionals) {
+    const result = readQuestionFile(path);
+    if ('question' in result) questions.set(resolve(path), result.question);
+    else problems.push(...result.problems);
+  }
+  if (options.pending) {
+    const folder = readFolder(options.drafts);
+    const { entries, problems: invalid } = readBank(folder.files, { publicOnly: false });
+    for (const { file, message } of [...invalid, ...folder.links]) {
+      console.error(`${options.drafts}/${file}: ${message}`);
+    }
+    for (const { path, question } of entries) {
+      if (!isVerified(folder.files[sidecarPath(path)], question)) {
+        questions.set(resolve(under(options.drafts, path)), question);
+      }
+    }
+  }
+  if (problems.length > 0) {
+    for (const problem of problems) console.error(problem);
+    return 1;
+  }
+  if (questions.size === 0) {
+    console.error('nothing pending');
+    return 0;
+  }
+  const blocks = [...questions.values()]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .map(renderBlind);
+  process.stdout.write(`${blocks.join('\n\n---\n\n')}\n`);
+  return 0;
+}
+
+/** The HTML of a page, or undefined when it cannot be fetched (network error, non-2xx status). */
+async function fetchPage(url: string): Promise<string | undefined> {
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    return response.ok ? await response.text() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+interface Checked {
+  question: Question;
+  path: string;
+  result: VerifierResult;
+}
+
+async function runVerdict(options: Options): Promise<number> {
+  const file = options.positionals[0] as string;
+  const text = readTextIfFile(file);
+  if (text === undefined) {
+    console.error(`${file}: cannot read the results file`);
+    return 1;
+  }
+  // The folder notices go to stdout, before the report: the report must be the last output line.
+  const { draftFiles, drafts, problems: folderProblems } = readFolders(options, console.log);
+  const parsed = parseResults(text);
+  const problems = [...folderProblems, ...parsed.problems.map((problem) => `${file}: ${problem}`)];
+  const checked: Checked[] = [];
+  for (const result of parsed.results) {
+    const draft = drafts.entries.find((entry) => entry.question.id === result.id);
+    const keys = draft?.question.options.map((option) => option.key) ?? [];
+    const unknown = result.answer.find((key) => !keys.includes(key.toUpperCase()));
+    if (draft === undefined) {
+      problems.push(`${file}: ${result.id} is not a draft (bank and rejected ones don't count)`);
+    } else if (unknown !== undefined) {
+      problems.push(`${file}: ${result.id}: "${unknown}" is not an option key of this question`);
+    } else {
+      checked.push({ question: draft.question, path: draft.path, result });
+    }
+  }
+  if (problems.length > 0) {
+    for (const problem of problems) console.error(problem);
+    return 1;
+  }
+  checked.sort((a, b) => (a.question.id < b.question.id ? -1 : 1));
+
+  let pages: Map<string, string | undefined> | undefined;
+  if (!options.noFetch) {
+    const urls = new Set(checked.flatMap(({ result }) => pageToCheck(result) ?? []));
+    const fetched = await Promise.all([...urls].map(async (url) => [url, await fetchPage(url)]));
+    pages = new Map(fetched as [string, string | undefined][]);
+  }
+  const verifier = parsed.verifier as string;
+  const verdicts = checked.map(({ question, path, result }) => ({
+    path,
+    id: question.id,
+    verification: judge(question, result, verifier, quoteCheckOf(result, pages)),
+  }));
+
+  // Check every existing sidecar before writing any (all or nothing).
+  const sidecars = new Map<string, string>();
+  const bad: string[] = [];
+  if (options.write) {
+    for (const { path, verification } of verdicts) {
+      const target = sidecarPath(path);
+      try {
+        sidecars.set(target, withSidecarKey(draftFiles[target], 'verification', verification));
+      } catch (error) {
+        bad.push(
+          `${under(options.drafts, target)}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+  }
+  if (bad.length > 0) {
+    for (const line of bad) console.error(line);
+    return 1;
+  }
+
+  const counts = { verified: 0, mismatch: 0, unsupported: 0 };
+  for (const { path, id, verification } of verdicts) {
+    counts[verification.result]++;
+    console.log(`${verification.result} ${id} ${under(options.drafts, path)}`);
+    for (const reason of verification.reasons) console.log(`  - ${reason}`);
+  }
+  console.log(
+    `verified: ${String(counts.verified)}, mismatch: ${String(counts.mismatch)}, unsupported: ${String(counts.unsupported)}`,
+  );
+
+  const failure = writeSidecars(sidecars, options.drafts);
+  if (failure !== undefined) {
+    console.error(`questions: ${failure}; no sidecar was changed`);
+    return 1;
+  }
+  return counts.mismatch + counts.unsupported > 0 ? 1 : 0;
 }
 
 function runPromote(options: Options): number {
@@ -384,20 +705,23 @@ function deleteDrafts(moves: PromoteMove[], options: Options): string[] {
 }
 
 /** Runs the CLI and resolves to the process exit code (0 ok, 1 problems, 2 usage error). */
-export function main(argv: string[]): Promise<number> {
+export async function main(argv: string[]): Promise<number> {
   try {
     const options = parseArgs(argv);
-    if (options.command === 'check') return Promise.resolve(runCheck(options));
-    if (options.command === 'dedupe') return Promise.resolve(runDedupe(options));
-    if (options.command === 'next-id') return Promise.resolve(runNextId(options));
-    return Promise.resolve(runPromote(options));
+    if (options.command === 'check') return runCheck(options);
+    if (options.command === 'dedupe') return runDedupe(options);
+    if (options.command === 'next-id') return runNextId(options);
+    if (options.command === 'brief') return runBrief(options);
+    if (options.command === 'blind') return runBlind(options);
+    if (options.command === 'verdict') return await runVerdict(options);
+    return runPromote(options);
   } catch (error) {
     if (error instanceof UsageError) {
       console.error(USAGE);
-      return Promise.resolve(2);
+      return 2;
     }
     console.error(`questions: ${error instanceof Error ? error.message : String(error)}`);
-    return Promise.resolve(1);
+    return 1;
   }
 }
 
