@@ -10,6 +10,7 @@ import {
   readdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,7 +20,7 @@ import type { AddressInfo } from 'node:net';
 import { dirname, join } from 'node:path';
 import { sidecarPath } from '@field-guide/questions/bank';
 import type { BankEntry, FileMap } from '@field-guide/questions/bank';
-import { getTask } from '@field-guide/schema';
+import { formatIssues, getTask, questionSchema } from '@field-guide/schema';
 import type { Question } from '@field-guide/schema';
 import { parse } from 'yaml';
 import { approvedText, buildQueue, checkEdit, isCorrect, verificationState } from './review.ts';
@@ -78,9 +79,15 @@ function sameText(a: string, b: string): boolean {
   return left.length === right.length && timingSafeEqual(left, right);
 }
 
-/** The YAML files of the drafts folder as `relative POSIX path -> text` (no links, no rejected/). */
-function readFolder(root: string): FileMap {
-  const files: FileMap = {};
+/** The YAML files of the drafts folder: their bytes and the same bytes decoded as text. */
+interface Folder {
+  files: FileMap;
+  bytes: Record<string, Buffer>;
+}
+
+/** Reads the drafts folder (no links, no rejected/); each file is read once. */
+function readFolder(root: string): Folder {
+  const folder: Folder = { files: {}, bytes: {} };
   const walk = (relative: string): void => {
     const dir = relative === '' ? root : join(root, relative);
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -88,12 +95,14 @@ function readFolder(root: string): FileMap {
       if (entry.isDirectory()) {
         if (path !== REJECTED) walk(path);
       } else if (entry.isFile() && /\.ya?ml$/.test(path)) {
-        files[path] = readFileSync(join(root, path), 'utf8');
+        const bytes = readFileSync(join(root, path));
+        folder.bytes[path] = bytes;
+        folder.files[path] = bytes.toString('utf8');
       }
     }
   };
   walk('');
-  return files;
+  return folder;
 }
 
 interface Sidecar {
@@ -110,7 +119,7 @@ function readSidecar(root: string, draftPath: string): Sidecar {
     if (isJson(value)) return { value };
     return { value: undefined, error: 'the check file must be a YAML mapping' };
   } catch (error) {
-    return { value: undefined, error: error instanceof Error ? error.message : String(error) };
+    return { value: undefined, error: errorText(error) };
   }
 }
 
@@ -153,7 +162,13 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 /** Moves a file without ever replacing the target (copy with exclusive create, then delete). */
 function moveNew(from: string, to: string): void {
   copyFileSync(from, to, constants.COPYFILE_EXCL);
-  unlinkSync(from);
+  try {
+    unlinkSync(from);
+  } catch (error) {
+    // The source stays where it was: no copy may be left behind.
+    rmSync(to, { force: true });
+    throw error;
+  }
 }
 
 /** The id in a URL; a malformed escape is just an id that does not exist. */
@@ -163,6 +178,15 @@ function idOf(segment: string): string {
   } catch {
     return segment;
   }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+interface Found {
+  entry: BankEntry;
+  etag: string;
 }
 
 function blindOf(question: Question): Json {
@@ -188,14 +212,15 @@ export function startServer(opts: {
 
   const allowedHosts = (): string[] => [`127.0.0.1:${String(port)}`, `localhost:${String(port)}`];
 
-  /** The queued draft with that id, with the current bytes of its file. */
-  function find(id: string): { entry: BankEntry; etag: string } {
-    const entry = buildQueue(readFolder(root)).items.find((item) => item.question.id === id);
+  /** The queued draft with that id; the etag is the hash of the bytes its text was read from. */
+  function find(id: string): Found {
+    const { files, bytes } = readFolder(root);
+    const entry = buildQueue(files).items.find((item) => item.question.id === id);
     if (entry === undefined) throw new HttpError(404, `no draft in the queue has the id ${id}`);
-    return { entry, etag: sha256(readFileSync(join(root, entry.path))) };
+    return { entry, etag: sha256(bytes[entry.path] as Buffer) };
   }
 
-  function checkEtag(found: { etag: string }, body: Json): void {
+  function checkEtag(found: Found, body: Json): void {
     if (body['etag'] !== found.etag) {
       throw new HttpError(409, 'the draft changed on disk, reload');
     }
@@ -224,8 +249,7 @@ export function startServer(opts: {
     appendFileSync(join(root, LOG_FILE), `${JSON.stringify(line)}\n`);
   }
 
-  function reveal(id: string, body: Json): Json {
-    const found = find(id);
+  function reveal(found: Found, body: Json): Json {
     const answer = answerOf(body);
     const { question } = found.entry;
     const { state, sidecar } = stateOf(found.entry);
@@ -245,8 +269,7 @@ export function startServer(opts: {
     };
   }
 
-  function approve(id: string, body: Json): Json {
-    const found = find(id);
+  function approve(found: Found, body: Json): Json {
     const answer = answerOf(body);
     checkEtag(found, body);
     const { state, sidecar } = stateOf(found.entry);
@@ -262,20 +285,24 @@ export function startServer(opts: {
         ...(state === 'verified' && typeof verifier === 'string' ? { verifier } : {}),
       });
     } catch (error) {
-      throw new HttpError(422, error instanceof Error ? error.message : String(error));
+      throw new HttpError(422, errorText(error));
+    }
+    // A blank verifier in the check file, say, would make the approved draft invalid.
+    const check = questionSchema.safeParse(parse(text));
+    if (!check.success) {
+      const issues = formatIssues(check.error.issues).join('; ');
+      throw new HttpError(422, `approving would write an invalid question (${issues})`);
     }
     writeFileSync(join(root, found.entry.path), text);
     log(found.entry, { decision: 'approved', answer, state });
     return { ok: true };
   }
 
-  function source(id: string): Json {
-    const found = find(id);
+  function source(found: Found): Json {
     return { text: found.entry.text, etag: found.etag };
   }
 
-  function edit(id: string, body: Json): Json {
-    const found = find(id);
+  function edit(found: Found, body: Json): Json {
     checkEtag(found, body);
     if (typeof body['text'] !== 'string') throw new HttpError(400, 'text must be a string');
     const text = body['text'].replaceAll('\r\n', '\n');
@@ -287,8 +314,7 @@ export function startServer(opts: {
     return { ok: true };
   }
 
-  function reject(id: string, body: Json): Json {
-    const found = find(id);
+  function reject(found: Found, body: Json): Json {
     const answer = answerOf(body);
     const reason = typeof body['reason'] === 'string' ? body['reason'].trim() : '';
     if (reason === '') throw new HttpError(400, 'a reason is required to reject a draft');
@@ -311,7 +337,14 @@ export function startServer(opts: {
       try {
         moveNew(sidecarMove.from, sidecarMove.to);
       } catch (error) {
-        renameSync(draftMove.to, draftMove.from);
+        try {
+          renameSync(draftMove.to, draftMove.from);
+        } catch {
+          throw new HttpError(
+            500,
+            `the draft is now in ${REJECTED}/ but its check file could not be moved: ${errorText(error)}`,
+          );
+        }
         throw moveError(error);
       }
     }
@@ -321,14 +354,13 @@ export function startServer(opts: {
 
   function moveError(error: unknown): HttpError {
     const code = (error as NodeJS.ErrnoException).code;
-    const message = error instanceof Error ? error.message : String(error);
     return new HttpError(
       code === 'EEXIST' ? 409 : 500,
-      `nothing was rejected, the files could not be moved: ${message}`,
+      `nothing was rejected, the files could not be moved: ${errorText(error)}`,
     );
   }
 
-  const actions: Record<string, (id: string, body: Json) => Json> = {
+  const actions: Record<string, (found: Found, body: Json) => Json> = {
     reveal,
     approve,
     edit,
@@ -338,7 +370,7 @@ export function startServer(opts: {
   function api(req: IncomingMessage, res: ServerResponse, path: string): Promise<void> | void {
     if (path === '/api/queue') {
       if (req.method !== 'GET') throw new HttpError(405, 'use GET');
-      const { items, waiting, problems } = buildQueue(readFolder(root));
+      const { items, waiting, problems } = buildQueue(readFolder(root).files);
       sendJson(res, 200, {
         items: items.map((item) => ({ id: item.question.id, path: item.path })),
         total: items.length,
@@ -356,7 +388,8 @@ export function startServer(opts: {
 
     if (name === 'blind' || name === 'source') {
       if (req.method !== 'GET') throw new HttpError(405, 'use GET');
-      sendJson(res, 200, name === 'blind' ? blindOf(find(id).entry.question) : source(id));
+      const found = find(id);
+      sendJson(res, 200, name === 'blind' ? blindOf(found.entry.question) : source(found));
       return;
     }
     if (req.method !== 'POST') throw new HttpError(405, 'use POST');
@@ -364,10 +397,10 @@ export function startServer(opts: {
     if (typeof supplied !== 'string' || !sameText(supplied, token)) {
       throw new HttpError(403, 'missing or wrong review token');
     }
-    const action = actions[name] as (id: string, body: Json) => Json;
-    find(id);
+    const action = actions[name] as (found: Found, body: Json) => Json;
+    const found = find(id);
     return readBody(req).then((body) => {
-      sendJson(res, 200, action(id, body));
+      sendJson(res, 200, action(found, body));
     });
   }
 
@@ -393,7 +426,7 @@ export function startServer(opts: {
         if (error instanceof HttpError) {
           sendJson(res, error.status, { error: error.message, ...error.details });
         } else {
-          sendJson(res, 500, { error: error instanceof Error ? error.message : String(error) });
+          sendJson(res, 500, { error: errorText(error) });
         }
       }
     })();
