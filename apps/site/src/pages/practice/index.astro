@@ -1,0 +1,31 @@
+---
+// The practice test (spec 027): a Starlight page holding the React island of apps/site/src/practice/.
+// The island has no server rendering, so the fallback reserves its height while it loads.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import PracticeApp from '../../practice/PracticeApp.tsx';
+---
+
+<StarlightPage
+  frontmatter={{
+    title: 'Practice test',
+    description:
+      'A timed SAA-C03 mock exam with an estimated score and a review of every question. Not affiliated with AWS.',
+    tableOfContents: false,
+  }}
+>
+  <div id="practice-host" class="not-content">
+    <PracticeApp client:only="react">
+      <div slot="fallback" class="pt-fallback" aria-hidden="true"></div>
+    </PracticeApp>
+  </div>
+</StarlightPage>
+
+<style is:global>
+  /* The wide-layout prose cap (layout.css) must not apply to the island. */
+  #practice-host {
+    max-width: none;
+  }
+  #practice-host .pt-fallback {
+    min-height: 40rem;
+  }
+</style>
