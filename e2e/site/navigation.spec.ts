@@ -30,7 +30,7 @@ test.describe('desktop navigation', () => {
   test('AC-6: pins the literal group labels and Practice tests link from the spec', async ({
     page,
   }) => {
-    await page.goto('/practice-tests/');
+    await page.goto('/practice/');
 
     await expect(sidebarNav(page).locator('summary')).toHaveText([
       'Domain 1: Design Secure Architectures',
@@ -40,7 +40,7 @@ test.describe('desktop navigation', () => {
     ]);
     await expect(
       sidebarNav(page).getByRole('link', { name: 'Practice tests', exact: true }),
-    ).toHaveAttribute('href', '/practice-tests/');
+    ).toHaveAttribute('href', '/practice/');
   });
 
   for (const link of expectedSidebarLinks) {

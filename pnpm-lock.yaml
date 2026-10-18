@@ -74,6 +74,9 @@ importers:
       '@field-guide/questions':
         specifier: workspace:*
         version: link:../../tools/questions
+      '@field-guide/quiz-core':
+        specifier: workspace:*
+        version: link:../../packages/quiz-core
       '@field-guide/schema':
         specifier: workspace:*
         version: link:../../packages/schema

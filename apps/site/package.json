@@ -14,6 +14,7 @@
     "@astrojs/react": "7.0.0",
     "@astrojs/starlight": "^0.42.6",
     "@field-guide/diagram-engine": "workspace:*",
+    "@field-guide/quiz-core": "workspace:*",
     "@field-guide/questions": "workspace:*",
     "@field-guide/schema": "workspace:*",
     "astro": "^7.3.8",

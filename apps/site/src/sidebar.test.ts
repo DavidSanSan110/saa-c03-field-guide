@@ -39,7 +39,15 @@ describe('buildSidebar', () => {
   test('AC-1: the last entry is the "Practice tests" link', () => {
     const last = buildSidebar().at(-1);
 
-    expect(last).toEqual({ label: 'Practice tests', link: '/practice-tests/' });
+    expect(last).toEqual({ label: 'Practice tests', link: '/practice/' });
+  });
+
+  test('AC-26: the "Practice tests" link goes to /practice/ and nothing links to /practice-tests/', () => {
+    const sidebar = buildSidebar();
+    const links = sidebar.flatMap((entry) => (isGroup(entry) ? entry.items : [entry]));
+
+    expect(sidebar.at(-1)).toEqual({ label: 'Practice tests', link: '/practice/' });
+    expect(links.map((link) => link.link)).not.toContain('/practice-tests/');
   });
 
   test('AC-2: each group starts with "Overview" linking to /d<n>/', () => {

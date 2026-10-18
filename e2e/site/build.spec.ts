@@ -13,8 +13,12 @@ function pageFile(route: string): string {
 test.describe('static build output', () => {
   test('AC-4: the build writes the home page, the practice tests page and the 404 page', () => {
     expect(existsSync(join(dist, 'index.html'))).toBe(true);
-    expect(existsSync(pageFile('/practice-tests/'))).toBe(true);
+    expect(existsSync(pageFile('/practice/'))).toBe(true);
     expect(existsSync(join(dist, '404.html'))).toBe(true);
+  });
+
+  test('AC-26: the build writes no /practice-tests/ page any more', () => {
+    expect(existsSync(pageFile('/practice-tests/'))).toBe(false);
   });
 
   for (const domain of domains) {

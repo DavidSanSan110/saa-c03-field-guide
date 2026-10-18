@@ -6,7 +6,7 @@ const PAGES = [
   { name: 'home page', path: '/', status: 200 },
   { name: 'domain page', path: '/d1/', status: 200 },
   { name: 'task page', path: '/d1/1-3-data-security/', status: 200 },
-  { name: 'practice tests page', path: '/practice-tests/', status: 200 },
+  { name: 'practice tests page', path: '/practice/', status: 200 },
   { name: '404 page', path: '/no-such-page/', status: 404 },
 ] as const;
 
