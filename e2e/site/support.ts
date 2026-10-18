@@ -31,7 +31,7 @@ export const LAYOUT_PAGES = [
   { name: 'home page', path: '/' },
   { name: 'domain page', path: '/d1/' },
   { name: 'task page', path: '/d1/1-3-data-security/' },
-  { name: 'practice tests page', path: '/practice-tests/' },
+  { name: 'practice tests page', path: '/practice/' },
 ] as const;
 
 export function domainTitle(domainId: number): string {
@@ -67,8 +67,8 @@ export const expectedGroups: SidebarGroupExpectation[] = domains.map((domain) =>
 
 export const practiceTestsLink: SidebarLinkExpectation = {
   label: 'Practice tests',
-  path: '/practice-tests/',
-  h1: 'Practice tests',
+  path: '/practice/',
+  h1: 'Practice test',
 };
 
 /** Every link of the sidebar (18 in the groups, then "Practice tests"), in order. */

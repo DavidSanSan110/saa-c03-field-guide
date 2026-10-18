@@ -36,17 +36,18 @@ function listFiles(directory: string): string[] {
 }
 
 describe('site content contract', () => {
-  test('AC-3: the home page and the practice-tests placeholder exist', () => {
+  test('AC-3: the home page exists and the practice-tests placeholder is gone (AC-26)', () => {
     expect(existsSync(join(docsRoot, 'index.mdx'))).toBe(true);
-    expect(existsSync(join(docsRoot, 'practice-tests.md'))).toBe(true);
+    expect(existsSync(join(docsRoot, 'practice-tests.md'))).toBe(false);
   });
 
   test('AC-3: the home page is titled "SAA-C03 Field Guide"', () => {
     expect(readTitle(join(docsRoot, 'index.mdx'))).toBe('SAA-C03 Field Guide');
   });
 
-  test('AC-3: the practice-tests placeholder is titled "Practice tests"', () => {
-    expect(readTitle(join(docsRoot, 'practice-tests.md'))).toBe('Practice tests');
+  test('AC-26: the placeholder is replaced by the practice page at pages/practice/index.astro', () => {
+    expect(existsSync(join(docsRoot, 'practice-tests.mdx'))).toBe(false);
+    expect(existsSync(join(siteRoot, 'src', 'pages', 'practice', 'index.astro'))).toBe(true);
   });
 
   test.each(domains.map((domain) => [domain.id, domain] as const))(
