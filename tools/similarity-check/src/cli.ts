@@ -2,7 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
-import { buildIndex, findMatches, stripMarkup } from './similarity.ts';
+import { buildIndex, findMatches, stripMarkup, stripUrls } from './similarity.ts';
 
 const DEFAULT_CORPUS = 'private/similarity-corpus';
 const DEFAULT_TARGETS = ['apps/site/src/content/docs', 'questions'];
@@ -103,6 +103,7 @@ function listFiles(dir: string, wanted: RegExp, onLink?: (path: string) => void)
 const CORPUS_FILE = /\.(txt|md)$/i;
 const TARGET_FILE = /\.(md|mdx|ya?ml|txt)$/i;
 const MARKDOWN_FILE = /\.mdx?$/i;
+const YAML_FILE = /\.ya?ml$/i;
 
 /** A corpus file as text: UTF-16 with a byte order mark, else strict UTF-8 without NUL bytes. */
 function decode(bytes: Buffer, name: string): string {
@@ -122,9 +123,10 @@ function decode(bytes: Buffer, name: string): string {
   throw new Error(`corpus file ${name} is not UTF-8`);
 }
 
-/** The text of a file as it is matched: Markdown links and entities are removed. */
+/** The text of a file as it is matched: Markdown links and entities, or YAML URLs, are removed. */
 function matchable(name: string, text: string): string {
-  return MARKDOWN_FILE.test(name) ? stripMarkup(text) : text;
+  if (MARKDOWN_FILE.test(name)) return stripMarkup(text);
+  return YAML_FILE.test(name) ? stripUrls(text) : text;
 }
 
 /** The corpus as `relative path -> text`; empty when the folder is missing or has no file. */

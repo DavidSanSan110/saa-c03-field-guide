@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 import { buildIndex, findMatches, words } from './similarity.ts';
 import { stripMarkup } from './similarity.ts';
+import { stripUrls } from './similarity.ts';
 
 const BOM = String.fromCodePoint(0xfeff);
 
@@ -472,5 +473,153 @@ describe('stripMarkup (review round 2)', () => {
     const text = 'Plain words, no links.\nSecond line (with brackets) here.';
 
     expect(words(stripMarkup(text))).toEqual(words(text));
+  });
+});
+
+// Spec 024: URLs in YAML targets. The AC ids below are spec 024's, not spec 021's.
+describe('spec 024 stripUrls', () => {
+  /** The words of a text after stripUrls, without line numbers. */
+  const stripped = (text: string): string[] => words(stripUrls(text)).map((entry) => entry.word);
+
+  test('AC-1: a quoted doc URL goes and the words around it stay', () => {
+    expect(stripped('see "https://docs.aws.amazon.com/a/b.html" now')).toEqual(['see', 'now']);
+  });
+
+  test('AC-1: a YAML list item that is only a URL leaves no words', () => {
+    expect(words(stripUrls('- https://example.com/x/y'))).toEqual([]);
+  });
+
+  test.each(['HTTPS://Example.COM/x', 'http://example.com/x', 'HtTp://example.com/x'])(
+    'AC-1: the URL %s is removed whatever the case of its scheme',
+    (url) => {
+      expect(stripped(`before ${url} after`)).toEqual(['before', 'after']);
+    },
+  );
+
+  test('AC-1: a URL is replaced by exactly one space', () => {
+    expect(stripUrls('a https://example.com/x b')).toBe('a   b');
+  });
+
+  test.each(['"', "'", '`', '<', '>', '(', ')', '[', ']', '{', '}'])(
+    'AC-1: the URL ends before %s and that character is kept',
+    (delimiter) => {
+      expect(stripUrls(`a https://a.example/b${delimiter} c`)).toBe(`a  ${delimiter} c`);
+    },
+  );
+
+  test.each([')', ']', '>', '"', "'"])(
+    'AC-1: a URL wrapped by a bracket or quote keeps the closing %s',
+    (closing) => {
+      const opening = { ')': '(', ']': '[', '>': '<', '"': '"', "'": "'" }[closing] as string;
+
+      expect(stripUrls(`see ${opening}https://a.example/b${closing} now`)).toBe(
+        `see ${opening} ${closing} now`,
+      );
+    },
+  );
+
+  test('AC-1: a URL ends at whitespace, a tab as well as a space', () => {
+    expect(stripUrls('a https://a.example/b\tc d')).toBe('a  \tc d');
+    expect(stripped('a https://a.example/b c d')).toEqual(['a', 'c', 'd']);
+  });
+
+  test('AC-1: query, fragment, comma and a trailing dot belong to the URL', () => {
+    expect(
+      stripped('go to https://example.com/p?a=1&b=2#top, then https://example.com/q. Next'),
+    ).toEqual(['go', 'to', 'then', 'next']);
+  });
+
+  test('AC-1: every URL of a line is removed', () => {
+    expect(stripped('one https://a.example/1 two http://b.example/2 three')).toEqual([
+      'one',
+      'two',
+      'three',
+    ]);
+  });
+
+  test('AC-1: text outside the URLs is unchanged, including case and punctuation', () => {
+    expect(stripUrls('Keep: "Quoted", (this)! https://example.com/x - End.')).toBe(
+      'Keep: "Quoted", (this)!   - End.',
+    );
+  });
+
+  test('AC-2: the output has as many lines as the input', () => {
+    const text = [
+      'references:',
+      '  - https://example.com/one',
+      '',
+      '  - https://example.com/two',
+      'why: see https://example.com/three',
+      'last line',
+    ].join('\n');
+
+    expect(stripUrls(text).split('\n')).toHaveLength(text.split('\n').length);
+  });
+
+  test('AC-2: a URL at the end of a line does not remove the next line', () => {
+    const output = stripUrls('a https://x.example/y\nnext line');
+
+    expect(output.split('\n')).toHaveLength(2);
+    expect(words(output)).toEqual([
+      { word: 'a', line: 1 },
+      { word: 'next', line: 2 },
+      { word: 'line', line: 2 },
+    ]);
+  });
+
+  test('AC-2: a URL at the end of a CRLF line stops before the line break', () => {
+    const output = stripUrls('a https://x.example/y\r\nnext line');
+
+    expect(output.split('\n')).toHaveLength(2);
+    expect(words(output)).toEqual([
+      { word: 'a', line: 1 },
+      { word: 'next', line: 2 },
+      { word: 'line', line: 2 },
+    ]);
+  });
+
+  test('AC-2: a URL at the very end of the text is removed and the line count stays', () => {
+    const output = stripUrls('first\nsee https://x.example/y');
+
+    expect(output.split('\n')).toHaveLength(2);
+    expect(words(output)).toEqual([
+      { word: 'first', line: 1 },
+      { word: 'see', line: 2 },
+    ]);
+  });
+
+  test('AC-2: consecutive lines that are only URLs stay separate lines', () => {
+    const text = 'a\nhttps://x.example/1\nhttps://x.example/2\nb';
+
+    const output = stripUrls(text);
+
+    expect(output.split('\n')).toHaveLength(4);
+    expect(words(output)).toEqual([
+      { word: 'a', line: 1 },
+      { word: 'b', line: 4 },
+    ]);
+  });
+
+  test.each([
+    ['ftp://host/path', 'get ftp://host/path now'],
+    ['a host with a path and no scheme', 'see example.com/path for more'],
+    ['a www host', 'see www.example.com/path for more'],
+    ['a broken scheme', 'see http:/ /broken for more'],
+    ['plain prose', 'Lemon tarts cool slowly.\nSecond line, with (brackets) and "quotes".'],
+    ['an empty text', ''],
+  ])('AC-3: text with no http(s) URL is returned unchanged (%s)', (_label, text) => {
+    expect(stripUrls(text)).toBe(text);
+  });
+
+  test('AC-8: a comma and a dot inside or after a URL go with it, leaving no stray word', () => {
+    expect(stripUrls('x https://a.example/b,c. d')).toBe('x   d');
+  });
+
+  test.each([
+    ['a dot', 'x https://a.example/b. d', 'x   d'],
+    ['a comma', 'x https://a.example/b, d', 'x   d'],
+    ['a comma and a dot', 'x https://a.example/b,. d', 'x   d'],
+  ])('AC-8: a URL ending in %s before a space loses that character', (_label, text, expected) => {
+    expect(stripUrls(text)).toBe(expected);
   });
 });
