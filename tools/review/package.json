@@ -1,0 +1,15 @@
+{
+  "name": "@field-guide/review",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local browser tool to answer, approve, edit or reject draft questions.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@field-guide/questions": "workspace:*",
+    "@field-guide/schema": "workspace:*",
+    "yaml": "^2.9.1"
+  }
+}
