@@ -3,11 +3,12 @@ import { existsSync, statSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { startServer } from './server.ts';
 
-const USAGE = `Usage: review --reviewer <name> [--drafts <dir>] [--port <n>]
+const USAGE = `Usage: review --reviewer <name> [--drafts <dir>] [--port <n>] [--allow-host <host>]...
 
-  --reviewer <name>  GitHub user written to provenance.reviewed_by (required)
-  --drafts <dir>     drafts folder (default private/questions-drafts)
-  --port <n>         port 0-65535, 0 picks a free one (default 4400)`;
+  --reviewer <name>     GitHub user written to provenance.reviewed_by (required)
+  --drafts <dir>        drafts folder (default private/questions-drafts)
+  --port <n>            port 0-65535, 0 picks a free one (default 4400)
+  --allow-host <host>   also accept this Host header, e.g. name[:port]; may repeat`;
 
 const DEFAULT_DRAFTS = 'private/questions-drafts';
 const DEFAULT_PORT = 4400;
@@ -18,6 +19,7 @@ interface Options {
   reviewer: string;
   drafts: string;
   port: number;
+  allowHosts: string[];
 }
 
 function valueOf(argv: string[], index: number): string {
@@ -32,19 +34,26 @@ function parsePort(value: string): number {
   return port;
 }
 
+function parseHost(value: string): string {
+  if (!/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(value)) throw new UsageError();
+  return value;
+}
+
 function parseArgs(argv: string[]): Options {
   let reviewer = '';
   let drafts = DEFAULT_DRAFTS;
   let port = DEFAULT_PORT;
+  const allowHosts: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i] as string;
     if (arg === '--reviewer') reviewer = valueOf(argv, ++i).trim();
     else if (arg === '--drafts') drafts = valueOf(argv, ++i);
     else if (arg === '--port') port = parsePort(valueOf(argv, ++i));
+    else if (arg === '--allow-host') allowHosts.push(parseHost(valueOf(argv, ++i)));
     else throw new UsageError();
   }
   if (reviewer === '') throw new UsageError();
-  return { reviewer, drafts, port };
+  return { reviewer, drafts, port, allowHosts };
 }
 
 async function main(argv: string[]): Promise<number | undefined> {
@@ -64,8 +73,10 @@ async function main(argv: string[]): Promise<number | undefined> {
     drafts: resolve(options.drafts),
     reviewer: options.reviewer,
     port: options.port,
+    allowHosts: options.allowHosts,
   });
   console.log(`review: ${server.url}`);
+  for (const host of options.allowHosts) console.log(`review: also accepting Host ${host}`);
   process.once('SIGINT', () => {
     void server.close().then(() => process.exit(0));
   });
