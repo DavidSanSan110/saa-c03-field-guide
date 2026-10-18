@@ -23,6 +23,7 @@
     "guardrails": "tsx tools/guardrails/src/cli.ts",
     "sync": "tsx tools/sync/src/cli.ts",
     "questions": "tsx tools/questions/src/cli.ts",
+    "review": "tsx tools/review/src/cli.ts",
     "similarity-check": "tsx tools/similarity-check/src/cli.ts",
     "prepare": "node -e \"require('node:fs').existsSync('.git') && require('node:child_process').execSync('lefthook install', { stdio: 'inherit' })\""
   },

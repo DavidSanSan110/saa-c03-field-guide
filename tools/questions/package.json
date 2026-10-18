@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "Reads the draft and public question folders, allocates ids and promotes reviewed drafts.",
+  "exports": {
+    "./bank": "./src/bank.ts"
+  },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
   },

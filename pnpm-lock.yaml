@@ -171,6 +171,18 @@ importers:
         specifier: ^2.9.1
         version: 2.9.1
 
+  tools/review:
+    dependencies:
+      '@field-guide/questions':
+        specifier: workspace:*
+        version: link:../questions
+      '@field-guide/schema':
+        specifier: workspace:*
+        version: link:../../packages/schema
+      yaml:
+        specifier: ^2.9.1
+        version: 2.9.1
+
   tools/similarity-check: {}
 
   tools/sync: {}
