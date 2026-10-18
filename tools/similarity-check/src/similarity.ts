@@ -105,3 +105,9 @@ export function findMatches(text: string, index: CorpusIndex): Match[] {
   close();
   return matches;
 }
+
+/** Replaces every http(s) URL with one space, keeping line numbers. */
+export function stripUrls(text: string): string {
+  void text;
+  throw new Error('not implemented');
+}

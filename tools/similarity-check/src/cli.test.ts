@@ -988,3 +988,186 @@ describe('Markdown links and entities (review round 1)', () => {
     );
   });
 });
+
+// Spec 024: URLs in YAML targets. The AC ids below are spec 024's, not spec 021's.
+describe('spec 024 URLs in YAML targets', () => {
+  const URL_ONE = 'https://example.com/guide/storage/latest/userguide/buckets-overview.html';
+  const URL_TWO = 'https://example.com/guide/storage/latest/userguide/lifecycle-rules.html';
+  const URL_WORDS =
+    'https example com guide storage latest userguide buckets overview html https example com guide storage latest userguide lifecycle rules html';
+  const URL_WORD_COUNT = 20;
+  /** A corpus file that cites the same two pages next to each other. */
+  const DOCS_CORPUS = {
+    'corpus/docs.txt': `Further reading\nsee ${URL_ONE} ${URL_TWO} for details\nEnd of the list.\n`,
+  };
+  const REFERENCES = ['references:', `  - ${URL_ONE}`, `  - ${URL_TWO}`];
+
+  test.each(['yaml', 'yml'])(
+    'AC-4: doc URLs shared with the corpus are not reported in a .%s target',
+    (ext) => {
+      const dir = setup({
+        ...DOCS_CORPUS,
+        [`question.${ext}`]: ['id: q-001', ...REFERENCES, ''].join('\n'),
+      });
+
+      const run = runCli(dir, ['--corpus', 'corpus', `question.${ext}`]);
+
+      expect(run.status, run.output).toBe(0);
+      expect(lines(run.output)).toContain(summary(1, 1, 8, 0));
+    },
+  );
+
+  test('AC-4: the same URLs in the target and the corpus do not count even with other fields around', () => {
+    const dir = setup({
+      ...DOCS_CORPUS,
+      'question.yaml': [
+        'id: q-001',
+        `stem: ${CLEAN_TEXT}`,
+        ...REFERENCES,
+        'explanation: Seeded rolls stay fresh for two days in a paper bag.',
+        '',
+      ].join('\n'),
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'question.yaml']);
+
+    expect(run.status, run.output).toBe(0);
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 0));
+  });
+
+  test('AC-5: a copied sentence after the URL lines is still reported at its own line', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      ...DOCS_CORPUS,
+      'question.yaml': [
+        'id: q-001',
+        ...REFERENCES,
+        `why: "Our visit notes say that ${RUN} today."`,
+        '',
+      ].join('\n'),
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'question.yaml']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `question.yaml:5: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+    expect(lines(run.output)).toContain(summary(1, 2, 8, 1));
+  });
+
+  test('AC-5: a copied sentence before the URL lines is reported on its line and not extended', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      ...DOCS_CORPUS,
+      'question.yml': [`why: "Our visit notes say that ${RUN} today."`, ...REFERENCES, ''].join(
+        '\n',
+      ),
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'question.yml']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `question.yml:1: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+    expect(lines(run.output)).toContain(summary(1, 2, 8, 1));
+  });
+
+  test('AC-6: a copied sentence with a URL in the middle is reported as one run', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'question.yaml': [
+        'id: q-001',
+        'why: "lemon tarts cool slowly https://example.com/a beside the quiet harbour window"',
+        '',
+      ].join('\n'),
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'question.yaml']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `question.yaml:2: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 1));
+  });
+
+  test('AC-6: the same holds for a .yml target', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'question.yml':
+        'why: "lemon tarts cool slowly https://example.com/a?x=1#top beside the quiet harbour window"\n',
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'question.yml']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `question.yml:1: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+  });
+
+  test('AC-6: a URL on a line of its own inside a copied block still joins the two halves', () => {
+    const dir = setup({
+      ...CORPUS_FILES,
+      'question.yaml': [
+        'why: |',
+        '  lemon tarts cool slowly',
+        '  https://example.com/a',
+        '  beside the quiet harbour window',
+        '',
+      ].join('\n'),
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'question.yaml']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `question.yaml:2: 9 words shared with guide/bakery.txt:2: "${RUN}"`,
+    );
+  });
+
+  test('AC-7: a .txt target keeps the words of a URL shared with a .txt corpus line', () => {
+    const dir = setup({
+      ...DOCS_CORPUS,
+      'page.txt': `Notes\nrefs ${URL_ONE} ${URL_TWO} here\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.txt']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.txt:2: ${URL_WORD_COUNT} words shared with docs.txt:2: "${URL_WORDS}"`,
+    );
+    expect(lines(run.output)).toContain(summary(1, 1, 8, 1));
+  });
+
+  test('AC-7: a URL that is plain text in a .md target keeps its words too', () => {
+    const dir = setup({
+      ...DOCS_CORPUS,
+      'page.md': `Notes\nrefs ${URL_ONE} ${URL_TWO} here\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.md']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.md:2: ${URL_WORD_COUNT} words shared with docs.txt:2: "${URL_WORDS}"`,
+    );
+  });
+
+  test('AC-7: the corpus is never URL-stripped, so a .txt target with the same URLs matches it', () => {
+    const dir = setup({
+      'corpus/docs.md': `Further reading\nsee ${URL_ONE} ${URL_TWO} for details\n`,
+      'page.txt': `refs ${URL_ONE} ${URL_TWO} here\n`,
+    });
+
+    const run = runCli(dir, ['--corpus', 'corpus', 'page.txt']);
+
+    expect(run.status, run.output).toBe(1);
+    expect(lines(run.output)).toContain(
+      `page.txt:1: ${URL_WORD_COUNT} words shared with docs.md:2: "${URL_WORDS}"`,
+    );
+  });
+});
