@@ -99,8 +99,10 @@ function linkProblem(links: NonNullable<Question['links']>, dirs: BankDirs): str
 function isGuidePage(guide: string, docsDir: string): boolean {
   if (guide.includes('\\')) return false;
   const path = (guide.split('#', 1)[0] ?? '').replace(/\/$/, '');
-  if (path.split('/').includes('..')) return false;
-  const base = join(docsDir, ...path.split('/'));
+  if (/[A-Z]/.test(path)) return false;
+  const segments = path.replace(/^\//, '').split('/');
+  if (segments.includes('') || segments.includes('..')) return false;
+  const base = join(docsDir, ...segments);
   return [`${base}.md`, `${base}.mdx`, join(base, 'index.md'), join(base, 'index.mdx')].some(
     isFile,
   );
