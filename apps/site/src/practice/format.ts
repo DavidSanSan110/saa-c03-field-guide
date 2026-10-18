@@ -1,9 +1,17 @@
-// Pure formatting helpers for the practice-test island (spec 027). Stubs until implemented.
+// Pure formatting helpers for the practice-test island (spec 027).
 
 /** Milliseconds as `H:MM:SS`: floors to whole seconds, never negative, hours are not padded. */
 export function formatClock(ms: number): string {
-  void ms;
-  throw new Error('not implemented');
+  const total = Math.floor(Math.max(0, ms) / 1000);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  return `${String(hours)}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+/** The letter shown at a display position: 0 is "A". */
+export function letterAt(position: number): string {
+  return String.fromCharCode(65 + position);
 }
 
 /**
@@ -12,7 +20,7 @@ export function formatClock(ms: number): string {
  * `optionOrder` are ignored.
  */
 export function displayLetters(optionOrder: readonly string[], keys: readonly string[]): string[] {
-  void optionOrder;
-  void keys;
-  throw new Error('not implemented');
+  return optionOrder
+    .flatMap((key, position) => (keys.includes(key) ? [letterAt(position)] : []))
+    .sort();
 }

@@ -1,6 +1,9 @@
-// The numbers of the results screen, derived from a submitted session (spec 027). Stub until implemented.
+// The numbers of the results screen, derived from a submitted session (spec 027).
+import { sessionScore } from '@field-guide/quiz-core';
+import type { QuestionResult, Session } from '@field-guide/quiz-core';
+import { domains } from '@field-guide/schema';
 import type { DomainId, TaskId } from '@field-guide/schema';
-import type { Session } from '@field-guide/quiz-core';
+import { displayLetters } from './format.ts';
 
 export type ItemStatus = 'correct' | 'incorrect' | 'unanswered';
 
@@ -67,6 +70,47 @@ export interface ResultsView {
 
 /** The results of a submitted exam-mode session. RangeError for an active session. */
 export function resultsView(session: Session): ResultsView {
-  void session;
-  throw new Error('not implemented');
+  const score = sessionScore(session);
+  const { submittedAt, deadline, startedAt } = session;
+  if (score === null || score.estimated === null || submittedAt === null) {
+    throw new RangeError('only a submitted session has results');
+  }
+  const items = session.exam.items.map(({ question, optionOrder }, index): ItemRow => {
+    const result = score.results[index] as QuestionResult;
+    const selected = session.answers[question.id] ?? [];
+    const correctKeys = question.options.filter((option) => option.correct).map((o) => o.key);
+    return {
+      number: index + 1,
+      id: question.id,
+      status: !result.answered ? 'unanswered' : result.correct ? 'correct' : 'incorrect',
+      flagged: session.flagged.includes(question.id),
+      domain: question.domain,
+      task: question.task,
+      stem: question.stem,
+      yourLetters: displayLetters(optionOrder, selected),
+      correctLetters: displayLetters(optionOrder, correctKeys),
+    };
+  });
+  return {
+    estimated: score.estimated,
+    passed: score.passed,
+    correct: score.correct,
+    total: score.total,
+    percent: Math.round((100 * score.correct) / score.total),
+    unanswered: score.total - score.answered,
+    flagged: session.flagged.length,
+    timeUsedMs: submittedAt - startedAt,
+    timeLimitMs: (deadline ?? submittedAt) - startedAt,
+    timedOut: session.submitReason === 'timeout',
+    domains: domains.map(({ id, title, weight }) => {
+      const { correct, total, raw } = score.byDomain[id];
+      return { id, title, weight, correct, total, raw, needsWork: raw !== null && raw < 0.72 };
+    }),
+    items,
+    counts: {
+      all: items.length,
+      incorrect: items.filter((row) => row.status !== 'correct').length,
+      flagged: items.filter((row) => row.flagged).length,
+    },
+  };
 }

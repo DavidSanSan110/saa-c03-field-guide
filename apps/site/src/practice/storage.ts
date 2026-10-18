@@ -1,5 +1,6 @@
-// Browser storage for the practice-test island (spec 027). Stub until implemented.
+// Browser storage for the practice-test island (spec 027).
 import type { Progress, Question } from '@field-guide/schema';
+import { emptyProgress, parseProgress, restoreSession, saveSession } from '@field-guide/quiz-core';
 import type { Session } from '@field-guide/quiz-core';
 
 /** localStorage key of the active exam (the `saveSession` output as JSON). */
@@ -39,8 +40,69 @@ export interface PracticeStorage {
   saveProgress(progress: Progress): void;
 }
 
+const PROBE_KEY = 'field-guide:practice:probe';
+
+/** Runs `action`, returning `fallback` when the storage throws. */
+function attempt<T>(fallback: T, action: () => T): T {
+  try {
+    return action();
+  } catch {
+    return fallback;
+  }
+}
+
 /** `storage` is `window.localStorage`, or `undefined` when the browser denies access to it. */
 export function createPracticeStorage(storage: Storage | undefined): PracticeStorage {
-  void storage;
-  throw new Error('not implemented');
+  const available =
+    storage !== undefined &&
+    attempt(false, () => {
+      storage.setItem(PROBE_KEY, '1');
+      const read = storage.getItem(PROBE_KEY);
+      storage.removeItem(PROBE_KEY);
+      return read === '1';
+    });
+  /** The stored text of `key`, or `null` when absent or unreadable. */
+  const read = (key: string): string | null =>
+    available ? attempt<string | null>(null, () => storage.getItem(key)) : null;
+  const write = (key: string, value: string): void => {
+    if (available)
+      attempt(undefined, () => {
+        storage.setItem(key, value);
+      });
+  };
+  const remove = (key: string): void => {
+    if (available)
+      attempt(undefined, () => {
+        storage.removeItem(key);
+      });
+  };
+
+  return {
+    available,
+    loadSession(bank) {
+      const text = read(SESSION_KEY);
+      if (text === null) return { kind: 'none' };
+      const restored = attempt(undefined, () => restoreSession(JSON.parse(text) as unknown, bank));
+      if (restored?.ok === true) return { kind: 'restored', session: restored.session };
+      remove(SESSION_KEY);
+      return { kind: 'unrestorable' };
+    },
+    saveSession(session) {
+      write(SESSION_KEY, JSON.stringify(saveSession(session)));
+    },
+    clearSession() {
+      remove(SESSION_KEY);
+    },
+    loadProgress() {
+      const text = read(PROGRESS_KEY);
+      const parsed =
+        text === null
+          ? undefined
+          : attempt(undefined, () => parseProgress(JSON.parse(text) as unknown));
+      return parsed?.ok === true ? parsed.progress : emptyProgress();
+    },
+    saveProgress(progress) {
+      write(PROGRESS_KEY, JSON.stringify(progress));
+    },
+  };
 }

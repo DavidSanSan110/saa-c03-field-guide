@@ -22,5 +22,5 @@ export function buildSidebar(): (SidebarGroup | SidebarLink)[] {
     ],
   }));
 
-  return [...groups, { label: 'Practice tests', link: '/practice-tests/' }];
+  return [...groups, { label: 'Practice tests', link: '/practice/' }];
 }
