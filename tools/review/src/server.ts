@@ -426,7 +426,9 @@ export function startServer(opts: {
         if (error instanceof HttpError) {
           sendJson(res, error.status, { error: error.message, ...error.details });
         } else {
-          sendJson(res, 500, { error: errorText(error) });
+          // Unexpected: details go to the server's console, never into the response.
+          console.error(error);
+          sendJson(res, 500, { error: 'unexpected server error, see the review server output' });
         }
       }
     })();
