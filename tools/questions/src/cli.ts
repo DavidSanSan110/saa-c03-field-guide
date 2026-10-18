@@ -29,6 +29,7 @@ import { feedingSections, completedDate, nextIds, parseSectionMap, renderBrief }
 import { findSimilar, roundScore, similarByDraft, withDedupe } from './dedupe.ts';
 import { withSidecarKey } from './sidecar.ts';
 import {
+  isFinalDocsUrl,
   judge,
   pageToCheck,
   parseResults,
@@ -168,13 +169,12 @@ interface Folder {
 
 /**
  * The YAML files under `dir` as `relative POSIX path -> text`; a missing folder is empty, with a
- * notice (on stderr unless `notice` says otherwise). Links are listed in `links` instead of being
- * followed.
+ * notice. Links are listed in `links` instead of being followed.
  */
-function readFolder(dir: string, notice: (line: string) => void = console.error): Folder {
+function readFolder(dir: string): Folder {
   const folder: Folder = { files: {}, links: [] };
   if (!existsSync(dir)) {
-    notice(`no folder at ${dir}, treated as empty`);
+    console.error(`no folder at ${dir}, treated as empty`);
     return folder;
   }
   const walk = (relative: string): void => {
@@ -207,9 +207,9 @@ interface Folders {
   problems: string[];
 }
 
-function readFolders(options: Options, notice?: (line: string) => void): Folders {
-  const draftFolder = readFolder(options.drafts, notice);
-  const bankFolder = readFolder(options.bank, notice);
+function readFolders(options: Options): Folders {
+  const draftFolder = readFolder(options.drafts);
+  const bankFolder = readFolder(options.bank);
   const drafts = readBank(draftFolder.files, { publicOnly: false });
   const bank = readBank(bankFolder.files, { publicOnly: true });
   const label = (dir: string) => (problem: Problem) => `${dir}/${problem.file}: ${problem.message}`;
@@ -508,7 +508,8 @@ async function fetchPage(url: string): Promise<string | undefined> {
       redirect: 'follow',
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
-    return response.ok ? await response.text() : undefined;
+    // Only a page that ends on the docs site counts, whatever the redirects were.
+    return response.ok && isFinalDocsUrl(response.url) ? await response.text() : undefined;
   } catch {
     return undefined;
   }
@@ -527,8 +528,7 @@ async function runVerdict(options: Options): Promise<number> {
     console.error(`${file}: cannot read the results file`);
     return 1;
   }
-  // The folder notices go to stdout, before the report: the report must be the last output line.
-  const { draftFiles, drafts, problems: folderProblems } = readFolders(options, console.log);
+  const { draftFiles, drafts, problems: folderProblems } = readFolders(options);
   const parsed = parseResults(text);
   const problems = [...folderProblems, ...parsed.problems.map((problem) => `${file}: ${problem}`)];
   const checked: Checked[] = [];

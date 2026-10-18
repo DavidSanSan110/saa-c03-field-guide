@@ -100,6 +100,7 @@ export function parseResults(text: string): {
     return fail('verifier must be a lowercase slug such as claude-opus');
   }
   if (!Array.isArray(results)) return fail('results must be a list');
+  if (results.length === 0) return fail('results is empty');
 
   const parsed: VerifierResult[] = [];
   const problems: string[] = [];
@@ -115,6 +116,7 @@ export function parseResults(text: string): {
 
 export type QuoteCheck = 'found' | 'not-found' | 'fetch-failed' | 'skipped' | 'none';
 
+/** Named entities; the quotes become ASCII ones, which `normalise` drops like the typographic ones. */
 const NAMED_ENTITIES: Record<string, string> = {
   amp: '&',
   lt: '<',
@@ -122,14 +124,34 @@ const NAMED_ENTITIES: Record<string, string> = {
   quot: '"',
   apos: "'",
   nbsp: ' ',
+  rsquo: "'",
+  lsquo: "'",
+  ldquo: '"',
+  rdquo: '"',
+  ndash: '-',
+  mdash: '-',
+  hellip: '...',
+  copy: '©',
+  reg: '®',
+  trade: '™',
 };
+const UPPER_CASE_ENTITIES = ['amp', 'lt', 'gt', 'quot'];
 
 function decodeEntities(text: string): string {
   return text.replace(/&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z]+));/g, (all, dec, hex, name) => {
-    if (typeof name === 'string') return NAMED_ENTITIES[name] ?? all;
+    if (typeof name === 'string') {
+      const lower = name.toLowerCase();
+      const known = name === lower || UPPER_CASE_ENTITIES.includes(lower);
+      return (known ? NAMED_ENTITIES[lower] : undefined) ?? all;
+    }
     const code = typeof dec === 'string' ? Number(dec) : parseInt(hex as string, 16);
     return code <= 0x10ffff ? String.fromCodePoint(code) : all;
   });
+}
+
+/** The words of a text; NFKC turns the trade mark sign into the letters TM, so it is set apart. */
+function wordsOf(text: string): string[] {
+  return normalise(text.replace(/™/g, ' ™ '));
 }
 
 /** The words of the visible text of an HTML page. */
@@ -138,12 +160,12 @@ function pageWords(html: string): string[] {
     .replace(/<(script|style)\b[\s\S]*?<\/\1\s*>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]*>/g, ' ');
-  return normalise(decodeEntities(visible));
+  return wordsOf(decodeEntities(visible));
 }
 
 /** Whether the quote's words appear as one contiguous run of the page's text words. */
 export function quoteInPage(html: string, quote: string): boolean {
-  const wanted = normalise(quote);
+  const wanted = wordsOf(quote);
   if (wanted.length === 0) return false;
   const words = pageWords(html);
   for (let start = 0; start + wanted.length <= words.length; start++) {
@@ -155,6 +177,11 @@ export function quoteInPage(html: string, quote: string): boolean {
 /** Whether the source is a page of the AWS documentation. */
 export function isDocsSource(source: string | undefined): boolean {
   return source !== undefined && source.startsWith(DOCS_PREFIX);
+}
+
+/** Whether the final URL of a fetch is acceptable: on the docs site (empty when not reported). */
+export function isFinalDocsUrl(url: string): boolean {
+  return url === '' || isDocsSource(url);
 }
 
 /** The page to fetch for the quote check of a result: its docs source, when it has a quote. */
