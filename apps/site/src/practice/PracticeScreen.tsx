@@ -86,7 +86,7 @@ export function PracticeScreen({
             item={item}
             stemId={stemId}
             selected={selected}
-            locked={revealed}
+            hideOptions={revealed}
             onChoose={onAnswer}
           />
 

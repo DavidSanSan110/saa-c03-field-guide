@@ -7,12 +7,12 @@ interface Props {
   /** The id the card's `aria-labelledby` points at. */
   stemId: string;
   selected: readonly string[];
-  /** The answer is locked (practice, after the reveal). */
-  locked?: boolean;
+  /** Practice, after the reveal: the explanation block lists the options instead. */
+  hideOptions?: boolean;
   onChoose: (selected: string[]) => void;
 }
 
-export function QuestionBody({ item, stemId, selected, locked = false, onChoose }: Props) {
+export function QuestionBody({ item, stemId, selected, hideOptions = false, onChoose }: Props) {
   const { question, optionOrder } = item;
   const need = question.options.filter((option) => option.correct).length;
   const multiple = question.type === 'multiple';
@@ -28,7 +28,7 @@ export function QuestionBody({ item, stemId, selected, locked = false, onChoose 
         <span className={multiple ? 'pt-chip pt-chip-accent' : 'pt-chip'}>
           {multiple ? `Choose ${String(need)}` : 'Single answer'}
         </span>
-        {multiple && (
+        {multiple && !hideOptions && (
           <span className="pt-q-count" aria-live="polite">
             {selected.length} of {need} selected
           </span>
@@ -37,38 +37,39 @@ export function QuestionBody({ item, stemId, selected, locked = false, onChoose 
       <p className="pt-stem" id={stemId}>
         {question.stem}
       </p>
-      <fieldset className="pt-options" key={question.id} disabled={locked}>
-        <legend className="pt-sr">
-          {multiple ? `Select ${String(need)} answers` : 'Select one answer'}
-        </legend>
-        {optionOrder.map((key, position) => {
-          const option = question.options.find((candidate) => candidate.key === key);
-          if (option === undefined) return null;
-          const checked = selected.includes(key);
-          return (
-            <label
-              key={key}
-              className={multiple ? 'pt-opt is-multi' : 'pt-opt is-single'}
-              data-checked={checked}
-            >
-              <input
-                className="pt-opt-input"
-                type={multiple ? 'checkbox' : 'radio'}
-                name={`q-${question.id}`}
-                value={key}
-                checked={checked}
-                disabled={locked}
-                onChange={() => {
-                  choose(key);
-                }}
-              />
-              <span className="pt-opt-key">{letterAt(position)}</span>
-              <span className="pt-sr">: </span>
-              <span className="pt-opt-text">{option.text}</span>
-            </label>
-          );
-        })}
-      </fieldset>
+      {!hideOptions && (
+        <fieldset className="pt-options" key={question.id}>
+          <legend className="pt-sr">
+            {multiple ? `Select ${String(need)} answers` : 'Select one answer'}
+          </legend>
+          {optionOrder.map((key, position) => {
+            const option = question.options.find((candidate) => candidate.key === key);
+            if (option === undefined) return null;
+            const checked = selected.includes(key);
+            return (
+              <label
+                key={key}
+                className={multiple ? 'pt-opt is-multi' : 'pt-opt is-single'}
+                data-checked={checked}
+              >
+                <input
+                  className="pt-opt-input"
+                  type={multiple ? 'checkbox' : 'radio'}
+                  name={`q-${question.id}`}
+                  value={key}
+                  checked={checked}
+                  onChange={() => {
+                    choose(key);
+                  }}
+                />
+                <span className="pt-opt-key">{letterAt(position)}</span>
+                <span className="pt-sr">: </span>
+                <span className="pt-opt-text">{option.text}</span>
+              </label>
+            );
+          })}
+        </fieldset>
+      )}
     </>
   );
 }

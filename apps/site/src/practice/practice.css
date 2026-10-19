@@ -1310,15 +1310,6 @@ html[data-practice-screen] .content-panel + .content-panel {
 .pt-exam-body-single {
   grid-template-columns: minmax(0, 1fr);
 }
-.pt-opt:has(.pt-opt-input:disabled) {
-  cursor: default;
-}
-.pt-opt:has(.pt-opt-input:disabled):hover {
-  border-color: var(--pt-opt-border);
-}
-.pt-opt[data-checked='true']:has(.pt-opt-input:disabled):hover {
-  border-color: var(--pt-solid);
-}
 .pt-q-nav-end {
   display: flex;
   flex-wrap: wrap;
@@ -1482,11 +1473,11 @@ html[data-practice-screen] .content-panel + .content-panel {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+.pt-chart-box {
+  width: 100%;
+}
 .pt-chart {
   display: block;
-  width: 100%;
-  max-width: 36rem;
-  height: auto;
 }
 .pt-chart-grid {
   stroke: var(--pt-track);
