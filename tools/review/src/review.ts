@@ -1,8 +1,8 @@
 // Pure logic of the review tool (spec 023): the queue, the verification state, the key check and
 // the safe rewrite of a draft on approve or edit. No file system access: server.ts does the I/O.
-import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { readBank } from '@field-guide/questions/bank';
+import { questionDigest } from '@field-guide/questions/verify';
 import type { BankEntry, FileMap, Problem } from '@field-guide/questions/bank';
 import { formatIssues, questionSchema } from '@field-guide/schema';
 import type { Question } from '@field-guide/schema';
@@ -20,18 +20,8 @@ function compare(a: string, b: string): number {
   return a > b ? 1 : 0;
 }
 
-/**
- * First 16 hex characters of the SHA-256 of the question's type, stem and options without their
- * `why`. Same definition as spec 022: a verification is only valid for the content it checked.
- */
-export function questionDigest(q: Pick<Question, 'type' | 'stem' | 'options'>): string {
-  const payload = JSON.stringify({
-    type: q.type,
-    stem: q.stem,
-    options: q.options.map((o) => ({ key: o.key, text: o.text, correct: o.correct })),
-  });
-  return createHash('sha256').update(payload, 'utf8').digest('hex').slice(0, 16);
-}
+// The digest is defined once, in tools/questions (spec 022); re-exported for the callers here.
+export { questionDigest } from '@field-guide/questions/verify';
 
 export type VerificationState = 'verified' | 'changed' | 'flagged' | 'none';
 
