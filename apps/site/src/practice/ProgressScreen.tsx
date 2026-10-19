@@ -44,7 +44,7 @@ function ScoreChart({ scores }: { scores: DashboardView['examScores'] }) {
     ({ estimated }, index) => `${String(x(index))},${String(y(estimated))}`,
   );
   return (
-    <div className="pt-chart-box" ref={box}>
+    <div className="pt-chart-box" ref={box} style={{ height }}>
       <svg
         className="pt-chart"
         width={width}

@@ -1473,11 +1473,16 @@ html[data-practice-screen] .content-panel + .content-panel {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+/* The svg is taken out of the flow so it never widens its card: the box is measured, then drawn to fit. */
 .pt-chart-box {
+  position: relative;
   width: 100%;
+  min-width: 0;
 }
 .pt-chart {
-  display: block;
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 .pt-chart-grid {
   stroke: var(--pt-track);
