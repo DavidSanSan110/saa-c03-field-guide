@@ -3,7 +3,7 @@ domain: 2
 task: '2.1'
 services:
   - 'sqs'
-  - 'auto-scaling'
+  - 'ec2-auto-scaling'
   - 'rds'
 difficulty: medium
 type: single

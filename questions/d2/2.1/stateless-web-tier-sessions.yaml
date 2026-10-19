@@ -3,7 +3,7 @@ domain: 2
 task: '2.1'
 services:
   - 'elb'
-  - 'auto-scaling'
+  - 'ec2-auto-scaling'
   - 'elasticache'
 difficulty: medium
 type: multiple
