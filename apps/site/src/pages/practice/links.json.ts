@@ -7,8 +7,15 @@ import { buildLinksIndex } from '../../questions/links-index.ts';
 
 export const prerender = true;
 
+/** The part of a docs entry used here; typed by hand because the generated content types may be absent. */
+interface DocsEntry {
+  id: string;
+  data: { title: string };
+  body?: string;
+}
+
 export async function GET(): Promise<Response> {
-  const entries = await getCollection('docs');
+  const entries = (await getCollection('docs')) as unknown as DocsEntry[];
   const pages = entries.map((entry) => ({
     // `d1/1-3-data-security/index` or `d1/1-3-data-security` both become `/d1/1-3-data-security`.
     path: `/${entry.id.replace(/(^|\/)index$/, '')}`,
