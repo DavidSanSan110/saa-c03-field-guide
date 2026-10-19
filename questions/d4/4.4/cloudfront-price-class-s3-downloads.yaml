@@ -7,7 +7,7 @@ services:
   - 'global-accelerator'
 difficulty: medium # easy | medium | hard
 type: single # single | multiple
-stem: 'A training company stores large video lessons in a single Amazon S3 bucket in one Region, and learners download them directly from the bucket. The same popular files are requested many times a day. Almost all learners live in two continents, and the company accepts slower downloads for the few learners elsewhere. The monthly data transfer bill is high, and the company wants to reduce cost while improving download speed for most learners, without changing the application code. Which solution is the MOST cost-effective?'
+stem: 'A training company stores large video lessons in a single Amazon S3 bucket in one Region, and learners download them directly from the bucket. The same popular files are requested many times a day. Almost all learners live on two continents, and the company accepts slower downloads for the few learners elsewhere. The monthly data transfer bill is high, and the company wants to reduce cost while improving download speed for most learners, without changing the application code. Which solution is the MOST cost-effective?'
 options:
   - key: A
     text: 'Put a Global Accelerator (standard type) in front with the bucket added as an endpoint, so that learners use the two static IP addresses.'
