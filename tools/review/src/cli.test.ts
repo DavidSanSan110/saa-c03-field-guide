@@ -398,4 +398,36 @@ describe('spec 025 --allow-host', () => {
     expect(run.status).toBe(2);
     expect(run.output).toContain('--allow-host');
   });
+
+  const UNDERSCORE_VALUES: [string, string[]][] = [
+    ['an underscore in a host name', ['--allow-host', 'a_b']],
+    ['an underscore in a host name with a port', ['--allow-host', 'a_b.example:8443']],
+  ];
+
+  test.each(UNDERSCORE_VALUES)(
+    'AC-8: --allow-host with %s exits 2 with the usage text',
+    (_name, args) => {
+      const dir = tempFolder(filesOf(d));
+      const run = runCli(dir, ['--drafts', dir, '--reviewer', 'x', '--port', '0', ...args]);
+      expect(run.status).toBe(2);
+      expect(run.output).toMatch(/usage/i);
+      expect(run.output).toContain('--allow-host');
+    },
+  );
+
+  test('AC-8: --allow-host a-b.example (a hyphen, no underscore) is accepted and served', async () => {
+    const dir = tempFolder(filesOf(d));
+    const started = await startCli(dir, [
+      '--reviewer',
+      'x',
+      '--port',
+      '0',
+      '--drafts',
+      dir,
+      '--allow-host',
+      'a-b.example',
+    ]);
+    expect(await alsoLines(started, 1)).toEqual(['review: also accepting Host a-b.example']);
+    expect(await statusAsHost(started.url, 'a-b.example')).toBe(200);
+  });
 });
