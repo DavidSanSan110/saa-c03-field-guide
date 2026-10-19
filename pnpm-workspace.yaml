@@ -5,3 +5,8 @@ packages:
 
 # Supply-chain safety: never install a package version published less than 3 days ago.
 minimumReleaseAge: 4320
+
+# Dependabot alert: postcss-selector-parser < 7.1.6 parses in quadratic time. postcss-nested 6
+# (via @expressive-code/core, latest) still pins 6.x, so force 7.x for that one edge only.
+overrides:
+  postcss-nested>postcss-selector-parser: ^7.1.6
