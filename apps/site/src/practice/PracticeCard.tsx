@@ -222,7 +222,10 @@ export function PracticeCard({
           ref={startButton}
           disabled={available === 0 || filter === null}
           onClick={() => {
-            if (filter !== null) onStart(filter, poolLabel(filter), count);
+            // The weak-spots pool is built with the time of the click, not of the last render.
+            if (filter === null) return;
+            const at = filter.kind === 'weak' ? { ...filter, now: Date.now() } : filter;
+            onStart(at, poolLabel(at), count);
           }}
         >
           Start practice

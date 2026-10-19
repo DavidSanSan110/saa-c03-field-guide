@@ -194,6 +194,18 @@ export default function PracticeApp() {
     };
   }, [active]);
 
+  // The start screen keeps its clock fresh, so weak spots that fall due show up without a reload.
+  const onStartScreen = session === null && !showProgress;
+  useEffect(() => {
+    if (!onStartScreen) return;
+    const id = window.setInterval(() => {
+      setNow(Date.now());
+    }, 30_000);
+    return () => {
+      window.clearInterval(id);
+    };
+  }, [onStartScreen]);
+
   const act = useCallback((action: Act) => {
     const clock = Date.now();
     setNow(clock);
