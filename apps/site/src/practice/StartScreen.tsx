@@ -1,11 +1,15 @@
 // The start screen of the practice test (spec 027).
-import type { Exam } from '@field-guide/quiz-core';
+import type { Exam, PoolFilter } from '@field-guide/quiz-core';
 import { PASS_MARK } from '@field-guide/quiz-core';
 import { domains } from '@field-guide/schema';
-import type { AttemptRecord } from '@field-guide/schema';
+import type { AttemptRecord, Progress, Question } from '@field-guide/schema';
 import { useEffect, useRef } from 'react';
+import type { DashboardView } from './dashboard.ts';
 import { formatClock } from './format.ts';
 import { examDurationMs } from './plan.ts';
+import { PracticeCard } from './PracticeCard.tsx';
+import type { PracticeChoice } from './PracticeCard.tsx';
+import { ProgressCard } from './ProgressCard.tsx';
 
 export interface SavedExamInfo {
   /** 1-based question the saved exam is on. */
@@ -20,13 +24,23 @@ interface Props {
   saved: SavedExamInfo | null;
   /** Why the saved exam was dropped; null when it was not. */
   restoreFailed: 'changed' | 'other' | null;
-  /** Move keyboard focus to Start exam (after Discard or Start a new exam). */
-  focusStart: boolean;
+  /** Where keyboard focus goes on arrival: Start exam (after Discard or Start a new exam), Start practice
+   *  (after New practice set), View progress (after Back to the start), or nowhere. */
+  focusOn: 'exam' | 'practice' | 'progress' | null;
+  /** The last attempt that was a mock exam. */
   lastAttempt: AttemptRecord | undefined;
   canSave: boolean;
+  bank: readonly Question[];
+  progress: Progress;
+  dashboard: DashboardView;
+  now: number;
+  choice: PracticeChoice;
+  onChoice: (choice: PracticeChoice) => void;
   onStart: () => void;
   onResume: () => void;
   onDiscard: () => void;
+  onStartPractice: (filter: PoolFilter, label: string, size: number) => void;
+  onOpenProgress: () => void;
 }
 
 export function StartScreen(props: Props) {
@@ -35,8 +49,8 @@ export function StartScreen(props: Props) {
   const startButton = useRef<HTMLButtonElement>(null);
   const canStart = saved === null;
   useEffect(() => {
-    if (props.focusStart && canStart) startButton.current?.focus();
-  }, [props.focusStart, canStart]);
+    if (props.focusOn === 'exam' && canStart) startButton.current?.focus();
+  }, [props.focusOn, canStart]);
   return (
     <div className="pt-start">
       <section className="pt-card" aria-labelledby="pt-start-title">
@@ -144,6 +158,21 @@ export function StartScreen(props: Props) {
           </p>
         )}
       </section>
+
+      <PracticeCard
+        bank={props.bank}
+        progress={props.progress}
+        now={props.now}
+        choice={props.choice}
+        onChoice={props.onChoice}
+        focusStart={props.focusOn === 'practice'}
+        onStart={props.onStartPractice}
+      />
+      <ProgressCard
+        view={props.dashboard}
+        focusButton={props.focusOn === 'progress'}
+        onOpen={props.onOpenProgress}
+      />
     </div>
   );
 }
