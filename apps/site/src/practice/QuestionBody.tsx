@@ -56,7 +56,7 @@ export function QuestionBody({ item, stemId, selected, hideOptions = false, onCh
                   className="pt-opt-input"
                   type={multiple ? 'checkbox' : 'radio'}
                   name={`q-${question.id}`}
-                  value={key}
+                  value={letterAt(position)}
                   checked={checked}
                   onChange={() => {
                     choose(key);
