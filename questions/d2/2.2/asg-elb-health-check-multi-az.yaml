@@ -2,7 +2,7 @@ id: 'd2-2.2-0001'
 domain: 2
 task: '2.2'
 services:
-  - 'auto-scaling'
+  - 'ec2-auto-scaling'
   - 'elb'
   - 'ec2'
 difficulty: medium

@@ -2,7 +2,7 @@ id: 'd3-3.4-0002'
 domain: 3
 task: '3.4'
 services:
-  - 'route-53'
+  - 'route53'
   - 'vpn'
 difficulty: medium # easy | medium | hard
 type: single # single | multiple

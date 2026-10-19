@@ -3,7 +3,7 @@ domain: 3
 task: '3.4'
 services:
   - 'global-accelerator'
-  - 'route-53'
+  - 'route53'
   - 'cloudfront'
 difficulty: medium # easy | medium | hard
 type: single # single | multiple
