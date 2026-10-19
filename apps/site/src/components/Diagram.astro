@@ -29,7 +29,7 @@ const stepText = (step: { caption: string; metrics?: string }) =>
   step.metrics === undefined ? step.caption : `${step.caption} (${step.metrics})`;
 ---
 
-<figure class="dl not-content" data-diagram={id}>
+<figure class="dl not-content" id={`diagram-${uid}`} data-diagram={id}>
   {/* The canvas is hidden from assistive technology: this block says what it shows. */}
   <div class="dl-sr-only" data-diagram-structure>
     <p id={`${uid}-elements`}>Diagram elements</p>

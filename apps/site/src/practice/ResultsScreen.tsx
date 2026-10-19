@@ -1,37 +1,34 @@
 // The results screen: estimated score, domains and the list of questions (spec 027).
 import { PASS_MARK } from '@field-guide/quiz-core';
 import type { Session } from '@field-guide/quiz-core';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { formatClock } from './format.ts';
-import { CheckIcon, CrossIcon, FlagIcon } from './Icons.tsx';
+import { CheckIcon, CrossIcon } from './Icons.tsx';
+import { QuestionsCard } from './QuestionsCard.tsx';
+import type { Filter } from './QuestionsCard.tsx';
 import { resultsView } from './results.ts';
-import type { ItemRow } from './results.ts';
 
-type Filter = 'all' | 'incorrect' | 'flagged';
+const FILTERS: readonly Filter[] = ['all', 'incorrect', 'flagged'];
 
-const STATUS_TEXT = { correct: 'Correct', incorrect: 'Incorrect', unanswered: 'Not answered' };
-
-function showRow(filter: Filter, row: ItemRow): boolean {
-  if (filter === 'incorrect') return row.status !== 'correct';
-  if (filter === 'flagged') return row.flagged;
-  return true;
+interface Props {
+  session: Session;
+  filter: Filter;
+  onFilter: (filter: Filter) => void;
+  onReview: (index: number) => void;
+  /** Coming back from a review of this 0-based question; null for a fresh result. */
+  returnTo: number | null;
+  onNew: () => void;
 }
 
-export function ResultsScreen({ session, onNew }: { session: Session; onNew: () => void }) {
+export function ResultsScreen({ session, filter, onFilter, onReview, returnTo, onNew }: Props) {
   const view = useMemo(() => resultsView(session), [session]);
-  const [filter, setFilter] = useState<Filter>('all');
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
-    heading.current?.focus();
-  }, []);
+    if (returnTo === null) heading.current?.focus();
+  }, [returnTo]);
 
   const scorePos = ((view.estimated - 100) / 900) * 100;
   const passPos = ((PASS_MARK - 100) / 900) * 100;
-  const filters: { value: Filter; label: string; count: number }[] = [
-    { value: 'all', label: 'All', count: view.counts.all },
-    { value: 'incorrect', label: 'Incorrect', count: view.counts.incorrect },
-    { value: 'flagged', label: 'Flagged', count: view.counts.flagged },
-  ];
 
   return (
     <div className="pt-results">
@@ -145,69 +142,14 @@ export function ResultsScreen({ session, onNew }: { session: Session; onNew: () 
         </ul>
       </section>
 
-      <section className="pt-card" aria-labelledby="pt-review-title">
-        <div className="pt-review-head">
-          <h2 className="pt-h2" id="pt-review-title">
-            Questions
-          </h2>
-          <div className="pt-seg" role="group" aria-label="Show questions">
-            {filters.map((entry) => (
-              <button
-                key={entry.value}
-                type="button"
-                className="pt-seg-btn"
-                aria-pressed={entry.value === filter}
-                onClick={() => {
-                  setFilter(entry.value);
-                }}
-              >
-                {entry.label} {entry.count}
-              </button>
-            ))}
-          </div>
-        </div>
-        <ol className="pt-review">
-          {view.items
-            .filter((row) => showRow(filter, row))
-            .map((row) => (
-              <li key={row.id} className="pt-review-row" data-status={row.status}>
-                <span className="pt-review-mark" aria-hidden="true">
-                  {row.status === 'correct' ? <CheckIcon size={16} /> : <CrossIcon size={16} />}
-                </span>
-                <div className="pt-review-main">
-                  <p className="pt-review-title">
-                    <strong>Question {row.number}</strong>{' '}
-                    <span className={row.status === 'correct' ? 'pt-ok-text' : 'pt-bad-text'}>
-                      {STATUS_TEXT[row.status]}
-                    </span>
-                    <span className="pt-review-domain">
-                      Domain {row.domain} · Task {row.task}
-                    </span>
-                    {row.flagged && (
-                      <span className="pt-review-flag">
-                        <FlagIcon size={13} />
-                        Flagged
-                      </span>
-                    )}
-                  </p>
-                  <p className="pt-review-stem">{row.stem}</p>
-                  <p className="pt-review-answer">
-                    Your answer{' '}
-                    <strong>
-                      {row.yourLetters.length > 0 ? row.yourLetters.join(', ') : 'none'}
-                    </strong>
-                    {row.status !== 'correct' && (
-                      <>
-                        {' '}
-                        · Correct <strong>{row.correctLetters.join(', ')}</strong>
-                      </>
-                    )}
-                  </p>
-                </div>
-              </li>
-            ))}
-        </ol>
-      </section>
+      <QuestionsCard
+        view={view}
+        filters={FILTERS}
+        filter={filter}
+        onFilter={onFilter}
+        onReview={onReview}
+        returnTo={returnTo}
+      />
 
       <div className="pt-actions">
         <button type="button" className="pt-btn pt-btn-primary" onClick={onNew}>

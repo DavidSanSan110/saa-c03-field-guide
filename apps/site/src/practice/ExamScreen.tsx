@@ -2,8 +2,10 @@
 import { remainingMs } from '@field-guide/quiz-core';
 import type { Session } from '@field-guide/quiz-core';
 import { useEffect, useId, useRef, useState } from 'react';
-import { formatClock, letterAt } from './format.ts';
+import { formatClock } from './format.ts';
 import { ChevronDown, ChevronLeft, ChevronRight, ClockIcon, FlagIcon } from './Icons.tsx';
+import { QuestionBody } from './QuestionBody.tsx';
+import { ReportLine } from './Explanation.tsx';
 
 interface Props {
   session: Session;
@@ -31,17 +33,10 @@ export function ExamScreen({ session, now, onAnswer, onFlag, onGoTo, onEnd }: Pr
 
   if (item === undefined) return null;
   const { question } = item;
-  const need = question.options.filter((option) => option.correct).length;
   const selected = session.answers[question.id] ?? [];
   const answeredCount = Object.keys(session.answers).length;
   const flaggedCount = session.flagged.length;
   const isFlagged = session.flagged.includes(question.id);
-  const multiple = question.type === 'multiple';
-
-  function choose(key: string): void {
-    if (!multiple) onAnswer([key]);
-    else onAnswer(selected.includes(key) ? selected.filter((k) => k !== key) : [...selected, key]);
-  }
 
   const summary = `${String(answeredCount)} answered · ${String(flaggedCount)} flagged`;
 
@@ -96,50 +91,7 @@ export function ExamScreen({ session, now, onAnswer, onFlag, onGoTo, onEnd }: Pr
 
       <div className="pt-exam-body">
         <section className="pt-card pt-question" aria-labelledby={stemId}>
-          <div className="pt-q-meta">
-            <span className={multiple ? 'pt-chip pt-chip-accent' : 'pt-chip'}>
-              {multiple ? `Choose ${String(need)}` : 'Single answer'}
-            </span>
-            {multiple && (
-              <span className="pt-q-count" aria-live="polite">
-                {selected.length} of {need} selected
-              </span>
-            )}
-          </div>
-          <p className="pt-stem" id={stemId}>
-            {question.stem}
-          </p>
-          <fieldset className="pt-options" key={question.id}>
-            <legend className="pt-sr">
-              {multiple ? `Select ${String(need)} answers` : 'Select one answer'}
-            </legend>
-            {item.optionOrder.map((key, position) => {
-              const option = question.options.find((candidate) => candidate.key === key);
-              if (option === undefined) return null;
-              const checked = selected.includes(key);
-              return (
-                <label
-                  key={key}
-                  className={multiple ? 'pt-opt is-multi' : 'pt-opt is-single'}
-                  data-checked={checked}
-                >
-                  <input
-                    className="pt-opt-input"
-                    type={multiple ? 'checkbox' : 'radio'}
-                    name={`q-${question.id}`}
-                    value={key}
-                    checked={checked}
-                    onChange={() => {
-                      choose(key);
-                    }}
-                  />
-                  <span className="pt-opt-key">{letterAt(position)}</span>
-                  <span className="pt-sr">: </span>
-                  <span className="pt-opt-text">{option.text}</span>
-                </label>
-              );
-            })}
-          </fieldset>
+          <QuestionBody item={item} stemId={stemId} selected={selected} onChoose={onAnswer} />
           <div className="pt-q-nav">
             <button
               type="button"
@@ -169,6 +121,7 @@ export function ExamScreen({ session, now, onAnswer, onFlag, onGoTo, onEnd }: Pr
               </button>
             )}
           </div>
+          <ReportLine id={question.id} />
         </section>
 
         <nav className="pt-card pt-nav" aria-label="Question navigator" data-open={navOpen}>

@@ -28,6 +28,6 @@ body:
     id: details
     attributes:
       label: Details
-      description: Explain the problem. A link to the AWS documentation that supports your point helps a lot.
+      description: Explain the problem. Option letters are shuffled on the site, so quote the option text. A link to the AWS documentation that supports your point helps a lot.
     validations:
       required: true
