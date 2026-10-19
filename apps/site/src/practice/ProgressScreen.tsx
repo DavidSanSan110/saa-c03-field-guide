@@ -156,7 +156,16 @@ export function ProgressScreen({ view, onBack }: { view: DashboardView; onBack: 
         {view.examScores.length === 0 ? (
           <p className="pt-note pt-note-tight">No mock exams yet.</p>
         ) : (
-          <ScoreChart scores={view.examScores} />
+          <>
+            <ScoreChart scores={view.examScores} />
+            <ul className="pt-sr" aria-label="Mock exam scores">
+              {view.examScores.map(({ submittedAt, estimated }, index) => (
+                <li key={`${String(submittedAt)}-${String(index)}`}>
+                  {`${date(submittedAt)}: ${String(estimated)} (${estimated >= PASS_MARK ? 'PASS' : 'FAIL'})`}
+                </li>
+              ))}
+            </ul>
+          </>
         )}
       </section>
 
