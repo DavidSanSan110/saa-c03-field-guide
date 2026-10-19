@@ -1,0 +1,37 @@
+id: 'd2-2.1-0009'
+domain: 2
+task: '2.1'
+services:
+  - 'dynamodb'
+  - 'lambda'
+  - 'elasticache'
+  - 'api-gateway'
+difficulty: easy # easy | medium | hard
+type: single # single | multiple
+stem: 'An online retailer serves its storefront through Amazon API Gateway and AWS Lambda functions that read product records from an Amazon DynamoDB table. During flash sales, a few hundred popular products receive tens of thousands of reads per second, while their price and description change at most once a day. Reads may be eventually consistent. The team wants read latency in microseconds and a lower consumption of read capacity, and it wants to change as little application code as possible. What should a solutions architect recommend?'
+options:
+  - key: A
+    text: 'Raise the provisioned read capacity of the table, or switch the table to on-demand mode, so that it never throttles.'
+    correct: false
+    why: 'More capacity prevents throttling but each read still goes to the table with single-digit millisecond latency, and it increases read cost instead of reducing it.'
+  - key: B
+    text: 'Create an Amazon ElastiCache for Redis cluster and change the functions to check Redis first, load missing items from DynamoDB, and expire them on a schedule.'
+    correct: false
+    why: 'It can work, but the team would have to write and maintain the cache-aside logic and the invalidation. DAX is API-compatible with DynamoDB and needs far fewer code changes.'
+  - key: C
+    text: "Add a DynamoDB Accelerator (DAX) cluster between the functions and the table, and send the functions' DynamoDB reads to the cluster endpoint through the DAX client."
+    correct: true
+    why: 'DAX is a DynamoDB-compatible in-memory cache that cuts eventually consistent reads from milliseconds to microseconds, absorbs repeated reads of hot keys and needs only minimal code changes.'
+  - key: D
+    text: 'Convert the table to a global table with replicas in several Regions.'
+    correct: false
+    why: 'Global tables replicate data for multi-Region availability and locality. Reads from a replica are still served by DynamoDB itself, so they do not become microsecond reads and they do not offload hot keys.'
+cue: 'hot items read repeatedly + eventually consistent is fine + microsecond latency + minimal code change -> DAX (API-compatible cache), not a hand-built cache'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DAX.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DAX.concepts.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,39 @@
+id: 'd2-2.1-0011'
+domain: 2
+task: '2.1'
+services:
+  - 'sqs'
+  - 'ecs'
+  - 'elb'
+  - 'sns'
+  - 'api-gateway'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A food-delivery company runs its microservices on Amazon ECS. After a successful payment, the Checkout service sends an HTTP POST through an internal Application Load Balancer to the Receipt service, which renders a PDF receipt and emails it. During promotions the Receipt service needs up to 20 seconds per request, so Checkout threads pile up waiting, requests time out, and customers see errors even though their payment went through. Checkout only needs to know that the receipt request was accepted; the receipt may arrive minutes later, and no request may be lost if the Receipt service is restarted. Which design isolates Checkout from the Receipt service with the least operational overhead?'
+options:
+  - key: A
+    text: 'Increase the HTTP timeout in the Checkout service, add retries with exponential backoff, and add more Receipt service tasks.'
+    correct: false
+    why: 'The call stays synchronous: Checkout threads still wait for the slow service, and retries add even more load while it is struggling. Requests are also lost if the service is down longer than the retries last.'
+  - key: B
+    text: 'Have Checkout send a message to an Amazon SQS queue and return immediately. The Receipt service tasks poll the queue, delete each message after the receipt is sent, and scale with the queue depth.'
+    correct: true
+    why: 'The queue is a durable buffer between the two services. Checkout no longer depends on the speed or availability of the Receipt service, messages wait in the queue during restarts, and the consumer works at its own pace.'
+  - key: C
+    text: 'Have Checkout publish to an Amazon SNS topic that has an HTTPS subscription pointing to the Receipt service load balancer.'
+    correct: false
+    why: 'SNS pushes to the endpoint and nothing stores the backlog for the consumer to pull at its own pace. To avoid losing messages when a subscriber is slow or offline, SNS is combined with an SQS queue.'
+  - key: D
+    text: 'Place an Amazon API Gateway REST API with caching enabled in front of the Receipt service and call it from Checkout.'
+    correct: false
+    why: 'Each receipt request is unique and is a POST, so there is nothing useful to cache (caching applies to GET methods by default), and Checkout would still wait synchronously for the slow backend.'
+cue: 'slow downstream service blocks the caller + the reply is not needed immediately + nothing may be lost -> asynchronous SQS queue between the services'
+references:
+  - 'https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/welcome.html'
+  - 'https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html'
+  - 'https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-caching.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

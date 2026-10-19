@@ -1,0 +1,36 @@
+id: 'd2-2.1-0014'
+domain: 2
+task: '2.1'
+services:
+  - 'dynamodb'
+  - 'lambda'
+  - 'ses'
+difficulty: easy
+type: single
+stem: 'A newsletter company stores each new subscriber as an item in an Amazon DynamoDB table. The sign-up service that writes the items is maintained by another team and must not be modified. The company now wants every new subscriber to receive a welcome email shortly after the item is written, without any component that polls the table on a schedule. Which approach does this with the least operational overhead?'
+options:
+  - key: A
+    text: 'Create an Amazon EventBridge scheduled rule that runs an AWS Lambda function every minute to scan the table for subscribers that have not been emailed yet and send them a message through Amazon SES.'
+    correct: false
+    why: 'This is polling by definition. It also scans the table repeatedly, wastes read capacity and delays the email by up to the schedule interval.'
+  - key: B
+    text: 'Change the sign-up service so that it calls Amazon SES right after it writes each item to the table.'
+    correct: false
+    why: 'The sign-up service is owned by another team and must not be changed. Coupling email sending into the write path would also make sign-ups depend on SES availability.'
+  - key: C
+    text: 'Enable DynamoDB Streams on the table and configure an AWS Lambda event source mapping on the stream. The function runs with an IAM role that allows sending email and calls Amazon SES for each newly inserted item.'
+    correct: true
+    why: 'Every write is captured as a stream record and Lambda reads the stream and invokes the function automatically. The writer is untouched, no scheduled scan is needed, and SES sends the email from the function.'
+  - key: D
+    text: 'Enable DynamoDB Streams on the table and configure Amazon SES to consume the stream directly and send an email for each new record.'
+    correct: false
+    why: 'SES only sends email. It is not a stream consumer, so a compute component such as Lambda has to read the stream records and call SES.'
+cue: 'react to every new item without changing the writer and without polling -> DynamoDB Streams + Lambda trigger, then SES for the email'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.Lambda.html'
+  - 'https://docs.aws.amazon.com/lambda/latest/dg/with-ddb.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

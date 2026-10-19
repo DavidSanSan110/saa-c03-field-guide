@@ -1,0 +1,35 @@
+id: 'd2-2.1-0010'
+domain: 2
+task: '2.1'
+services:
+  - 'api-gateway'
+  - 'lambda'
+  - 'elasticache'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A publisher exposes its article catalog through an Amazon API Gateway REST API. The GET /articles/{id} method invokes an AWS Lambda function that queries a relational database. The same few thousand articles are requested again and again, the catalog is updated only a few times per day, and readers can tolerate content that is up to five minutes old. The Lambda invocations and the database load are growing with traffic, and response times are getting worse. Which solution reduces backend load and latency with the least development effort?'
+options:
+  - key: A
+    text: 'Configure provisioned concurrency for the Lambda function.'
+    correct: false
+    why: 'Provisioned concurrency only removes cold starts. The function is still invoked and the database is still queried for every single request.'
+  - key: B
+    text: 'Add an Amazon ElastiCache cluster and change the function code to look up each article in the cache before querying the database.'
+    correct: false
+    why: 'It would reduce database queries, but every request still invokes Lambda, and it needs new code, a VPC connection and cache management. A built-in gateway cache needs none of that.'
+  - key: C
+    text: 'Provision a cache for the production stage of the API, enable caching for the GET method with a TTL of 300 seconds, and use the id path parameter as a cache key.'
+    correct: true
+    why: 'API Gateway answers repeated requests from its stage cache for the TTL period, so neither Lambda nor the database is called on a hit and responses are faster. It is a configuration change; the id parameter keeps each article cached separately.'
+  - key: D
+    text: 'Raise the throttling limits of the stage so that the API accepts more requests per second.'
+    correct: false
+    why: 'Throttling limits only decide how many requests are admitted. A higher limit lets more traffic reach Lambda and the database, which makes the load worse.'
+cue: 'same GET requests repeated + data changes rarely + a few minutes of staleness accepted + least effort -> API Gateway stage caching with a TTL'
+references:
+  - 'https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-caching.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

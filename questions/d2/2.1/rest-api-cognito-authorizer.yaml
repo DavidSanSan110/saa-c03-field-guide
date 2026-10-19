@@ -1,0 +1,37 @@
+id: 'd2-2.1-0012'
+domain: 2
+task: '2.1'
+services:
+  - 'api-gateway'
+  - 'cognito'
+  - 'lambda'
+difficulty: easy # easy | medium | hard
+type: single # single | multiple
+stem: 'A company exposes its serverless backend through an Amazon API Gateway REST API whose methods invoke AWS Lambda functions. The web and mobile apps already sign customers in through an Amazon Cognito user pool. The company wants the API to accept requests only from customers who are signed in to that user pool, to reject all other calls before any Lambda function runs, and to write as little custom code as possible. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Write a Lambda authorizer that downloads the public keys of the user pool, verifies the JWT of each request and returns an IAM policy.'
+    correct: false
+    why: 'It would work, but it is custom code to write, test and maintain, and the Cognito user pool authorizer already does this check without code.'
+  - key: B
+    text: 'Create an API key and a usage plan for every customer and require the key on all methods.'
+    correct: false
+    why: 'API keys identify clients for throttling and quotas; the documentation says not to use them for authentication or authorization. They also do not tie the call to a signed-in user.'
+  - key: C
+    text: 'Create a Cognito user pool authorizer on the API, attach it to the methods, and have the apps send the token received at sign-in in the Authorization header.'
+    correct: true
+    why: 'API Gateway validates the token against the user pool and rejects calls with a missing or invalid token before the backend is invoked, using only configuration.'
+  - key: D
+    text: "Create an IAM user for every customer, set the methods to IAM authorization, and have the apps sign requests with the IAM user's access keys."
+    correct: false
+    why: 'Managing an IAM user and long-lived keys per customer does not scale and ignores the user pool the customers already sign in with.'
+cue: 'customers already in a Cognito user pool + only signed-in users + least custom code -> API Gateway Cognito user pool authorizer'
+references:
+  - 'https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-integrate-with-cognito.html'
+  - 'https://docs.aws.amazon.com/apigateway/latest/developerguide/apigateway-enable-cognito-user-pool.html'
+  - 'https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-usage-plans.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

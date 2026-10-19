@@ -1,0 +1,38 @@
+id: 'd2-2.1-0017'
+domain: 2
+task: '2.1'
+services:
+  - 'api-gateway'
+  - 'lambda'
+  - 's3'
+difficulty: medium
+type: single
+stem: 'A mobile app lets users submit high-resolution photos, often 30 MB to 80 MB each. Its serverless back end is an Amazon API Gateway REST API that invokes AWS Lambda. Uploads sent through the API are failing because of the size of the files. The company wants the photo bytes to stay out of the API, and a Lambda function must start processing each photo automatically as soon as it is stored. Which approach needs the least operational overhead?'
+options:
+  - key: A
+    text: 'Open a quota increase request with AWS to raise the payload size limit of the API Gateway REST API above 80 MB.'
+    correct: false
+    why: 'The payload size quota of a REST API is 10 MB and it cannot be increased. The photos would also still pass through the API, which the company wants to avoid.'
+  - key: B
+    text: 'Add an API method that invokes a Lambda function to create a presigned S3 PUT URL. The app uploads the photo straight to the bucket with that URL, and an S3 event notification for object-created events invokes the processing Lambda function.'
+    correct: true
+    why: 'The photo goes directly from the device to S3, so the API only carries a small request and response. The URL is valid for a limited time and carries the permissions of the role that created it, and the S3 event starts processing without polling.'
+  - key: C
+    text: 'Change the API method to an AWS service integration that proxies the request body to the S3 PutObject operation, and process the photos with a second Lambda function.'
+    correct: false
+    why: 'The photo would still travel through API Gateway and hit the same 10 MB payload quota, so large uploads would keep failing.'
+  - key: D
+    text: 'Let the app upload to the bucket with a presigned URL and run an Amazon EventBridge scheduled rule every five minutes that starts a Lambda function to list the bucket and find new photos.'
+    correct: false
+    why: 'The upload part is right, but scheduled listing is polling. It delays processing by up to the interval and adds work, while S3 event notifications can invoke Lambda as soon as an object is created.'
+cue: 'files larger than the API payload limit + uploads must not pass through the API + process automatically after upload -> presigned S3 URL plus S3 event notification to Lambda'
+references:
+  - 'https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-execution-service-limits-table.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
