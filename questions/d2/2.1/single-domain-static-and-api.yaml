@@ -1,0 +1,42 @@
+id: 'd2-2.1-0015'
+domain: 2
+task: '2.1'
+services:
+  - 'cloudfront'
+  - 's3'
+  - 'api-gateway'
+  - 'lambda'
+difficulty: hard
+type: multiple
+stem: 'A company is launching a global web application. The front end is a set of static files (HTML, JavaScript, images) kept in one Amazon S3 bucket, while the back end is a REST API built with Amazon API Gateway and AWS Lambda. Users in many countries must reach both parts under one domain name, for example the static files at the root and the API under /api/*. The static files must be cached close to users, and the S3 bucket must not be readable by the public. Which two actions meet these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Create one Amazon CloudFront distribution with two origins, the S3 bucket and the API Gateway API. Make the default cache behavior route to the S3 origin and add a cache behavior with the path pattern /api/* that routes to the API Gateway origin.'
+    correct: true
+    why: 'Cache behaviors map path patterns to origins, so a single distribution and domain name can serve static files from S3 and send /api/* requests to API Gateway, with edge caching for the static content.'
+  - key: B
+    text: 'Configure the S3 origin with origin access control and attach a bucket policy that lets the CloudFront service principal read objects only on behalf of this distribution, while the bucket stays closed to the public.'
+    correct: true
+    why: 'OAC makes CloudFront sign its requests to S3 and the bucket policy trusts only that distribution, so users must go through CloudFront and the bucket is never publicly readable.'
+  - key: C
+    text: 'Turn on static website hosting for the bucket, make the objects public and use the website endpoint as the CloudFront origin.'
+    correct: false
+    why: 'This makes the content publicly readable, which violates the requirement. A website endpoint is also treated as a custom origin, so OAC cannot be used with it.'
+  - key: D
+    text: 'Create two CloudFront distributions, one for the bucket and one for the API, and use an Amazon Route 53 weighted routing policy on one domain name to send each request to the right distribution.'
+    correct: false
+    why: 'Weighted routing splits traffic by percentage, not by URL path, so it would send some static requests to the API distribution and vice versa. Path-based routing is what CloudFront cache behaviors are for.'
+  - key: E
+    text: 'Keep the bucket private and have a Lambda function behind the API generate a presigned S3 URL for every static file that a page needs.'
+    correct: false
+    why: 'Presigned URLs point straight at S3 with unique signatures, so nothing is cached at edge locations and every page view adds API calls. This does not meet the caching requirement.'
+cue: 'static files and /api/* under one domain + cache static content + bucket must stay private -> one CloudFront distribution with path-based behaviors and OAC on the S3 origin'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/DownloadDistValuesCacheBehavior.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Introduction.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

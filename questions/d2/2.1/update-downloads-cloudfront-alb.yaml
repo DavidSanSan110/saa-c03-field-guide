@@ -1,0 +1,38 @@
+id: 'd2-2.1-0013'
+domain: 2
+task: '2.1'
+services:
+  - 'cloudfront'
+  - 'elb'
+  - 'ec2-auto-scaling'
+  - 'efs'
+difficulty: medium
+type: single
+stem: "A software vendor serves its desktop client from a web application. An Application Load Balancer spreads requests over an Auto Scaling group of EC2 instances in three Availability Zones. The installer and patch files live on an Amazon EFS file system that all instances mount. Each time a new release is published, thousands of customers download the same large, unchanging files within a few hours. The Auto Scaling group grows far beyond its normal size, and EC2 and data-transfer costs spike. The vendor's developers cannot change the application code. Which solution reduces cost the most without changing the application?"
+options:
+  - key: A
+    text: 'Copy the release files to an Amazon S3 bucket and modify the application so that download requests are redirected to S3 object URLs.'
+    correct: false
+    why: 'Moving the files to S3 would probably help, but it needs a change to the application code to issue the redirects, which the stem forbids.'
+  - key: B
+    text: 'Raise the maximum size of the Auto Scaling group, switch to larger instance types and enable provisioned throughput on the EFS file system so the fleet can absorb release-day downloads.'
+    correct: false
+    why: 'This only makes the fleet handle the peak. Every download still reaches an EC2 instance and EFS, so compute, storage throughput and transfer costs stay high or increase.'
+  - key: C
+    text: "Set up Amazon CloudFront in front of the load balancer (the ALB is the origin), apply a long TTL to the download paths, and point the application's DNS name at the distribution."
+    correct: true
+    why: 'The release files do not change, so edge locations can serve repeat downloads from cache. Only the first request per edge location reaches the ALB, the Auto Scaling group scales far less, and no application code is touched.'
+  - key: D
+    text: 'Add AWS Global Accelerator with the Application Load Balancer as its endpoint.'
+    correct: false
+    why: 'Global Accelerator routes client traffic over the AWS global network to the nearest healthy endpoint, but it does not cache content. Every download still reaches the instances, so the load and cost problem remains.'
+cue: 'same large, unchanging files downloaded by many users + cannot change the application code -> put CloudFront in front of the existing ALB origin and cache at the edge'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/restrict-access-to-load-balancer.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html'
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/what-is-global-accelerator.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

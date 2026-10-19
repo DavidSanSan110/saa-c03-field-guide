@@ -1,0 +1,33 @@
+id: 'd2-2.1-0016'
+domain: 2
+task: '2.1'
+services:
+  - 'dynamodb'
+difficulty: medium
+type: single
+stem: 'A blogging platform keeps posts, comments and reactions in a single Amazon DynamoDB table in us-east-1. Readers and commenters are now spread across North America, Europe and Asia. The company wants each user to read and write against a table in a nearby Region with low latency, wants the data to stay in sync across the Regions automatically, and wants to avoid building and running its own replication code. What should a solutions architect recommend to keep operational effort lowest?'
+options:
+  - key: A
+    text: 'Keep the single table in us-east-1 and deploy an Amazon ElastiCache cluster in each additional Region to cache reads.'
+    correct: false
+    why: 'A cache only helps repeated reads. Writes and cache misses still travel to us-east-1, so users do not get local writes, and cache invalidation across Regions would have to be built.'
+  - key: B
+    text: 'Convert the table to a DynamoDB global table by adding replica tables in the other Regions, and have each Regional application endpoint use its local replica.'
+    correct: true
+    why: 'Global tables are multi-Region and multi-active: any replica serves reads and writes and DynamoDB replicates changes automatically. They use the existing DynamoDB APIs, so there is no replication code to run.'
+  - key: C
+    text: "Create an independent table in each Region and add AWS Lambda functions that read each table's DynamoDB stream and write the changes into the tables of the other Regions."
+    correct: false
+    why: 'This can work but it is replication code the team must build, monitor and fix, including loops and conflicting writes. Global tables provide this as a managed feature.'
+  - key: D
+    text: 'Schedule on-demand backups of the table and restore them into new tables in the other Regions every few hours.'
+    correct: false
+    why: 'Restored copies are stale between restores and are separate tables, so changes made in one Region are not kept in sync. Regional users would see old data and conflicting writes.'
+cue: 'low-latency reads and writes in several Regions + automatic sync + least operational effort -> DynamoDB global tables'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GlobalTables.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

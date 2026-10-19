@@ -1,0 +1,43 @@
+id: 'd2-2.1-0008'
+domain: 2
+task: '2.1'
+services:
+  - 'cognito'
+  - 's3'
+  - 'iam'
+difficulty: hard # easy | medium | hard
+type: multiple # single | multiple
+stem: "A startup is building a mobile photo-journal app. Users sign in through an Amazon Cognito user pool. The app must upload and download each user's files directly to and from one shared Amazon S3 bucket, without sending the files through a backend server. A user must be able to read and write only the objects under a prefix that belongs to that user, and no long-lived AWS credentials may be stored on the devices. Which two actions should a solutions architect take? Choose two."
+options:
+  - key: A
+    text: "Create one IAM user for every app user, store that user's access key pair in the secure storage of the device, and attach a policy that is limited to the user's prefix."
+    correct: false
+    why: 'The access keys would be long-lived credentials on the devices, which the requirements forbid, and creating and rotating an IAM user per customer does not scale.'
+  - key: B
+    text: 'Create a Cognito identity pool that trusts the user pool as an identity provider, so the app can exchange the sign-in token for temporary AWS credentials.'
+    correct: true
+    why: 'The identity pool turns the token of the signed-in user into short-lived credentials tied to an IAM role, so no permanent keys are needed on the device and the app can call S3 directly.'
+  - key: C
+    text: 'In the IAM role that the identity pool assigns to authenticated users, allow s3:GetObject and s3:PutObject on the bucket under a path that contains the policy variable cognito-identity.amazonaws.com:sub, and limit s3:ListBucket with the s3:prefix condition.'
+    correct: true
+    why: 'The role is shared by all signed-in users, but the policy variable is replaced at runtime with the identity ID of the caller, so each user can reach only the objects under their own prefix.'
+  - key: D
+    text: 'Embed the access keys of a single IAM user that can use the whole bucket in the app, and make the app code add the correct user prefix to every request.'
+    correct: false
+    why: 'Long-lived keys shipped in the app can be extracted, and the prefix rule would be enforced only by client code that a user can bypass; the bucket would be exposed to every user.'
+  - key: E
+    text: "Allow public read and write on the bucket and rely on hard-to-guess, random prefixes so that users cannot find each other's objects."
+    correct: false
+    why: "Hiding names is not access control; anyone who learns or guesses a prefix, or lists the public bucket, can read and overwrite other users' data."
+  - key: F
+    text: 'Send the user pool token on every S3 request and write a bucket policy that compares the sub claim of the token with the object prefix.'
+    correct: false
+    why: 'A user pool token is not an AWS credential. It has to be exchanged through an identity pool for temporary credentials tied to an IAM role, which is where the permissions are defined.'
+cue: 'users sign in with a user pool + each user only their own prefix + no long-lived credentials on the device -> identity pool temporary credentials + IAM policy scoped with the identity ID variable'
+references:
+  - 'https://docs.aws.amazon.com/cognito/latest/developerguide/iam-roles.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
