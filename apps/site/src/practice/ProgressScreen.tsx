@@ -1,6 +1,6 @@
 // The progress view: attempts over time and accuracy per domain and task, from this browser's history (spec 028).
 import { PASS_MARK } from '@field-guide/quiz-core';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DashboardView } from './dashboard.ts';
 
 const BOXES = [
@@ -15,9 +15,21 @@ const date = (ms: number): string => new Date(ms).toLocaleDateString();
 const percentText = (percent: number | null): string =>
   percent === null ? '—' : `${String(percent)}%`;
 
-/** Scores 100 to 1000 on a small inline chart; one mark per mock exam, oldest left. */
+/** Scores 100 to 1000 on an inline chart as wide as its card; one mark per mock exam, oldest left. */
 function ScoreChart({ scores }: { scores: DashboardView['examScores'] }) {
-  const width = 360;
+  const box = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(360);
+  useEffect(() => {
+    const element = box.current;
+    if (element === null) return;
+    const observer = new ResizeObserver(() => {
+      setWidth(Math.max(240, Math.floor(element.clientWidth)));
+    });
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, []);
   const height = 180;
   const left = 36;
   const right = 12;
@@ -32,37 +44,51 @@ function ScoreChart({ scores }: { scores: DashboardView['examScores'] }) {
     ({ estimated }, index) => `${String(x(index))},${String(y(estimated))}`,
   );
   return (
-    <svg className="pt-chart" viewBox={`0 0 ${String(width)} ${String(height)}`} aria-hidden="true">
-      {[100, 1000].map((tick) => (
-        <g key={tick}>
-          <line className="pt-chart-grid" x1={left} x2={width - right} y1={y(tick)} y2={y(tick)} />
-          <text className="pt-chart-label" x={left - 6} y={y(tick)} textAnchor="end" dy="0.35em">
-            {tick}
-          </text>
-        </g>
-      ))}
-      <line
-        className="pt-chart-pass"
-        x1={left}
-        x2={width - right}
-        y1={y(PASS_MARK)}
-        y2={y(PASS_MARK)}
-      />
-      <text className="pt-chart-label" x={left - 6} y={y(PASS_MARK)} textAnchor="end" dy="0.35em">
-        {PASS_MARK}
-      </text>
-      {scores.length > 1 && <polyline className="pt-chart-line" points={points.join(' ')} />}
-      {scores.map(({ submittedAt, estimated }, index) => (
-        <circle
-          key={`${String(submittedAt)}-${String(index)}`}
-          className="pt-chart-mark"
-          data-score={estimated}
-          cx={x(index)}
-          cy={y(estimated)}
-          r="4"
+    <div className="pt-chart-box" ref={box}>
+      <svg
+        className="pt-chart"
+        width={width}
+        height={height}
+        viewBox={`0 0 ${String(width)} ${String(height)}`}
+        aria-hidden="true"
+      >
+        {[100, 1000].map((tick) => (
+          <g key={tick}>
+            <line
+              className="pt-chart-grid"
+              x1={left}
+              x2={width - right}
+              y1={y(tick)}
+              y2={y(tick)}
+            />
+            <text className="pt-chart-label" x={left - 6} y={y(tick)} textAnchor="end" dy="0.35em">
+              {tick}
+            </text>
+          </g>
+        ))}
+        <line
+          className="pt-chart-pass"
+          x1={left}
+          x2={width - right}
+          y1={y(PASS_MARK)}
+          y2={y(PASS_MARK)}
         />
-      ))}
-    </svg>
+        <text className="pt-chart-label" x={left - 6} y={y(PASS_MARK)} textAnchor="end" dy="0.35em">
+          {PASS_MARK}
+        </text>
+        {scores.length > 1 && <polyline className="pt-chart-line" points={points.join(' ')} />}
+        {scores.map(({ submittedAt, estimated }, index) => (
+          <circle
+            key={`${String(submittedAt)}-${String(index)}`}
+            className="pt-chart-mark"
+            data-score={estimated}
+            cx={x(index)}
+            cy={y(estimated)}
+            r="4"
+          />
+        ))}
+      </svg>
+    </div>
   );
 }
 
