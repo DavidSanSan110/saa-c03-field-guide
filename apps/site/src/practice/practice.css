@@ -1521,6 +1521,11 @@ html[data-practice-screen] .content-panel + .content-panel {
   text-align: start;
   vertical-align: top;
 }
+.pt-table th:not(:first-child),
+.pt-table td:not(:first-child) {
+  overflow-wrap: normal;
+  white-space: nowrap;
+}
 .pt-table thead th {
   color: var(--pt-muted);
   font-size: var(--sl-text-xs);
