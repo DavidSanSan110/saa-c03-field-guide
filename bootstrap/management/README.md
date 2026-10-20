@@ -30,13 +30,17 @@ No access keys exist anywhere; the account ID is read at plan time and never wri
    cp terraform.tfvars.example terraform.tfvars   # then edit alert_email
    ```
 
-   Use the address that the existing budget already notifies, so the imported budget shows no
-   notification diff.
+   This address receives the budget and the cost anomaly emails.
 
 ## First apply
 
 The state bucket is created by this same stack, so the first apply runs with **local state** and the
-state is migrated into the bucket at the end. Three existing resources are imported first.
+state is migrated into the bucket at the end. Up to three existing resources are imported first: the
+Organization and the two defaults that AWS gives every new account.
+
+The budget `field-guide-monthly` is **created** by Terraform. If a budget with that name already
+exists in the account, the create fails: delete it first, or import it into
+`aws_budgets_budget.monthly`.
 
 Run everything from `bootstrap/management/`.
 
@@ -59,21 +63,25 @@ Run everything from `bootstrap/management/`.
    terraform init
    ```
 
-3. Import the three existing resources. Each ID comes from a read-only command:
+3. Import the existing resources. Each ID comes from a read-only command:
 
    ```bash
    # Organization: <ORG_ID> looks like o-xxxxxxxxxx
    aws organizations describe-organization --query Organization.Id --output text
    terraform import aws_organizations_organization.this <ORG_ID>
 
-   # Budget: the ID is <ACCOUNT_ID>:field-guide-monthly
-   aws sts get-caller-identity --query Account --output text
-   terraform import aws_budgets_budget.monthly <ACCOUNT_ID>:field-guide-monthly
-
    # Anomaly monitor: <MONITOR_ARN> is the ARN of Default-Services-Monitor
    aws ce get-anomaly-monitors --query "AnomalyMonitors[?MonitorName=='Default-Services-Monitor'].MonitorArn" --output text
    terraform import aws_ce_anomaly_monitor.services <MONITOR_ARN>
+
+   # Anomaly subscription: <SUBSCRIPTION_ARN> is the ARN of Default-Services-Subscription
+   aws ce get-anomaly-subscriptions --query "AnomalySubscriptions[?SubscriptionName=='Default-Services-Subscription'].SubscriptionArn" --output text
+   terraform import aws_ce_anomaly_subscription.impact_5usd <SUBSCRIPTION_ARN>
    ```
+
+   New accounts get `Default-Services-Monitor` and `Default-Services-Subscription` from AWS. If the
+   command prints nothing for one of them, the account has none: skip that import and Terraform
+   creates the resource. The import ID of both anomaly resources is the ARN.
 
 4. Plan and read it before applying:
 
@@ -81,13 +89,17 @@ Run everything from `bootstrap/management/`.
    terraform plan -out=first.tfplan
    ```
 
-   Expected on the imported resources: the Organization changes only by the added
-   `cloudtrail.amazonaws.com` principal (the Organization has no tags in provider 6.67.0, so it gets
-   no tag change); the budget and the monitor change only by the default tags (the budget's billing
-   view is set in the code and matches). Everything else is created (two buckets and their settings,
-   the trail, the new anomaly subscription, the SCP and its attachment). Nothing is destroyed. Stop
-   and investigate if the plan shows anything else on an imported resource, in particular a changed
-   budget limit, filter, billing view or subscriber.
+   Expected on the imported resources:
+   - the Organization changes only by the added `cloudtrail.amazonaws.com` principal (the
+     Organization has no tags in provider 6.67.0, so it gets no tag change);
+   - the monitor changes only by the default tags;
+   - the subscription shows `-/+` (replace), because its `name` forces a new resource: AWS's default
+     subscription (100 USD and 40 percent) is deleted and `field-guide-impact-5usd` (at least 5 USD)
+     is created, so exactly one subscription remains.
+
+   The budget shows `+` (created). Everything else is created too (two buckets and their settings,
+   the trail, the SCP and its attachment). Nothing else is destroyed. Stop and investigate if the
+   plan shows anything else on an imported resource.
 
 5. Apply the saved plan:
 
@@ -191,15 +203,14 @@ If you must:
    terraform state rm aws_organizations_organization.this
    ```
 
-2. Keep the anomaly monitor by default, because it also feeds the unmanaged
-   `Default-Services-Subscription`:
+2. Keep the anomaly monitor by default, because it is one of AWS's defaults:
 
    ```bash
    terraform state rm aws_ce_anomaly_monitor.services
    ```
 
-   Then decide about the budget: `terraform state rm aws_budgets_budget.monthly` keeps it in AWS,
-   otherwise Terraform deletes it.
+   The budget and the `field-guide-impact-5usd` subscription are this stack's own: they are
+   destroyed with it.
 
 3. Destroy the trail first, so no new logs arrive:
 

@@ -1,5 +1,5 @@
-# Imported: the monthly budget already exists. The values below match what AWS stores, so the only
-# expected diff is the default tags. cost_types is not used: it conflicts with metrics.
+# Created by Terraform: 10 USD per month, excluding credits and refunds. If a budget with this name
+# already exists the create fails (see the README). cost_types is not used: it conflicts with metrics.
 resource "aws_budgets_budget" "monthly" {
   name         = "field-guide-monthly"
   budget_type  = "COST"
@@ -8,8 +8,8 @@ resource "aws_budgets_budget" "monthly" {
   limit_unit   = "USD"
   metrics      = ["UnblendedCost"]
 
-  # The existing budget uses the primary billing view. The provider does not compute this argument,
-  # so without it the import would plan to remove the view.
+  # The account's primary billing view, the one the console uses. Set explicitly because the
+  # provider does not compute this argument.
   billing_view_arn = "arn:aws:billing::${local.account_id}:billingview/primary"
 
   filter_expression {
@@ -46,16 +46,17 @@ resource "aws_budgets_budget" "monthly" {
   }
 }
 
-# Imported: the default Services monitor that AWS created. Its existing $100 subscription is not
-# managed here and stays as it is.
+# Imported: new accounts get this default monitor from AWS. If the account has none, skip the import
+# and Terraform creates it.
 resource "aws_ce_anomaly_monitor" "services" {
   name              = "Default-Services-Monitor"
   monitor_type      = "DIMENSIONAL"
   monitor_dimension = "SERVICE"
 }
 
-# A new, lower-threshold subscription on the same monitor: a daily email for any anomaly costing
-# at least 5 USD.
+# A daily email for any anomaly costing at least 5 USD, on the monitor above. New accounts get AWS's
+# own Default-Services-Subscription (100 USD and 40 percent): import it and, because name forces a
+# new resource, the plan replaces it with this one, so exactly one subscription remains.
 resource "aws_ce_anomaly_subscription" "impact_5usd" {
   name             = "field-guide-impact-5usd"
   frequency        = "DAILY"
