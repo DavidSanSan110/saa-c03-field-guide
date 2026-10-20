@@ -199,8 +199,11 @@ anyone who can push a branch can run Terraform as an administrator.
 policy, attached policies, boundary, `iam:PassRole`, `sts:AssumeRole`) on every role outside
 `role/lab/*`, so a role made by hand later cannot be re-trusted and used to get around the denies.
 Roles under `/lab/` stay capped by the boundary, but `fg-tf-apply` can still change their trust
-policies. Service-linked roles are not affected. A few AWS services do not accept a role path; for
-those, the lab cannot run under CI.
+policies. Services can still create their service-linked roles, but passing one is denied, so leave
+arguments such as `service_linked_role_arn` unset. A few AWS services do not accept a role path, and
+`sts:AssumeRole` into another account is denied too; such labs cannot run under CI. Never attach a
+privileged role outside `/lab/` to compute in this account (a Lambda function, an instance, a build
+project): `fg-tf-apply` could change that code and act as the role without passing it.
 
 Lab state lives at `labs/<lab id>.tfstate` in the same bucket. Labs use the **default Terraform
 workspace**: other workspaces store their state under `env:/<workspace>/...` keys, which the bucket
