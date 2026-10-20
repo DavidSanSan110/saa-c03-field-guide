@@ -1,7 +1,7 @@
 # bootstrap/workload
 
 The Terraform stack for the **workload account** of the field-guide AWS Organization: everything CI
-needs before it can run, and everything CI must never be able to change.
+needs before it can run, and the guardrails CI must not be able to turn off.
 
 - the S3 bucket that holds the Terraform state of this stack and of every lab;
 - account-level guardrails: S3 Block Public Access for the whole account, an IAM Access Analyzer
@@ -12,7 +12,8 @@ needs before it can run, and everything CI must never be able to change.
 
 It is applied **locally by the owner**, with an IAM Identity Center session, and never by CI: CI only
 runs `fmt`, `validate`, `tflint`, `checkov` and `terraform test` on it (mock providers, no AWS access).
-That is the point: the roles and guardrails CI runs under cannot be changed by CI. No access keys
+That is the point: CI cannot change its own roles, the OIDC provider, the permissions boundary or the
+account guardrails (the exact list is in [Using the CI roles](#using-the-ci-roles)). No access keys
 exist anywhere; the account ID is read at plan time and never written in a file.
 
 ## Prerequisites
@@ -41,6 +42,9 @@ exist anywhere; the account ID is read at plan time and never written in a file.
    - Repositories with **immutable subject claims** print `repo:<owner>@<owner id>/<repo>@<repo id>`,
      with the numeric IDs. Use that value.
    - For older repositories the command prints nothing or `null`: the prefix is `repo:<owner>/<repo>`.
+   - If the repository customizes its OIDC claim keys (`use_default: false`), tokens do not carry
+     `<prefix>:<event>` subjects such as `<prefix>:pull_request`, and the trust policies of this stack
+     will not match them. Switch the repository back to the default claims.
 
 5. A `terraform.tfvars` (git-ignored) made from the example:
 
@@ -179,12 +183,28 @@ typed into the parent by hand, and a recreated zone gets different name servers.
 `tf_apply_role_arn` and `boundary_policy_arn` (the boundary every lab role must set as its
 `permissions_boundary`). None of them is a secret.
 
-| Role          | Assumed by                                                        | Can                                                                                                       | Cannot                                                                                                                                                                                                                                                                                                                                                                                  |
-| ------------- | ----------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fg-tf-plan`  | jobs on pull requests and on the main branch of the repository    | read the configuration of every resource (`ReadOnlyAccess`); read lab state under `labs/`                 | write or delete any object in the state bucket, lock files included; read state outside `labs/`; read secret values (`secretsmanager:GetSecretValue`); read the account's own SSM parameters; read objects in any other bucket                                                                                                                                                          |
-| `fg-tf-apply` | jobs that run in the `infra` GitHub environment of the repository | create, change and delete almost anything (`AdministratorAccess`); read and write lab state under `labs/` | change the CI roles, `OrganizationAccountAccessRole`, the boundary or the OIDC provider; create or change a role without the boundary; remove a boundary; create IAM users, access keys or login profiles; turn off account Block Public Access or EBS default encryption; delete the analyzer; change the state bucket's settings; touch `bootstrap/` state or any key outside `labs/` |
+| Role          | Assumed by                                                     | Can                                                                                                                                                                                                               | Cannot                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fg-tf-plan`  | jobs on pull requests and on the main branch of the repository | read the configuration of resources (`ReadOnlyAccess`); read lab state under `labs/`                                                                                                                              | write or delete any object in the state bucket, lock files included; read state outside `labs/`; read secret values (`secretsmanager:GetSecretValue`); read the account's own SSM parameters; read objects in other buckets                                                                                                                                                                                                                                       |
+| `fg-tf-apply` | jobs that run in the `infra` GitHub environment                | create, change and delete almost anything (`AdministratorAccess`); change the hosted zone and its records; read and write lab state under `labs/`; create roles under `/lab/` and change their trust and policies | change the CI roles, `OrganizationAccountAccessRole`, the boundary or the OIDC provider; write to any role outside the `/lab/` path; create or change a role without the boundary; create IAM users, access keys or login profiles; turn off account Block Public Access or EBS default encryption, change the default EBS key, delete the analyzer or hide its findings; change the state bucket's settings; touch `bootstrap/` state or any key outside `labs/` |
 
-Lab state lives at `labs/<lab id>.tfstate` in the same bucket.
+**`fg-tf-apply` is only as safe as the `infra` environment.** The trust policy accepts any job of the
+repository that runs in an environment named `infra`, so the environment must allow deployments from
+the `main` branch only and have a required reviewer. Set both up with the CI workflow; without them,
+anyone who can push a branch can run Terraform as an administrator.
+
+**The `/lab/` path rule.** Every role CI creates must set `path = "/lab/"` and
+`permissions_boundary = <boundary ARN>` (output `boundary_policy_arn`; the path is the output
+`lab_role_path`). `fg-tf-apply` and the boundary deny role writes (create, delete, update, tag, trust
+policy, attached policies, boundary, `iam:PassRole`, `sts:AssumeRole`) on every role outside
+`role/lab/*`, so a role made by hand later cannot be re-trusted and used to get around the denies.
+Roles under `/lab/` stay capped by the boundary, but `fg-tf-apply` can still change their trust
+policies. Service-linked roles are not affected. A few AWS services do not accept a role path; for
+those, the lab cannot run under CI.
+
+Lab state lives at `labs/<lab id>.tfstate` in the same bucket. Labs use the **default Terraform
+workspace**: other workspaces store their state under `env:/<workspace>/...` keys, which the bucket
+policy denies to the CI roles.
 
 **CI plans must use `-lock=false`.** With `use_lockfile`, Terraform locks by writing
 `<key>.tflock` into the bucket, and `fg-tf-plan` is denied every write. A plan with `-lock=false`
@@ -192,10 +212,11 @@ only reads state. `fg-tf-apply` writes the lock normally.
 
 **Trade-off of the plan role's read denies.** `ReadOnlyAccess` can read object contents, secret values
 and parameters; `fg-tf-plan` denies the ones that matter, so a pull request cannot turn a plan into a
-data read. The price: a lab that manages S3 objects, secrets or SSM parameters in the account cannot be
+data read of the kinds it denies. The price: a lab that manages S3 objects, secrets or SSM parameters in the account cannot be
 planned by `fg-tf-plan` (the read fails with an explicit deny). Plan such a lab locally instead, or
 keep the data out of Terraform. AWS public parameters (such as AMI IDs under `/aws/service/`) still
-resolve.
+resolve. `ReadOnlyAccess` can still read some data that is not denied (DynamoDB items, CloudWatch Logs
+events, Lambda environment variables), so do not keep secrets there.
 
 Policy documents are built with `jsonencode` from plan-time values (names, the account ID and the
 Region), never from computed attributes, so the plan shows the exact JSON and a role can be named in
@@ -242,11 +263,12 @@ it. If you must, in this order:
 4. Remove `prevent_destroy` from the state bucket in `state.tf` and from the hosted zone in `dns.tf`.
 5. Empty the state bucket, including **all object versions and delete markers** (versioning is on and
    `force_destroy` is off).
-6. `terraform destroy`. This removes the CI roles, the boundary and the OIDC provider, and puts the
+6. Delete the four `NS` records at the parent zone **before** destroying the hosted zone: a delegation
+   that points at name servers nobody owns any more can be taken over by someone who creates a zone
+   that happens to get them.
+7. `terraform destroy`. This removes the CI roles, the boundary and the OIDC provider, and puts the
    account back to having no account-level Block Public Access, no analyzer and no EBS default
    encryption.
-7. Delete the four `NS` records at the parent zone. Deleting the hosted zone breaks the delegation, and
-   a delegation that points at name servers nobody owns any more can be abused.
 
 ## Files
 
