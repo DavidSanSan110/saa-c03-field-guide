@@ -8,8 +8,7 @@ on:
     - cron: '0 6 * * 1' # weekly full-history secret scan
   workflow_dispatch: # run a full-history scan on demand
 
-permissions:
-  contents: read
+permissions: {}
 
 concurrency:
   # Per event, so a push to main never cancels a queued scheduled full scan.
