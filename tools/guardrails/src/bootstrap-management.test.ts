@@ -364,3 +364,57 @@ describe('AC-17: README documents the first apply, cost and destroy', () => {
     expect(destroy).toContain('terraform state rm aws_organizations_organization.this');
   });
 });
+
+// ---- Review round 1: AC-23 (static part), AC-27, AC-28 --------------------------------------------
+
+describe('AC-23: the log bucket lifecycle rules apply to the whole bucket (static check)', () => {
+  // filter.prefix is unknown at plan time when the filter is empty, so terraform test cannot see it.
+  test('AC-23: no lifecycle rule of the log bucket sets a non-empty prefix', () => {
+    const body = resourceBody('aws_s3_bucket_lifecycle_configuration', 'trail_logs');
+    expect(body).not.toMatch(/^\s*prefix\s*=\s*(?!"")\S/m);
+  });
+});
+
+describe('AC-27: the s3 backend region', () => {
+  test('AC-27: the s3 backend block has region = "eu-west-1"', () => {
+    const bodies = blockBodies(allTerraform(), /\bbackend\s+"s3"\s*\{/);
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0]).toMatch(/^\s*region\s*=\s*"eu-west-1"\s*$/m);
+  });
+});
+
+describe('AC-28: the README does not run terraform output once the override is gone', () => {
+  const deletesOverride =
+    /(?:\brm\b|\bRemove-Item\b)\s+(?:-\S+\s+)*['"]?(?:\.[\\/])?backend_override\.tf/;
+
+  function deletionLine(lines: string[]): number {
+    return lines.findIndex((line) => deletesOverride.test(line));
+  }
+
+  test('AC-28: the README deletes backend_override.tf with rm or Remove-Item', () => {
+    const lines = readStackFile('README.md').split(/\r?\n/);
+    expect(deletionLine(lines)).toBeGreaterThanOrEqual(0);
+  });
+
+  test('AC-28: terraform output -raw state_bucket is captured before the override is deleted', () => {
+    const lines = readStackFile('README.md').split(/\r?\n/);
+    const deleted = deletionLine(lines);
+    expect(deleted).toBeGreaterThanOrEqual(0);
+    const before = lines.slice(0, deleted);
+    expect(before.some((line) => /terraform\s+output\s+-raw\s+state_bucket\b/.test(line))).toBe(
+      true,
+    );
+  });
+
+  test('AC-28: no line from the deletion to the -migrate-state line runs terraform output', () => {
+    const lines = readStackFile('README.md').split(/\r?\n/);
+    const deleted = deletionLine(lines);
+    expect(deleted).toBeGreaterThanOrEqual(0);
+    const migrate = lines.findIndex((line, i) => i > deleted && line.includes('-migrate-state'));
+    expect(migrate).toBeGreaterThan(deleted);
+    const offenders = lines
+      .slice(deleted, migrate + 1)
+      .filter((line) => /terraform\s+output\b/.test(line));
+    expect(offenders).toEqual([]);
+  });
+});
