@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (git-ignored) and fill in your own values.
+
+# The OIDC subject prefix of your repository (see the README: how to read it).
+github_sub_prefix = "repo:your-user/saa-c03-field-guide"
+
+# A public hosted zone to create (a subdomain of a domain you own), or leave this line out for none.
+hosted_zone_name = "field-guide.example.com"
