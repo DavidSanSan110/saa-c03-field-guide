@@ -219,3 +219,21 @@ describe('guardrails tf-stacks: usage errors', () => {
     expect(run.stderr).not.toBe('');
   });
 });
+
+describe('guardrails tf-stacks: renames across stacks (review round 1)', () => {
+  test('AC-24: moving a file from one stack to another selects both stacks (--no-renames)', () => {
+    const dir = seededRepo();
+    // Enough identical content for git to detect the move as a rename.
+    const variables = Array.from(
+      { length: 12 },
+      (_, index) => `variable "v${index}" {\n  type    = string\n  default = "value-${index}"\n}\n`,
+    ).join('\n');
+    write(dir, 'labs/01-b/variables.tf', variables);
+    commitAll(dir, 'chore: add variables');
+    git(dir, ['checkout', '--quiet', '-b', 'move']);
+    git(dir, ['mv', 'labs/01-b/variables.tf', 'labs/00-a/variables.tf']);
+    commitAll(dir);
+    // labs/01-b/main.tf stays, so labs/01-b still exists and lost a file: it must be re-checked.
+    expectStacks(runCli(dir, ['tf-stacks', '--base', 'main']), ['labs/00-a', 'labs/01-b']);
+  });
+});

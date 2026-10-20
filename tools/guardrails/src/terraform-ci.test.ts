@@ -1,4 +1,8 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { delimiter } from 'node:path';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test } from 'vitest';
@@ -642,5 +646,204 @@ describe('CONTRIBUTING.md: the Terraform section', () => {
     expect(readRepoFile('CONTRIBUTING.md')).toContain(
       'terraform providers lock -platform=linux_amd64 -platform=windows_amd64',
     );
+  });
+});
+
+// ---- Review round 1 (AC-23..AC-26) -------------------------------------------------------------
+
+interface ScriptRun {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  /** What the script appended to the file behind $GITHUB_OUTPUT. */
+  githubOutput: string;
+}
+
+/** `run` of a step with shell comment lines (and trailing comments) removed. */
+function runWithoutComments(step: Dict): string {
+  return withoutComments(str(step['run']));
+}
+
+/**
+ * Runs a step's `run` script with bash the way GitHub does: `bash -e` by default, and
+ * `bash --noprofile --norc -eo pipefail` when the step says `shell: bash`. Expressions in `env`
+ * values are replaced by `exprValue`; `fakePnpm` (a bash script body) shadows `pnpm` on PATH.
+ */
+function runStepScript(
+  step: Dict,
+  options: { env?: Record<string, string>; fakePnpm?: string; exprValue?: string } = {},
+): ScriptRun {
+  const dir = mkdtempSync(join(tmpdir(), 'terraform-ci-step-'));
+  try {
+    const slash = (path: string): string => path.replace(/\\/g, '/');
+    const scriptPath = slash(join(dir, 'step.sh'));
+    const outputPath = slash(join(dir, 'github-output'));
+    writeFileSync(scriptPath, str(step['run']));
+    writeFileSync(outputPath, '');
+
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    for (const key of Object.keys(env)) {
+      if (key.startsWith('GIT_')) delete env[key];
+    }
+    if (options.fakePnpm !== undefined) {
+      const binDir = join(dir, 'bin');
+      mkdirSync(binDir);
+      writeFileSync(join(binDir, 'pnpm'), `#!/usr/bin/env bash\n${options.fakePnpm}\n`, {
+        mode: 0o755,
+      });
+      const pathKey = Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH';
+      env[pathKey] = `${binDir}${delimiter}${env[pathKey] ?? ''}`;
+    }
+    const stepEnv = isDict(step['env']) ? step['env'] : {};
+    for (const [key, value] of Object.entries(stepEnv)) {
+      env[key] = String(value).replace(/\$\{\{[^}]*\}\}/g, options.exprValue ?? 'main');
+    }
+    Object.assign(env, options.env ?? {});
+    env['GITHUB_OUTPUT'] = outputPath;
+
+    const flags = step['shell'] === 'bash' ? ['--noprofile', '--norc', '-eo', 'pipefail'] : ['-e'];
+    const result = spawnSync('bash', [...flags, scriptPath], {
+      cwd: dir,
+      env,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    return {
+      status: result.status,
+      stdout: result.stdout,
+      stderr: result.stderr,
+      githubOutput: readFileSync(outputPath, 'utf8'),
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('terraform.yml: a failing tf-stacks fails the stacks job (review round 1)', () => {
+  /** The stacks-job steps that run `guardrails tf-stacks`. */
+  function tfStacksJobSteps(): Dict[] {
+    return stepsOf(jobOf(loadTerraformWorkflow(), 'stacks')).filter((step) =>
+      /\bguardrails tf-stacks\b/.test(runWithoutComments(step)),
+    );
+  }
+
+  /** Banner lines first (pnpm prints some), then whatever the fake tf-stacks prints. */
+  const banner = 'echo ""; echo "> saa-c03-field-guide@ guardrails /repo"; echo ""';
+
+  test('AC-23: the stacks job has steps that run tf-stacks', () => {
+    expect(tfStacksJobSteps().length).toBeGreaterThanOrEqual(1);
+  });
+
+  test('AC-23: a step that pipes tf-stacks declares shell: bash or starts with set -o pipefail', () => {
+    const piped = tfStacksJobSteps().filter((step) =>
+      /guardrails tf-stacks[^\n]*[^|\n]\|[^|]/.test(runWithoutComments(step)),
+    );
+    for (const step of piped) {
+      const firstCommand =
+        runWithoutComments(step)
+          .split(/\r?\n/)
+          .map((line) => line.trim())
+          .find((line) => line !== '') ?? '';
+      const hasPipefail =
+        step['shell'] === 'bash' || /^set\s+(-\S+\s+)*.*pipefail/.test(firstCommand);
+      expect(hasPipefail, `step "${str(step['name'])}" pipes tf-stacks without pipefail`).toBe(
+        true,
+      );
+    }
+  });
+
+  test('AC-23: when tf-stacks fails, the step exits non-zero (no empty stacks= is published)', () => {
+    const steps = tfStacksJobSteps();
+    expect(steps.length).toBeGreaterThanOrEqual(1);
+    for (const step of steps) {
+      const run = runStepScript(step, { fakePnpm: `${banner}\necho "boom" >&2\nexit 1` });
+      expect(run.status, `step "${str(step['name'])}" must fail when tf-stacks fails`).not.toBe(0);
+      expect(run.githubOutput, `step "${str(step['name'])}"`).not.toMatch(/^stacks=$/m);
+    }
+  });
+
+  test('AC-23: an output that does not start with [ makes the step exit non-zero', () => {
+    const steps = tfStacksJobSteps();
+    expect(steps.length).toBeGreaterThanOrEqual(1);
+    for (const step of steps) {
+      const run = runStepScript(step, { fakePnpm: `${banner}\necho "error: not json"\nexit 0` });
+      expect(run.status, `step "${str(step['name'])}" must reject a non-JSON output`).not.toBe(0);
+    }
+  });
+
+  test('AC-23: a JSON array after the banner is written to GITHUB_OUTPUT as stacks=<json>', () => {
+    const steps = tfStacksJobSteps();
+    expect(steps.length).toBeGreaterThanOrEqual(1);
+    for (const step of steps) {
+      const run = runStepScript(step, { fakePnpm: `${banner}\necho '["labs/00-a"]'` });
+      expect(run.status, `step "${str(step['name'])}": ${run.stderr}`).toBe(0);
+      expect(run.githubOutput, `step "${str(step['name'])}"`).toContain('stacks=["labs/00-a"]');
+    }
+  });
+});
+
+describe('terraform.yml: the terraform gate script, executed (review round 1)', () => {
+  /** The gate step and the env variable that GitHub fills from the needed jobs' results. */
+  function gate(): { step: Dict; variable: string } {
+    const job = jobOf(loadTerraformWorkflow(), 'terraform');
+    for (const step of stepsOf(job)) {
+      const env = isDict(step['env']) ? step['env'] : {};
+      const fed = Object.entries(env).filter(
+        ([, value]) => typeof value === 'string' && /needs\..*result/.test(value),
+      );
+      if (fed.length === 0) continue;
+      const others = Object.entries(env).filter(
+        ([key, value]) => key !== (fed[0] as [string, unknown])[0] && String(value).includes('${{'),
+      );
+      if (others.length > 0 || str(step['run']).includes('${{')) {
+        throw new Error(
+          'the gate step has expressions besides the needs.*.result variable; this test cannot set them: ' +
+            others.map(([key]) => key).join(', '),
+        );
+      }
+      return { step, variable: (fed[0] as [string, unknown])[0] };
+    }
+    throw new Error('no step of the terraform job gets needs.*.result through env');
+  }
+
+  const cases: [string, number][] = [
+    ['success skipped', 0],
+    ['success success', 0],
+    ['failure skipped', 1],
+    ['cancelled skipped', 1],
+    ['success cancelled', 1],
+    ['success failure', 1],
+  ];
+
+  test.each(cases)('AC-25: with results "%s" the gate exits %i (0 = pass)', (results, expected) => {
+    const { step, variable } = gate();
+    const run = runStepScript(step, { env: { [variable]: results } });
+    if (expected === 0) {
+      expect(run.status, run.stderr).toBe(0);
+    } else {
+      expect(run.status, run.stdout).not.toBe(0);
+    }
+  });
+});
+
+describe('terraform.yml: the Terraform version step (review round 1)', () => {
+  test('AC-26: terraform_version references a step output whose step reads .terraform-version', () => {
+    const job = jobOf(loadTerraformWorkflow(), 'check');
+    const steps = stepsOf(job);
+    const setup = steps.find((step) => str(step['uses']).startsWith('hashicorp/setup-terraform@'));
+    expect(setup, 'the check job must use hashicorp/setup-terraform').toBeDefined();
+    const inputs = (setup as Dict)['with'];
+    const version = isDict(inputs) ? str(inputs['terraform_version']) : '';
+    const reference = /\$\{\{\s*steps\.([A-Za-z0-9_-]+)\.outputs\.[A-Za-z0-9_-]+\s*\}\}/.exec(
+      version,
+    );
+    expect(
+      reference,
+      `terraform_version "${version}" must reference steps.<id>.outputs.<name>`,
+    ).not.toBeNull();
+    const id = (reference as RegExpExecArray)[1];
+    const producer = steps.find((step) => step['id'] === id);
+    expect(producer, `no step has id "${String(id)}"`).toBeDefined();
+    expect(runWithoutComments(producer as Dict)).toContain('.terraform-version');
   });
 });
