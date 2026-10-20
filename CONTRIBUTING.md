@@ -41,6 +41,15 @@ Useful scripts: `pnpm test:watch`, `pnpm format`, `pnpm lint`, `pnpm verify:fast
 
 `pnpm install` also installs the git hooks ([Lefthook](lefthook.yml)): gitleaks, the guardrails, ESLint and Prettier on commit; commitlint on the message; typecheck and unit tests before a push. Pushing straight to `main` is refused.
 
+## Terraform
+
+Stacks live in `bootstrap/<name>`, `labs/<name>` and `modules/<name>`. For every stack that CI picks (the ones a PR touches, or all of them when a module or a shared Terraform config changes) the `terraform` workflow runs, in the stack directory: `terraform fmt -check -recursive`, `terraform init -backend=false -lockfile=readonly`, `terraform validate`, TFLint, Checkov and `terraform test`. None of it needs AWS credentials. Tool versions are pinned: Terraform in `.terraform-version`, the rest in the workflow and `.tflint.hcl`.
+
+- **Lock files:** a stack that requires providers commits its `.terraform.lock.hcl` with hashes for CI (Linux) and for Windows. Create it with `terraform providers lock -platform=linux_amd64 -platform=windows_amd64`. CI's `-lockfile=readonly` fails when the file is missing or stale.
+- **Never committed:** `*.tfvars`, `*.tfvars.json`, saved plans (`*.tfplan`), state and `.terraform/` can hold account IDs and state values; the guardrails block them. Share an example as `terraform.tfvars.example`.
+- **Tags:** every stack takes its required tags from `modules/tags` (see its README) instead of writing them by hand.
+- **Checkov skips** go inline, next to the resource, with a reason. There is no global skip list.
+
 ## Licence
 
 By contributing you agree that code is licensed under [MIT](LICENSE) and written content under [CC BY-SA 4.0](LICENSE-CONTENT.md).

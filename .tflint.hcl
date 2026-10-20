@@ -1,0 +1,11 @@
+# TFLint config for every Terraform stack (spec 030). Used with --config from the stack directory.
+plugin "terraform" {
+  enabled = true
+  preset  = "recommended"
+}
+
+plugin "aws" {
+  enabled = true
+  source  = "github.com/terraform-linters/tflint-ruleset-aws"
+  version = "0.49.0"
+}

@@ -19,6 +19,7 @@ import {
   isPackageJson,
 } from './test-lock.ts';
 import type { CommitChange, CommitInfo } from './test-lock.ts';
+import { stacksToCheck, terraformStacks } from './terraform-stacks.ts';
 
 const USAGE = `Usage:
   guardrails paths [--staged | --all | <files...>]
@@ -26,7 +27,8 @@ const USAGE = `Usage:
   guardrails pre-push   (reads git pre-push lines on stdin)
   guardrails test-lock --base <ref> [--head <ref>]
   guardrails no-merges --base <ref> [--head <ref>]
-  guardrails commits --base <ref> [--head <ref>]`;
+  guardrails commits --base <ref> [--head <ref>]
+  guardrails tf-stacks (--base <ref> [--head <ref>] | --all)`;
 
 /** `git commit -v` appends the diff below this line; it is not part of the message. */
 const SCISSORS_LINE = '# ------------------------ >8 ------------------------';
@@ -265,6 +267,15 @@ function commitInfo(sha: string): CommitInfo {
   return { sha, subject, changes };
 }
 
+/** The Terraform stacks to check, as JSON: all of them, or those a change from `<base>` touches. */
+function terraformStacksJson(args: string[]): string {
+  const stacks = terraformStacks(gitList(['ls-files', '-z', '--full-name']));
+  if (args.length === 1 && args[0] === '--all') return JSON.stringify(stacks);
+  const [base, head] = parseRange(args).split('..'); // refs cannot contain '..'
+  const changed = gitList(['diff', '--name-only', '--no-renames', '-z', `${base}...${head}`, '--']);
+  return JSON.stringify(stacksToCheck(stacks, changed));
+}
+
 function readStdin(): string {
   try {
     return readFileSync(0, 'utf8');
@@ -315,6 +326,16 @@ function commandViolations(command: string, args: string[]): Violation[] {
 /** Runs one CLI command and resolves to the process exit code (0 ok, 1 violations, 2 usage). */
 export function main(argv: string[]): Promise<number> {
   const [command = '', ...args] = argv;
+  if (command === 'tf-stacks') {
+    // Its only stdout line is the JSON array, so a workflow can write it to $GITHUB_OUTPUT.
+    try {
+      console.log(terraformStacksJson(args));
+      return Promise.resolve(0);
+    } catch (error) {
+      console.error(error instanceof UsageError ? USAGE : String(error));
+      return Promise.resolve(2);
+    }
+  }
   let violations: Violation[];
   try {
     violations = commandViolations(command, args);

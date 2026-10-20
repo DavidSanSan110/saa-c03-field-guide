@@ -65,6 +65,15 @@ const PATH_RULES: PathRule[] = [
       (name.startsWith('.env.') && name !== '.env.example') ||
       STATE_FILES.test(name),
   },
+  {
+    id: 'terraform-local',
+    message:
+      'Terraform variable files, saved plans and .terraform/ are local only: they can hold account IDs and state values',
+    blocks: (_path, segments, name) =>
+      /\.tfvars(\.json)?$/.test(name) ||
+      name.endsWith('.tfplan') ||
+      segments.slice(0, -1).includes('.terraform'),
+  },
 ];
 
 // Blocked names are assembled from parts so that this file does not contain them (AC-16).

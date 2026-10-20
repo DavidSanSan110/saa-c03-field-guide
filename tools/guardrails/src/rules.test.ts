@@ -490,3 +490,45 @@ describe('checkContent: Git Bash and WSL forms of a Windows user path', () => {
     expect(checkContent('docs/notes.md', text)).toEqual([]);
   });
 });
+
+// ---- Spec 030: the terraform-local path rule --------------------------------------------------
+
+describe('checkPath: terraform-local', () => {
+  test.each([
+    'terraform.tfvars',
+    'labs/00-site-hosting/prod.tfvars',
+    'a.auto.tfvars',
+    'x.tfvars.json',
+    'PROD.TFVARS',
+    'plan.tfplan',
+    'labs/00/.terraform/providers/x',
+    '.terraform/terraform.tfstate',
+    'modules/tags/.Terraform/x',
+  ])('AC-16: reports terraform-local for %s', (path) => {
+    expect(ruleIds(checkPath(path))).toContain('terraform-local');
+  });
+
+  test('AC-16: a state file inside .terraform/ is also a secret-file', () => {
+    const ids = ruleIds(checkPath('.terraform/terraform.tfstate'));
+    expect(ids).toContain('terraform-local');
+    expect(ids).toContain('secret-file');
+  });
+
+  test('AC-16: the violation carries the explanatory message', () => {
+    const violation = checkPath('labs/00-site-hosting/prod.tfvars').find(
+      (found) => found.rule === 'terraform-local',
+    );
+    expect(violation?.message).toContain('Terraform variable files, saved plans and .terraform/');
+  });
+
+  test.each([
+    '.terraform.lock.hcl',
+    'labs/00/.terraform.lock.hcl',
+    'terraform.tfvars.example',
+    'labs/00/main.tf',
+    'labs/00/tests/main.tftest.hcl',
+    'docs/terraform.md',
+  ])('AC-16: reports nothing for %s', (path) => {
+    expect(checkPath(path)).toEqual([]);
+  });
+});
