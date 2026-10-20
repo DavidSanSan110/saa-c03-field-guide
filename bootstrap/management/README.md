@@ -89,6 +89,13 @@ Run everything from `bootstrap/management/`.
    terraform plan -out=first.tfplan
    ```
 
+   PowerShell splits an unquoted `-out=first.tfplan` at the dot ("Too many command line arguments"),
+   so quote it:
+
+   ```powershell
+   terraform plan "-out=first.tfplan"
+   ```
+
    Expected on the imported resources:
    - the Organization changes only by the added `cloudtrail.amazonaws.com` principal (the
      Organization has no tags in provider 6.67.0, so it gets no tag change);
@@ -143,8 +150,9 @@ The trusted access list in `org.tf` is exact: a service given trusted access som
 console, the workload stack in #78) is turned off by the next apply. Add it to `org.tf` first, then
 enable it.
 
-Later runs only need `terraform init -backend-config="bucket=field-guide-tfstate-<ACCOUNT_ID>"`, then
-`plan` and `apply`. The state is locked with an S3 lock file (`use_lockfile`), no DynamoDB table.
+Later runs on the same machine only need `plan` and `apply`: `.terraform/` remembers the bucket. On a
+new machine or a fresh clone, run `terraform init -backend-config="bucket=field-guide-tfstate-<ACCOUNT_ID>"`
+first (PowerShell: `terraform init "-backend-config=bucket=field-guide-tfstate-<ACCOUNT_ID>"`). The state is locked with an S3 lock file (`use_lockfile`), no DynamoDB table.
 
 ## What the SCP blocks
 
