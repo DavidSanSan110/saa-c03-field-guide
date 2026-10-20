@@ -511,3 +511,224 @@ describe('AC-27: PowerShell commands in the README quote -out= and -backend-conf
     expect(offenders).toEqual([]);
   });
 });
+
+// ---- Review round 1: AC-36 (no extra grants), AC-37 (README order), AC-38 (contract fixes) --------
+
+/** Names of every `resource "<type>" "<name>"` block in the stack, sorted. */
+function resourceNames(type: string): string[] {
+  const header = new RegExp(`\\bresource\\s+"${type}"\\s+"([^"]+)"\\s*\\{`, 'g');
+  return [...allTerraform().matchAll(header)].map((match) => match[1] ?? '').sort();
+}
+
+describe('AC-36: the stack grants nothing beyond the two managed and two inline policies', () => {
+  test('AC-36: exactly two aws_iam_role_policy_attachment resources', () => {
+    expect(resourceNames('aws_iam_role_policy_attachment')).toEqual([
+      'tf_apply_admin',
+      'tf_plan_read_only',
+    ]);
+  });
+
+  test('AC-36: exactly two aws_iam_role_policy resources', () => {
+    expect(resourceNames('aws_iam_role_policy')).toEqual(['tf_apply_deny', 'tf_plan_deny']);
+  });
+
+  test.each([
+    'aws_iam_policy_attachment',
+    'aws_iam_role_policies_exclusive',
+    'aws_iam_role_policy_attachments_exclusive',
+  ])('AC-36: no %s resource', (type) => {
+    expect(loadTerraformFiles().length).toBeGreaterThan(0);
+    expect(resourceNames(type)).toEqual([]);
+  });
+
+  test('AC-36: the aws_iam_role blocks have no managed_policy_arns or inline_policy', () => {
+    const roles = blockBodies(allTerraform(), /\bresource\s+"aws_iam_role"\s+"[^"]+"\s*\{/);
+    expect(roles.length).toBeGreaterThanOrEqual(2);
+    for (const body of roles) {
+      expect(hasAttribute(body, 'managed_policy_arns')).toBe(false);
+      expect(body).not.toMatch(/\binline_policy\b/);
+    }
+  });
+});
+
+/** Block number of every line: 0 outside fenced code, 1, 2, ... for each fenced block (fences are 0). */
+function fenceBlocks(lines: string[]): number[] {
+  const fence = BACKTICK.repeat(3);
+  const ids: number[] = [];
+  let current = 0;
+  let count = 0;
+  for (const line of lines) {
+    if (line.trimStart().startsWith(fence)) {
+      if (current === 0) {
+        count += 1;
+        current = count;
+      } else {
+        current = 0;
+      }
+      ids.push(0);
+    } else {
+      ids.push(current);
+    }
+  }
+  return ids;
+}
+
+const DELETES_OVERRIDE =
+  /(?:\brm\b|\bRemove-Item\b)\s+(?:-\S+\s+)*['"]?(?:\.[\\/])?backend_override\.tf/;
+
+/** Problems with every command line (inside a fenced block) that deletes backend_override.tf. */
+function overrideDeletionProblems(readme: string): string[] {
+  const lines = readme.split(/\r?\n/);
+  const blocks = fenceBlocks(lines);
+  const problems: string[] = [];
+  lines.forEach((line, i) => {
+    if ((blocks[i] ?? 0) === 0 || !DELETES_OVERRIDE.test(line)) return;
+    const captured = lines.some(
+      (other, j) =>
+        j < i &&
+        blocks[j] === blocks[i] &&
+        /terraform\s+output\s+-raw\s+state_bucket\b/.test(other),
+    );
+    if (!captured) {
+      problems.push(`line ${i + 1}: no "terraform output -raw state_bucket" earlier in its block`);
+    }
+    const migrate = lines.findIndex((other, j) => j > i && other.includes('-migrate-state'));
+    if (migrate === -1) {
+      problems.push(`line ${i + 1}: no -migrate-state line after the deletion`);
+      return;
+    }
+    lines.slice(i, migrate + 1).forEach((other, offset) => {
+      if (/terraform\s+output\b/.test(other)) {
+        problems.push(
+          `line ${i + offset + 1}: terraform output between the deletion and -migrate-state`,
+        );
+      }
+    });
+  });
+  return problems;
+}
+
+function deletionLineCount(readme: string): number {
+  const lines = readme.split(/\r?\n/);
+  const blocks = fenceBlocks(lines);
+  return lines.filter((line, i) => (blocks[i] ?? 0) !== 0 && DELETES_OVERRIDE.test(line)).length;
+}
+
+/** Fenced lines that pass -reconfigure to terraform. */
+function reconfigureLines(readme: string): string[] {
+  const lines = readme.split(/\r?\n/);
+  const blocks = fenceBlocks(lines);
+  return lines.filter((line, i) => (blocks[i] ?? 0) !== 0 && line.includes('-reconfigure'));
+}
+
+describe('AC-37: the order detectors work (self-check)', () => {
+  const fence = BACKTICK.repeat(3);
+  const block = (...body: string[]): string => [`${fence}bash`, ...body, fence].join('\n');
+  const capture = 'terraform output -raw state_bucket';
+  const migrate = 'terraform init -migrate-state "-backend-config=bucket=x"';
+
+  test('AC-37: a block that captures first and then migrates is fine', () => {
+    const readme = block(capture, 'rm backend_override.tf', migrate);
+    expect(overrideDeletionProblems(readme)).toEqual([]);
+    expect(deletionLineCount(readme)).toBe(1);
+  });
+
+  test('AC-37: a missing capture, or a capture in another block, is reported', () => {
+    expect(overrideDeletionProblems(block('rm backend_override.tf', migrate))).toHaveLength(1);
+    const split = [block(capture), block('Remove-Item backend_override.tf', migrate)].join('\n');
+    expect(overrideDeletionProblems(split)).toHaveLength(1);
+  });
+
+  test('AC-37: terraform output after the deletion is reported, also in a second block', () => {
+    const second = block(capture, 'Remove-Item backend_override.tf', capture, migrate);
+    const readme = [block(capture, 'rm backend_override.tf', migrate), second].join('\n');
+    expect(overrideDeletionProblems(readme)).toHaveLength(1);
+  });
+
+  test('AC-37: a deletion without a later -migrate-state line is reported', () => {
+    expect(overrideDeletionProblems(block(capture, 'rm backend_override.tf'))).toHaveLength(1);
+  });
+
+  test('AC-37: -reconfigure is only reported inside fenced blocks', () => {
+    expect(reconfigureLines(block('terraform init -reconfigure'))).toHaveLength(1);
+    expect(reconfigureLines('never use -reconfigure here')).toEqual([]);
+  });
+});
+
+describe('AC-37: README order, no -reconfigure, /lab/ path', () => {
+  test('AC-37: the README deletes backend_override.tf in a command block', () => {
+    expect(deletionLineCount(readStackFile('README.md'))).toBeGreaterThanOrEqual(1);
+  });
+
+  test('AC-37: every deletion has its capture earlier in the block and no terraform output before the migration', () => {
+    expect(overrideDeletionProblems(readStackFile('README.md'))).toEqual([]);
+  });
+
+  test('AC-37: no fenced command uses -reconfigure', () => {
+    expect(reconfigureLines(readStackFile('README.md'))).toEqual([]);
+  });
+
+  test('AC-37: the README explains the /lab/ role path', () => {
+    expect(readStackFile('README.md')).toContain('/lab/');
+  });
+});
+
+/**
+ * Stricter account-ID detector (AC-38): 12 digits not touching other digits, so it also finds
+ * `x_123456789012` and `id123456789012`. A repeated digit is a test fixture and is fine.
+ */
+function findAccountIdsStrict(text: string): string[] {
+  const found = text.match(/(?<!\d)\d{12}(?!\d)/g) ?? [];
+  return found.filter((digits) => !/^(\d)\1{11}$/.test(digits));
+}
+
+/** The text without the provider hash lines of a lock file (hex digests can hold long digit runs). */
+function withoutLockHashes(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !/^\s*"(?:zh|h1):/.test(line))
+    .join('\n');
+}
+
+describe('AC-38: the stricter account-ID detector works (self-check)', () => {
+  const twelve = '1234'.repeat(3);
+
+  test('AC-38: a 12-digit number is found next to an underscore or a letter', () => {
+    expect(findAccountIdsStrict(`x_${twelve}`)).toEqual([twelve]);
+    expect(findAccountIdsStrict(`id${twelve}`)).toEqual([twelve]);
+    expect(findAccountIdsStrict(`${twelve}abc`)).toEqual([twelve]);
+    expect(findAccountIdsStrict(`arn:aws:iam::${twelve}:root`)).toEqual([twelve]);
+  });
+
+  test('AC-38: a repeated digit and runs of 11 or 13 digits are not reported', () => {
+    expect(findAccountIdsStrict('7'.repeat(12))).toEqual([]);
+    expect(findAccountIdsStrict('x_' + '7'.repeat(12))).toEqual([]);
+    expect(findAccountIdsStrict('1234'.repeat(2) + '123')).toEqual([]);
+    expect(findAccountIdsStrict(`${twelve}5`)).toEqual([]);
+  });
+
+  test('AC-38: lock file hash lines are ignored, other lines are not', () => {
+    const lock = [`  "zh:abc${twelve}def",`, `  "h1:${twelve}=",`, `x_${twelve}`].join('\n');
+    expect(findAccountIdsStrict(withoutLockHashes(lock))).toEqual([twelve]);
+  });
+});
+
+describe('AC-38: contract fixes', () => {
+  test('AC-38: no tracked file has a 12-digit number next to an underscore or a letter', () => {
+    expect(listStackFiles().length).toBeGreaterThan(0);
+    const offenders = listStackFiles().flatMap((file) => {
+      const text = readFileSync(join(REPO_ROOT, file), 'utf8');
+      const scanned = file.endsWith('.terraform.lock.hcl') ? withoutLockHashes(text) : text;
+      return findAccountIdsStrict(scanned).map((id) => `${file}: ${id}`);
+    });
+    expect(offenders).toEqual([]);
+  });
+
+  test.each(['transition', 'noncurrent_version_transition', 'newer_noncurrent_versions'])(
+    'AC-38: the state bucket lifecycle rule has no %s',
+    (name) => {
+      const body = resourceBody('aws_s3_bucket_lifecycle_configuration', 'state');
+      expect(body).not.toMatch(new RegExp(`(^|[^\\w])${name}\\b`, 'm'));
+    },
+  );
+});
