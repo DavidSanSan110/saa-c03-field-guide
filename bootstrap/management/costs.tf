@@ -8,6 +8,10 @@ resource "aws_budgets_budget" "monthly" {
   limit_unit   = "USD"
   metrics      = ["UnblendedCost"]
 
+  # The existing budget uses the primary billing view. The provider does not compute this argument,
+  # so without it the import would plan to remove the view.
+  billing_view_arn = "arn:aws:billing::${local.account_id}:billingview/primary"
+
   filter_expression {
     not {
       dimensions {
