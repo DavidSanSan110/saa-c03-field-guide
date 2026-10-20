@@ -46,6 +46,13 @@ Run everything from `bootstrap/management/`.
    printf 'terraform {\n  backend "local" {}\n}\n' > backend_override.tf
    ```
 
+   PowerShell (do not use `>` here: Windows PowerShell 5.1 would write UTF-16, which Terraform
+   cannot read):
+
+   ```powershell
+   Set-Content backend_override.tf "terraform {`n  backend `"local`" {}`n}" -Encoding ascii
+   ```
+
 2. Initialise:
 
    ```bash
@@ -74,11 +81,13 @@ Run everything from `bootstrap/management/`.
    terraform plan -out=first.tfplan
    ```
 
-   Expected: the Organization gets `cloudtrail.amazonaws.com` added to its trusted access (and the
-   default tags); the budget and the monitor get the default tags as an in-place change; everything
-   else is created (two buckets and their settings, the trail, the new anomaly subscription, the SCP
-   and its attachment). Nothing is destroyed. Stop and investigate if the plan shows anything else on
-   an imported resource, in particular a changed budget limit, filter, or subscriber.
+   Expected on the imported resources: the Organization changes only by the added
+   `cloudtrail.amazonaws.com` principal (the Organization has no tags in provider 6.67.0, so it gets
+   no tag change); the budget and the monitor change only by the default tags (the budget's billing
+   view is set in the code and matches). Everything else is created (two buckets and their settings,
+   the trail, the new anomaly subscription, the SCP and its attachment). Nothing is destroyed. Stop
+   and investigate if the plan shows anything else on an imported resource, in particular a changed
+   budget limit, filter, billing view or subscriber.
 
 5. Apply the saved plan:
 
@@ -86,17 +95,41 @@ Run everything from `bootstrap/management/`.
    terraform apply first.tfplan
    ```
 
-6. Move the state into the bucket. Delete the override first, then migrate (answer `yes` to copy the
-   state):
+   If the trail fails to create right after trusted access for `cloudtrail` was enabled (the change
+   can take a moment to propagate), run `terraform apply` again.
+
+6. Move the state into the bucket. Read the bucket name **before** deleting the override: once the
+   override is gone, Terraform no longer reads the local state, so `terraform output` would fail.
+   Then delete the override and migrate (answer `yes` to copy the state).
+
+   Bash:
 
    ```bash
+   BUCKET=$(terraform output -raw state_bucket)
    rm backend_override.tf
-   terraform init -migrate-state -backend-config="bucket=$(terraform output -raw state_bucket)"
+   terraform init -migrate-state -backend-config="bucket=$BUCKET"
    terraform plan        # expected: No changes
    ```
 
-   Afterwards delete the leftover local `terraform.tfstate` and `terraform.tfstate.backup` (they are
-   git-ignored, but they hold account details).
+   PowerShell:
+
+   ```powershell
+   $bucket = terraform output -raw state_bucket
+   Remove-Item backend_override.tf
+   terraform init -migrate-state "-backend-config=bucket=$bucket"
+   terraform plan        # expected: No changes
+   ```
+
+   Never use `-reconfigure` here: it would start an empty remote state and strand the imports in the
+   local file.
+
+   Afterwards delete `first.tfplan` and the leftover local `terraform.tfstate` and
+   `terraform.tfstate.backup`. They are git-ignored, but they hold state values, the alert address and
+   account IDs.
+
+The trusted access list in `org.tf` is exact: a service given trusted access somewhere else (the
+console, the workload stack in #78) is turned off by the next apply. Add it to `org.tf` first, then
+enable it.
 
 Later runs only need `terraform init -backend-config="bucket=field-guide-tfstate-<ACCOUNT_ID>"`, then
 `plan` and `apply`. The state is locked with an S3 lock file (`use_lockfile`), no DynamoDB table.
@@ -158,17 +191,32 @@ If you must:
    terraform state rm aws_organizations_organization.this
    ```
 
-2. Decide whether to keep the imported budget and monitor (`terraform state rm aws_budgets_budget.monthly`
-   and `terraform state rm aws_ce_anomaly_monitor.services` keep them in AWS) or let Terraform delete
-   them.
-3. Empty the log bucket, including all object versions and delete markers (versioning is on and
-   `force_destroy` is off).
-4. The state bucket has `prevent_destroy = true`. Migrate the state back to local first (delete the
-   `backend "s3"` block or add `backend_override.tf` with a local backend, then
-   `terraform init -migrate-state`), remove `prevent_destroy` from the state bucket in
-   `state.tf`, empty the bucket, and only then run `terraform destroy`.
-5. `terraform destroy` then detaches and deletes the SCP and deletes the trail and the buckets. The
-   Organization is no longer in the state, so its trusted access (including `cloudtrail`) stays on.
+2. Keep the anomaly monitor by default, because it also feeds the unmanaged
+   `Default-Services-Subscription`:
+
+   ```bash
+   terraform state rm aws_ce_anomaly_monitor.services
+   ```
+
+   Then decide about the budget: `terraform state rm aws_budgets_budget.monthly` keeps it in AWS,
+   otherwise Terraform deletes it.
+
+3. Destroy the trail first, so no new logs arrive:
+
+   ```bash
+   terraform destroy -target=aws_cloudtrail.org
+   ```
+
+   Wait for the last deliveries to land, then empty the log bucket, including **all object versions
+   and delete markers** (versioning is on and `force_destroy` is off).
+
+4. The state bucket has `prevent_destroy = true`. Migrate the state back to local first (add a
+   `backend_override.tf` with a local backend, then `terraform init -migrate-state`), remove
+   `prevent_destroy` from the state bucket in `state.tf`, and empty **all its versions** and delete
+   markers.
+5. Destroy the rest with `terraform destroy`: it detaches and deletes the SCP and deletes the buckets.
+   The Organization is no longer in the state, so its trusted access (including `cloudtrail`) stays
+   on.
 
 ## Files
 
