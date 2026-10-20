@@ -1,0 +1,8 @@
+# Checkov config for every Terraform stack (spec 030).
+# No global skip-check: a skip goes inline, next to the resource, with a reason.
+framework:
+  - terraform
+compact: true
+quiet: true
+skip-path:
+  - .terraform
