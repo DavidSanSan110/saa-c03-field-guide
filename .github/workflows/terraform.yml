@@ -41,30 +41,28 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # pnpm prints a banner before the command's output: the JSON array is the last line.
-      - name: Stacks changed by the pull request
-        id: pr
-        if: ${{ github.event_name == 'pull_request' }}
+      # `shell: bash` runs with pipefail, so a failing tf-stacks fails the step instead of
+      # publishing pnpm's error line. pnpm prints a banner first: the JSON array is the last line.
+      - name: List the stacks to check
+        id: stacks
+        shell: bash
         env:
           BASE: origin/${{ github.base_ref }}
         run: |
-          stacks="$(pnpm guardrails tf-stacks --base "$BASE" | tail -n 1)"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            stacks="$(pnpm guardrails tf-stacks --base "$BASE" | tail -n 1)"
+          else
+            stacks="$(pnpm guardrails tf-stacks --all | tail -n 1)"
+          fi
+          case "$stacks" in
+            "["*) ;;
+            *)
+              echo "::error::tf-stacks did not print a JSON array: $stacks"
+              exit 1
+              ;;
+          esac
           echo "stacks=$stacks" >> "$GITHUB_OUTPUT"
-
-      - name: Every stack
-        id: all
-        if: ${{ github.event_name != 'pull_request' }}
-        run: |
-          stacks="$(pnpm guardrails tf-stacks --all | tail -n 1)"
-          echo "stacks=$stacks" >> "$GITHUB_OUTPUT"
-
-      - name: Publish the stack list
-        id: stacks
-        env:
-          STACKS: ${{ steps.pr.outputs.stacks || steps.all.outputs.stacks }}
-        run: |
-          echo "stacks=$STACKS" >> "$GITHUB_OUTPUT"
-          echo "Stacks to check: $STACKS"
+          echo "Stacks to check: $stacks"
 
   check:
     name: check (${{ matrix.stack }})
