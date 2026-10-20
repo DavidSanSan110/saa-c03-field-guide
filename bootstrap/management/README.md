@@ -175,15 +175,24 @@ missing, it would work.
 
 ## Cost
 
-**Hand estimate, not an infracost run** (infracost needs an API key and has no pricing for most of
-these resources). Prices are the public AWS prices at the time of writing; check the pricing pages
-before relying on them.
+`infracost breakdown --path .` (infracost v0.10.46, 2026-10-20): **$0.00 per month** baseline. Of
+20 resources, 14 are free, 3 are not priced by infracost (Budgets, Cost Anomaly Detection and
+Organizations resources: all free at this use) and 3 are usage-based only:
+
+| Resource                   | Usage-based price (infracost)                                               |
+| -------------------------- | --------------------------------------------------------------------------- |
+| `aws_cloudtrail.org`       | additional copies of management events $2.00 per 100k; data events not used |
+| `aws_s3_bucket.state`      | storage $0.023 per GB-month, PUT/LIST $0.005 per 1k, GET $0.0004 per 1k     |
+| `aws_s3_bucket.trail_logs` | the same S3 Standard prices                                                 |
+
+What that means in practice (public AWS prices at the time of writing; check the pricing pages
+before relying on them):
 
 | Item                                                                                  | Monthly cost                                                                                              |
 | ------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
 | CloudTrail: one organization trail with management events                             | $0 (the first copy of management events in each Region is free; data events and Insights are not enabled) |
 | AWS Budgets: one budget                                                               | $0 (within the free allowance)                                                                            |
-| Cost Anomaly Detection: one monitor, two subscriptions                                | $0 (no charge for the service)                                                                            |
+| Cost Anomaly Detection: one monitor, one subscription                                 | $0 (no charge for the service)                                                                            |
 | Organizations, SCP, trusted access                                                    | $0                                                                                                        |
 | S3: state bucket (a few KB) and log bucket (a few MB of logs, expired after 365 days) | cents or less: storage at about $0.023 per GB-month plus the request charges of CloudTrail log delivery   |
 | **Total**                                                                             | **well under $0.10 per month**                                                                            |
