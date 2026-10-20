@@ -333,3 +333,153 @@ describe('ci.yml: every guardrails step goes through the pnpm guardrails script'
     }
   });
 });
+
+// ---- Spec 030: the stricter policy, added on top of spec 004's (which stays as it is) ----------
+
+/**
+ * The stricter policy of spec 030: top-level `permissions: {}`, a `permissions` mapping on every
+ * job that does not call a reusable workflow, and no `workflow_run` trigger.
+ */
+function strictProblems(workflow: Workflow): string[] {
+  const doc = parseWorkflow(workflow);
+  const problems: string[] = [];
+  const top = doc['permissions'];
+  if (!isDict(top) || Object.keys(top).length > 0) {
+    problems.push(`top-level permissions must be an empty mapping, found ${JSON.stringify(top)}`);
+  }
+  for (const [id, job] of jobsOf(doc)) {
+    // A job that calls a reusable workflow takes its permissions from the called workflow.
+    if (typeof job['uses'] === 'string') continue;
+    if (!isDict(job['permissions'])) {
+      problems.push(`job ${id} has no permissions mapping`);
+    }
+  }
+  if (triggersOf(doc).includes('workflow_run')) {
+    problems.push('uses the workflow_run trigger');
+  }
+  return problems.map((problem) => `${workflow.name}: ${problem}`);
+}
+
+const STRICT_GOOD = `
+name: ci
+on:
+  pull_request:
+permissions: {}
+concurrency:
+  group: ci-\${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@${SHA} # v6.0.0
+      - run: echo ok
+`;
+
+describe('strict workflow policy: the repository workflows', () => {
+  test('AC-14: every workflow has an empty top-level permissions mapping', () => {
+    const problems = loadWorkflows()
+      .flatMap(strictProblems)
+      .filter((problem) => problem.includes('top-level permissions'));
+    expect(problems).toEqual([]);
+  });
+
+  test('AC-14: every non-reusable job declares its own permissions mapping', () => {
+    const problems = loadWorkflows()
+      .flatMap(strictProblems)
+      .filter((problem) => problem.includes('no permissions mapping'));
+    expect(problems).toEqual([]);
+  });
+
+  test('AC-14: no workflow uses the workflow_run trigger', () => {
+    const problems = loadWorkflows()
+      .flatMap(strictProblems)
+      .filter((problem) => problem.includes('workflow_run'));
+    expect(problems).toEqual([]);
+  });
+
+  test('AC-14: every workflow passes the whole stricter policy', () => {
+    expect(loadWorkflows().flatMap(strictProblems)).toEqual([]);
+  });
+});
+
+describe('strict workflow policy: the checker itself', () => {
+  const check = (text: string): string[] => strictProblems({ name: 'sample.yml', text });
+
+  test('AC-14: a compliant workflow has no problems', () => {
+    expect(check(STRICT_GOOD)).toEqual([]);
+  });
+
+  test('AC-14: top-level contents: read is a problem', () => {
+    const text = STRICT_GOOD.replace('permissions: {}', 'permissions:\n  contents: read');
+    expect(check(text).join('\n')).toContain('top-level permissions');
+  });
+
+  test('AC-14: missing top-level permissions is a problem', () => {
+    const text = STRICT_GOOD.replace('permissions: {}\n', '');
+    expect(check(text).join('\n')).toContain('top-level permissions');
+  });
+
+  test('AC-14: a job without permissions is a problem', () => {
+    const text = STRICT_GOOD.replace('    permissions:\n      contents: read\n', '');
+    expect(check(text).join('\n')).toContain('job verify');
+  });
+
+  test('AC-14: a job with permissions: read-all is a problem', () => {
+    const text = STRICT_GOOD.replace(
+      '    permissions:\n      contents: read\n',
+      '    permissions: read-all\n',
+    );
+    expect(check(text).join('\n')).toContain('job verify');
+  });
+
+  test('AC-14: a job with an empty permissions mapping is allowed', () => {
+    const text = STRICT_GOOD.replace(
+      '    permissions:\n      contents: read\n',
+      '    permissions: {}\n',
+    );
+    expect(check(text)).toEqual([]);
+  });
+
+  test('AC-14: a workflow_run trigger in mapping form is a problem', () => {
+    const text = STRICT_GOOD.replace(
+      'on:\n  pull_request:\n',
+      'on:\n  workflow_run:\n    workflows: [ci]\n    types: [completed]\n',
+    );
+    expect(check(text).join('\n')).toContain('workflow_run');
+  });
+
+  test('AC-14: a workflow_run trigger in list form is a problem', () => {
+    const text = STRICT_GOOD.replace('on:\n  pull_request:\n', 'on: [push, workflow_run]\n');
+    expect(check(text).join('\n')).toContain('workflow_run');
+  });
+
+  test('AC-14: a job that calls a reusable workflow needs no permissions of its own', () => {
+    const text = STRICT_GOOD.replace(
+      /jobs:[\s\S]*$/,
+      'jobs:\n  call:\n    uses: ./.github/workflows/reusable.yml\n',
+    );
+    expect(check(text)).toEqual([]);
+  });
+});
+
+describe('spec 004 policy: the new Terraform and security workflows', () => {
+  const names = ['terraform.yml', 'security.yml'];
+
+  test('AC-22: terraform.yml exists next to the other workflows', () => {
+    expect(loadWorkflows().map((workflow) => workflow.name)).toContain('terraform.yml');
+  });
+
+  test('AC-22: terraform.yml and security.yml pass spec 004 policy', () => {
+    const selected = loadWorkflows().filter((workflow) => names.includes(workflow.name));
+    expect(selected.map((workflow) => workflow.name)).toEqual(names.slice().sort());
+    expect(selected.flatMap(workflowProblems)).toEqual([]);
+  });
+
+  test('AC-22: every repository workflow passes spec 004 policy', () => {
+    expect(allProblems(() => true)).toEqual([]);
+  });
+});
