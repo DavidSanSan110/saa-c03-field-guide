@@ -1,9 +1,38 @@
-# The deny statements that stop CI (and any role a lab creates) from escalating privileges or turning
-# off the account guardrails. The same statements are used twice, from the same locals:
+# The deny statements that limit CI (and any role a lab creates): no changes to the CI roles, the
+# organization access role, the boundary or the OIDC provider; no role writes outside the /lab/ path;
+# no roles without the boundary; no IAM users or keys; the account guardrails stay on. What they do
+# not do: tf-apply can still change the hosted zone's records and can add trust to roles under /lab/
+# (those roles stay capped by the boundary). The same statements are used twice, from the same locals:
 #   - in the fg-workload-boundary permissions boundary, which every role created by a lab must carry;
 #   - in the inline policy of the tf-apply role (ci_roles.tf), which cannot carry the boundary itself
 #     because the boundary denies all state bucket access and tf-apply needs the labs/* keys.
 locals {
+  # Role writes are only allowed on roles under the lab path. This closes the hole of re-trusting a
+  # role that carries no boundary and is not in the protected list (a role made by hand later). Service
+  # linked roles (iam:CreateServiceLinkedRole, role/aws-service-role/) are not matched and stay allowed.
+  deny_role_writes_outside_lab_path = {
+    Sid    = "DenyRoleWritesOutsideLabPath"
+    Effect = "Deny"
+    Action = [
+      "iam:CreateRole",
+      "iam:DeleteRole",
+      "iam:UpdateRole",
+      "iam:UpdateRoleDescription",
+      "iam:UpdateAssumeRolePolicy",
+      "iam:TagRole",
+      "iam:UntagRole",
+      "iam:PutRolePolicy",
+      "iam:DeleteRolePolicy",
+      "iam:AttachRolePolicy",
+      "iam:DetachRolePolicy",
+      "iam:PutRolePermissionsBoundary",
+      "iam:DeleteRolePermissionsBoundary",
+      "iam:PassRole",
+      "sts:AssumeRole",
+    ]
+    NotResource = local.lab_role_arn_pattern
+  }
+
   # A role may only be created or changed together with the boundary, so the boundary spreads.
   deny_role_changes_without_boundary = {
     Sid    = "DenyRoleChangesWithoutBoundary"
@@ -57,7 +86,14 @@ locals {
     {
       Sid      = "DenyGuardrailChanges"
       Effect   = "Deny"
-      Action   = ["s3:PutAccountPublicAccessBlock", "ec2:DisableEbsEncryptionByDefault"]
+      Action   = ["s3:PutAccountPublicAccessBlock", "ec2:DisableEbsEncryptionByDefault", "ec2:ModifyEbsDefaultKmsKeyId"]
+      Resource = "*"
+    },
+    {
+      # Findings cannot be hidden: no archive rules, no status updates.
+      Sid      = "DenyAccessAnalyzerFindingChanges"
+      Effect   = "Deny"
+      Action   = ["access-analyzer:CreateArchiveRule", "access-analyzer:UpdateArchiveRule", "access-analyzer:ApplyArchiveRule", "access-analyzer:UpdateFindings"]
       Resource = "*"
     },
     {
@@ -70,6 +106,7 @@ locals {
 
   escalation_denies = concat(
     [
+      local.deny_role_writes_outside_lab_path,
       local.deny_role_changes_without_boundary,
       local.deny_boundary_removal,
       local.deny_protected_iam_changes,
@@ -85,7 +122,7 @@ resource "aws_iam_policy" "boundary" {
   #checkov:skip=CKV_AWS_49:The boundary allows every action on purpose; it only caps, and the denies below do the work.
   #checkov:skip=CKV_AWS_62:A permissions boundary grants nothing by itself; the role's own policies decide what is allowed.
   #checkov:skip=CKV_AWS_63:A permissions boundary grants nothing by itself; the role's own policies decide what is allowed.
-  #checkov:skip=CKV_AWS_286:A permissions boundary grants nothing by itself; privilege escalation is blocked by the deny statements.
+  #checkov:skip=CKV_AWS_286:A permissions boundary grants nothing by itself; the deny statements cap role changes.
   #checkov:skip=CKV_AWS_287:A permissions boundary grants nothing by itself; credential exposure is the role's own policy to grant.
   #checkov:skip=CKV_AWS_288:A permissions boundary grants nothing by itself; data exfiltration is the role's own policy to grant.
   #checkov:skip=CKV_AWS_289:A permissions boundary grants nothing by itself; permissions management is capped by the deny statements.
@@ -94,7 +131,7 @@ resource "aws_iam_policy" "boundary" {
   #checkov:skip=CKV2_AWS_40:A permissions boundary grants nothing by itself; full IAM privileges are capped by the deny statements.
   name        = local.boundary_name
   path        = "/"
-  description = "Permissions boundary for roles created by labs: no privilege escalation, no IAM users or keys, no access to Terraform state, guardrails stay on."
+  description = "Permissions boundary for roles created by labs: no role changes outside the lab path or without this boundary, no IAM users or keys, no access to Terraform state, guardrails stay on."
 
   policy = jsonencode({
     Version = "2012-10-17"

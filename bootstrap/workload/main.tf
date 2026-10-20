@@ -30,6 +30,10 @@ locals {
   # Created by AWS Organizations; the management account assumes it. CI must never touch it.
   org_access_role_arn = "arn:aws:iam::${local.account_id}:role/OrganizationAccountAccessRole"
 
+  # Every role CI creates lives under this IAM path; CI cannot write to roles outside it.
+  lab_role_path        = "/lab/"
+  lab_role_arn_pattern = "arn:aws:iam::${local.account_id}:role${local.lab_role_path}*"
+
   boundary_name = "fg-workload-boundary"
   boundary_arn  = "arn:aws:iam::${local.account_id}:policy/${local.boundary_name}"
 

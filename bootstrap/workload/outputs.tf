@@ -23,6 +23,11 @@ output "boundary_policy_arn" {
   value       = aws_iam_policy.boundary.arn
 }
 
+output "lab_role_path" {
+  description = "IAM path that every role created by a lab must use (path = \"/lab/\"); CI cannot write to roles outside it."
+  value       = local.lab_role_path
+}
+
 output "hosted_zone_id" {
   description = "ID of the public hosted zone, or null when hosted_zone_name is not set."
   value       = one(aws_route53_zone.site[*].zone_id)

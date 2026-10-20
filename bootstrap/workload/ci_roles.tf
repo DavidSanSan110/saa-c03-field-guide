@@ -99,7 +99,7 @@ resource "aws_iam_role_policy" "tf_plan_deny" {
 
 resource "aws_iam_role" "tf_apply" {
   name               = local.tf_apply_role_name
-  description        = "GitHub Actions: terraform apply for the labs, from the infra environment. Administrator without the escalation paths."
+  description        = "GitHub Actions: terraform apply for the labs, from the infra environment. Administrator with explicit denies on IAM escalation, guardrails and state bucket settings."
   assume_role_policy = jsonencode(local.tf_apply_trust)
 
   # IAM rejects a trust policy whose federated principal does not exist yet.
