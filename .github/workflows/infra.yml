@@ -423,7 +423,8 @@ jobs:
       - name: Refuse a run that is not the tip of main
         run: |
           remote="$(git ls-remote origin refs/heads/main)"
-          tip="${remote%%[[:space:]]*}"
+          # ls-remote also lists refs that merely end in refs/heads/main: take the exact one.
+          tip="$(awk '$2 == "refs/heads/main" { print $1 }' <<< "$remote")"
           if [ -z "$tip" ] || [ "$tip" != "$GITHUB_SHA" ]; then
             echo "::error::This run is not for the current tip of main, so it could undo newer changes. Dispatch apply (or destroy) for the stack instead."
             exit 1
