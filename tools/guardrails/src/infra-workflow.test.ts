@@ -1762,3 +1762,580 @@ describe('CONTRIBUTING.md: the Terraform section covers infra.yml', () => {
     expect(terraformSection()).toMatch(/before deleting/i);
   });
 });
+
+// =================================================================================================
+// Review round 1 regressions (AC-43 ... AC-49)
+//
+// Contracts the implementer must keep (the tests find steps by these properties):
+//  * apply, stale-run step: the step of `apply` whose `run` contains `ls-remote`. It runs `git`
+//    (a fake on PATH prints `<sha><TAB>refs/heads/main`), compares the first field with
+//    $GITHUB_SHA and fails with `::error::` (mentioning "dispatch") otherwise.
+//  * changes, collect step: the step of `changes` whose `run` contains `meta.json`. It runs in the
+//    job's working directory with the artifacts at `plan-meta/<artifact name>/meta.json`, uses the
+//    real `jq`, and writes single-line `changed=<json>` and `digests=<json>` to $GITHUB_OUTPUT.
+//  * report, comment step: the step of `report` whose `run` contains `gh api`. It reads the
+//    summaries at `plan-meta/*/summary.md`, may use $RUNNER_TEMP, and lists the comments with
+//    `gh api repos/<repo>/issues/<pr>/comments --paginate` WITHOUT --jq / -q / --template (the fake
+//    gh prints the raw JSON array of each page, concatenated, as `gh --paginate` does; it fails when
+//    it is asked to filter), filtering with `jq`. It writes with `gh api --method PATCH|POST <path>`
+//    and passes the body as `body=@<file>` or `body=<text>` (-f, -F, --field or --raw-field).
+//  * tf-plan gate: its `::error::` text for forks and Dependabot contains `pushes a commit`.
+//  * The tests with the real jq are skipped locally when jq is missing, and FAIL when CI is set.
+// =================================================================================================
+
+const hasJq = spawnSync('jq', ['--version'], { encoding: 'utf8', windowsHide: true }).status === 0;
+/** Runs with the real jq; skipped locally without it, but never skipped (so it fails) on CI. */
+const jqTest = test.skipIf(!hasJq && !process.env['CI']);
+
+/** Scope env a runner would provide besides the step's own `env:`. */
+function runnerScope(box: Sandbox, extra: Record<string, string> = {}): Dict {
+  const temp = join(box.dir, 'runner-temp');
+  mkdirSync(temp, { recursive: true });
+  writeFileSync(join(box.dir, 'step-summary'), '');
+  return {
+    RUNNER_TEMP: slash(temp),
+    GITHUB_STEP_SUMMARY: slash(join(box.dir, 'step-summary')),
+    ...extra,
+  };
+}
+
+function envScopes(jobId: string): Dict[] {
+  return [loadInfra()['env'], job(jobId)['env']].filter(isDict);
+}
+
+describe('infra.yml: a stale run cannot apply (AC-43)', () => {
+  const TIP = 'a1b2c3d4e5'.repeat(4);
+  const OTHER = 'f6e5d4c3b2'.repeat(4);
+
+  function staleStep(): Dict {
+    const step = stepsOf(job('apply')).find((candidate) => /ls-remote/.test(str(candidate['run'])));
+    if (step === undefined) throw new Error('no step of the apply job runs git ls-remote');
+    return step;
+  }
+
+  /** `tip` = what the remote prints as the first field; null = ls-remote fails; '' = prints nothing. */
+  function runStale(tip: string | null, sha: string): StepResult & { gitCalls: string[] } {
+    const git =
+      tip === null ? 'exit 1' : tip === '' ? 'true' : `printf '%s\\trefs/heads/main\\n' "${tip}"`;
+    return withSandbox({ git }, (box) => {
+      const scopes = [...envScopes('apply'), runnerScope(box, { GITHUB_SHA: sha })];
+      const run = runStepIn(box, staleStep(), eventCtx('push'), scopes);
+      return { ...run, gitCalls: readLog(box, 'git') };
+    });
+  }
+
+  test('AC-43: the stale-run step comes after checkout and before the AWS login', () => {
+    const steps = stepsOf(job('apply'));
+    const checkout = steps.findIndex((step) => str(step['uses']).startsWith('actions/checkout@'));
+    const stale = steps.findIndex((step) => /ls-remote/.test(str(step['run'])));
+    const login = steps.findIndex((step) => str(step['uses']).startsWith(AWS_LOGIN));
+    expect(checkout).toBeGreaterThan(-1);
+    expect(stale).toBeGreaterThan(checkout);
+    expect(login).toBeGreaterThan(stale);
+  });
+
+  test('AC-43: the step has no if and no continue-on-error', () => {
+    const step = staleStep();
+    expect('if' in step).toBe(false);
+    expect('continue-on-error' in step).toBe(false);
+  });
+
+  test('AC-43: it asks origin for refs/heads/main', () => {
+    const run = runStale(TIP, TIP);
+    expect(run.gitCalls).toHaveLength(1);
+    expect(run.gitCalls[0]).toMatch(/\bls-remote\b.*\borigin\b.*\brefs\/heads\/main\b/);
+  });
+
+  test('AC-43: the tip of main equal to GITHUB_SHA passes', () => {
+    const run = runStale(TIP, TIP);
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+  });
+
+  test('AC-43: a different tip fails with ::error:: telling to dispatch', () => {
+    // Precondition: the same step passes with an equal SHA.
+    expect(runStale(TIP, TIP).status).toBe(0);
+    const run = runStale(OTHER, TIP);
+    expect(run.status).not.toBe(0);
+    const output = run.stdout + run.stderr;
+    expect(output).toContain('::error::');
+    expect(output).toMatch(/dispatch/i);
+  });
+
+  test('AC-43: a failing ls-remote fails the step', () => {
+    expect(runStale(TIP, TIP).status).toBe(0);
+    expect(runStale(null, TIP).status).not.toBe(0);
+  });
+
+  test('AC-43: an ls-remote that prints nothing fails the step', () => {
+    expect(runStale(TIP, TIP).status).toBe(0);
+    expect(runStale('', TIP).status).not.toBe(0);
+  });
+
+  test('AC-43: an empty GITHUB_SHA never matches an empty answer', () => {
+    expect(runStale(TIP, TIP).status).toBe(0);
+    expect(runStale('', '').status).not.toBe(0);
+  });
+});
+
+describe('infra.yml: the digest mismatch message (AC-43)', () => {
+  function mismatch(expected: string, actual: string): StepResult {
+    const step = stepsOf(job('apply')).find((candidate) =>
+      allEnvText(candidate).includes('needs.changes.outputs.digests'),
+    );
+    if (step === undefined) throw new Error('no step of the apply job reads the digests');
+    const ctx = eventCtx('push', { digests: expected, 'steps.*.outputs': actual });
+    return withSandbox({}, (box) => runStepIn(box, step, ctx, envScopes('apply')));
+  }
+
+  test('AC-43: a mismatch says to dispatch the stack and never to re-run', () => {
+    // Precondition: equal digests pass.
+    expect(mismatch('ab12'.repeat(16), 'ab12'.repeat(16)).status).toBe(0);
+    const run = mismatch('ab12'.repeat(16), 'cd34'.repeat(16));
+    expect(run.status).not.toBe(0);
+    const output = run.stdout + run.stderr;
+    expect(output).toContain('::error::');
+    expect(output).toMatch(/dispatch/i);
+    expect(output).not.toMatch(/re-?run/i);
+  });
+
+  test('AC-43: an empty EXPECTED gets the same message', () => {
+    const output = (() => {
+      const run = mismatch('', 'ab12'.repeat(16));
+      expect(run.status).not.toBe(0);
+      return run.stdout + run.stderr;
+    })();
+    expect(output).toMatch(/dispatch/i);
+    expect(output).not.toMatch(/re-?run/i);
+  });
+});
+
+// ---- CONTRIBUTING.md (AC-43, AC-49) --------------------------------------------------------------
+
+/** The text of the Terraform section: from its heading to the next heading of the same level. */
+function contributingTerraformSection(): string {
+  const text = readRepoFile('CONTRIBUTING.md');
+  const heading = /^(#{1,6})\s+Terraform\b.*$/m.exec(text);
+  if (heading === null) throw new Error('CONTRIBUTING.md has no Terraform heading');
+  const start = (heading.index ?? 0) + heading[0].length;
+  const level = (heading[1] as string).length;
+  const rest = text.slice(start);
+  const next = new RegExp(`^#{1,${level}}\\s`, 'm').exec(rest);
+  return next === null ? rest : rest.slice(0, next.index);
+}
+
+describe('CONTRIBUTING.md: stale runs and documented limits', () => {
+  // The assertion for "does not suggest re-running an old run": the Terraform section contains
+  // no "re-run" / "rerun" at all (any case), and it does say to dispatch.
+  test('AC-43: the Terraform section never suggests re-running a run', () => {
+    expect(contributingTerraformSection()).not.toMatch(/re-?run/i);
+  });
+
+  test('AC-43: the Terraform section says to dispatch apply or destroy for a stale run', () => {
+    const section = contributingTerraformSection();
+    expect(section).toMatch(/dispatch/i);
+    expect(section).toMatch(/tip of `?main|stale run|old run/i);
+  });
+
+  test('AC-49: it says output-only changes are not applied on their own', () => {
+    const section = contributingTerraformSection();
+    expect(section).toMatch(/output-only/i);
+    expect(section).toMatch(/on their own/i);
+  });
+
+  test('AC-49: it warns against role-dependent values such as aws_caller_identity in arguments', () => {
+    const section = contributingTerraformSection();
+    expect(section).toContain('aws_caller_identity');
+    expect(section).toMatch(/role-dependent/i);
+  });
+
+  test('AC-49: it says a maintainer pushes a commit for fork and Dependabot changes', () => {
+    expect(contributingTerraformSection()).toContain('pushes a commit');
+  });
+});
+
+describe('infra.yml: the tf-plan message for forks and Dependabot (AC-49)', () => {
+  function gateRun(results: string, stacks: string, canPlanValue: string): StepResult {
+    const step = stepsOf(job('tf-plan')).find((candidate) =>
+      /needs\.(\*|[\w-]+)\.result/.test(allEnvText(candidate)),
+    );
+    if (step === undefined) throw new Error('no step of the tf-plan job gets needs.*.result');
+    const [stacksResult = '', planResult = ''] = results.split(' ');
+    const ctx: Ctx = {
+      'needs.*.result': results,
+      'needs.stacks.result': stacksResult,
+      'needs.plan.result': planResult,
+      'needs.stacks.outputs.stacks': stacks,
+      'needs.stacks.outputs.can_plan': canPlanValue,
+    };
+    return withSandbox({}, (box) => runStepIn(box, step, ctx));
+  }
+
+  test('AC-49: the ::error:: for a fork or Dependabot change says a maintainer pushes a commit', () => {
+    // Precondition: the same results pass without lab changes.
+    expect(gateRun('success skipped', '[]', 'false').status).toBe(0);
+    const run = gateRun('success skipped', '["labs/00-a"]', 'false');
+    expect(run.status).not.toBe(0);
+    const output = run.stdout + run.stderr;
+    expect(output).toContain('::error::');
+    expect(output).toContain('pushes a commit');
+  });
+});
+
+// ---- AC-45 -----------------------------------------------------------------------------------------
+
+describe('infra.yml: no way around a failing check (AC-45)', () => {
+  const dispatchCheck = (condition: unknown): boolean => {
+    const text = str(condition).trim();
+    const inner = /^\$\{\{([\s\S]*)\}\}$/.exec(text)?.[1] ?? text;
+    return inner.replace(/\s+/g, '') === "github.event_name=='workflow_dispatch'";
+  };
+
+  test('AC-45: nothing in infra.yml has continue-on-error', () => {
+    expect(withoutComments(infraText())).not.toMatch(/continue-on-error/);
+    for (const id of Object.keys(jobsOf(loadInfra()))) {
+      expect('continue-on-error' in job(id), `job ${id}`).toBe(false);
+      for (const step of stepsOf(job(id))) {
+        expect('continue-on-error' in step, `job ${id}`).toBe(false);
+      }
+    }
+  });
+
+  test('AC-45: in apply, the stale-run step, the digest comparison and terraform apply have no if', () => {
+    const steps = stepsOf(job('apply'));
+    const stale = steps.find((step) => /ls-remote/.test(str(step['run'])));
+    const compare = steps.find((step) =>
+      allEnvText(step).includes('needs.changes.outputs.digests'),
+    );
+    const apply = steps.find((step) => /\bterraform apply\b/.test(str(step['run'])));
+    for (const [name, step] of [
+      ['stale-run step', stale],
+      ['digest comparison', compare],
+      ['terraform apply', apply],
+    ] as const) {
+      expect(step, name).toBeDefined();
+      expect('if' in (step as Dict), name).toBe(false);
+    }
+  });
+
+  test('AC-45: in stacks, the select step has no if', () => {
+    const select = stepsOf(job('stacks')).filter((step) => /lab-stacks/.test(str(step['run'])));
+    expect(select.length).toBeGreaterThanOrEqual(1);
+    for (const step of select) expect('if' in step).toBe(false);
+  });
+
+  test('AC-45: in stacks, a dispatch guard step is conditioned only on the dispatch event', () => {
+    const guards = stepsOf(job('stacks')).filter(
+      (step) => /CONFIRM/.test(str(step['run'])) || /inputs\.confirm/.test(allEnvText(step)),
+    );
+    expect(guards.length).toBeGreaterThanOrEqual(1);
+    for (const step of guards) {
+      if ('if' in step) expect(dispatchCheck(step['if']), JSON.stringify(step['if'])).toBe(true);
+    }
+  });
+});
+
+// ---- AC-46: the changes job, executed ----------------------------------------------------------------
+
+describe('infra.yml: the changes job, executed with jq (AC-46)', () => {
+  function collectStep(): Dict {
+    const step = stepsOf(job('changes')).find((candidate) =>
+      /meta\.json/.test(str(candidate['run'])),
+    );
+    if (step === undefined) throw new Error('no step of the changes job reads meta.json');
+    return step;
+  }
+
+  interface Meta {
+    stack: string;
+    digest: string;
+    changed: boolean;
+  }
+
+  function collect(metas: Meta[], event: EventName = 'push'): StepResult & { outputs: Dict } {
+    return withSandbox({}, (box) => {
+      for (const meta of metas) {
+        const dir = join(box.work, 'plan-meta', `plan-meta-${meta.stack.replace('labs/', '')}`);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta));
+      }
+      const scopes = [...envScopes('changes'), runnerScope(box)];
+      const ctx = eventCtx(event, { 'needs.stacks.outputs.mode': 'apply' });
+      const run = runStepIn(box, collectStep(), ctx, scopes);
+      const outputs: Dict = {};
+      for (const [key, value] of Object.entries(parseOutputs(readFileSync(box.output, 'utf8')))) {
+        try {
+          outputs[key] = JSON.parse(value);
+        } catch {
+          outputs[key] = value;
+        }
+      }
+      return { ...run, outputs };
+    });
+  }
+
+  const metas: Meta[] = [
+    { stack: 'labs/02-c', digest: 'd2'.repeat(32), changed: true },
+    { stack: 'labs/00-a', digest: 'd0'.repeat(32), changed: false },
+    { stack: 'labs/01-b', digest: 'd1'.repeat(32), changed: true },
+  ];
+
+  jqTest('AC-46: changed lists the changed stacks, sorted', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = collect(metas);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.outputs['changed']).toEqual(['labs/01-b', 'labs/02-c']);
+  });
+
+  jqTest('AC-46: digests is an object keyed by stack with each digest', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = collect(metas);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.outputs['digests']).toEqual({
+      'labs/00-a': 'd0'.repeat(32),
+      'labs/01-b': 'd1'.repeat(32),
+      'labs/02-c': 'd2'.repeat(32),
+    });
+  });
+
+  jqTest('AC-46: with only unchanged stacks changed is []', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = collect(metas.map((meta) => ({ ...meta, changed: false })));
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.outputs['changed']).toEqual([]);
+  });
+
+  jqTest('AC-46: the outputs are single lines (usable in a matrix)', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = collect(metas, 'pull_request');
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.outputs['changed']).toEqual(['labs/01-b', 'labs/02-c']);
+    expect(Object.keys(run.outputs)).toEqual(expect.arrayContaining(['changed', 'digests']));
+  });
+
+  test('AC-46: the approved digest env of the apply comparison is exactly fromJSON(digests)[matrix.stack]', () => {
+    const step = stepsOf(job('apply')).find((candidate) =>
+      allEnvText(candidate).includes('needs.changes.outputs.digests'),
+    );
+    expect(step).toBeDefined();
+    const values = Object.values((step as Dict)['env'] as Dict).map((value) =>
+      String(value).replace(/\s+/g, ''),
+    );
+    expect(values).toContain('${{fromJSON(needs.changes.outputs.digests)[matrix.stack]}}');
+  });
+});
+
+// ---- AC-47: the comment lookup, executed -----------------------------------------------------------
+
+describe('infra.yml: the report comment lookup, executed with jq (AC-47)', () => {
+  const MARKER = '<!-- infra-plan -->';
+
+  function commentStep(): Dict {
+    const step = stepsOf(job('report')).find((candidate) => /gh api/.test(str(candidate['run'])));
+    if (step === undefined) throw new Error('no step of the report job runs gh api');
+    return step;
+  }
+
+  /** gh api: GET prints the pages in $FAKE_GH_LIST; writes only log. Filtering flags are refused. */
+  const fakeGh = [
+    'for a in "$@"; do',
+    '  case "$a" in',
+    '    --jq|-q|--jq=*|--template|-t|--template=*)',
+    '      echo "fake gh: filtering is not supported, pipe the JSON to jq" >&2; exit 1;;',
+    '    body=@*) cp "${a#body=@}" "$FAKE_LOG_DIR/body.txt";;',
+    '    body=*) printf "%s" "${a#body=}" > "$FAKE_LOG_DIR/body.txt";;',
+    '  esac',
+    'done',
+    'case "$*" in',
+    '  *PATCH*|*POST*) ;;',
+    '  *) cat "$FAKE_GH_LIST";;',
+    'esac',
+  ].join('\n');
+
+  const comment = (id: number, login: string, body: string): Dict => ({
+    id,
+    user: { login },
+    body,
+  });
+
+  interface ReportRun {
+    status: number | null;
+    stderr: string;
+    calls: string[];
+    writes: { method: string; path: string }[];
+    body: string;
+  }
+
+  /** `pages` = the comments of each page; `summaries` = file content per stack. */
+  function report(pages: Dict[][], summaries: Record<string, string> = {}): ReportRun {
+    return withSandbox({ gh: fakeGh }, (box) => {
+      const list = join(box.dir, 'gh-list.json');
+      writeFileSync(list, pages.map((page) => JSON.stringify(page)).join('\n'));
+      const all =
+        Object.keys(summaries).length > 0 ? summaries : { '00-a': '### <code>labs/00-a</code>\n' };
+      for (const [id, text] of Object.entries(all)) {
+        const dir = join(box.work, 'plan-meta', `plan-meta-${id}`);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, 'summary.md'), text);
+      }
+      const scopes = [...envScopes('report'), runnerScope(box, { FAKE_GH_LIST: slash(list) })];
+      const ctx = eventCtx('pull_request', {
+        'github.event.pull_request.number': '12',
+        'github.repository': 'owner/repo',
+        'github.token': 'fake-token',
+      });
+      const run = runStepIn(box, commentStep(), ctx, scopes);
+      const calls = readLog(box, 'gh');
+      const writes = calls.flatMap((call) => {
+        const method = /(?:--method|-X)[ =](PATCH|POST)\b/.exec(call)?.[1];
+        const path = call.split(/\s+/).find((token) => token.startsWith('repos/'));
+        return method === undefined ? [] : [{ method, path: path ?? '' }];
+      });
+      const bodyPath = join(box.logs, 'body.txt');
+      return {
+        status: run.status,
+        stderr: run.stderr,
+        calls,
+        writes,
+        body: existsSync(bodyPath) ? readFileSync(bodyPath, 'utf8') : '',
+      };
+    });
+  }
+
+  const human = comment(7, 'octocat', `${MARKER} a human quoting the marker`);
+  const botWithout = comment(9, 'github-actions[bot]', 'a bot comment without the marker');
+  const botWith = (id: number): Dict =>
+    comment(id, 'github-actions[bot]', `${MARKER}\n## Terraform plan`);
+
+  jqTest('AC-47: the comments are listed with --paginate', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report([[human, botWithout, botWith(42)]]);
+    expect(run.status, run.stderr).toBe(0);
+    const list = run.calls.find(
+      (call) => /issues\/12\/comments(\s|$)/.test(call) && !/PATCH|POST/.test(call),
+    );
+    expect(list, run.calls.join('\n')).toBeDefined();
+    expect(list).toContain('--paginate');
+  });
+
+  jqTest('AC-47: the bot comment with the marker is updated with one PATCH and no POST', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report([[human, botWithout], [botWith(42)]]);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.writes).toHaveLength(1);
+    expect(run.writes[0]?.method).toBe('PATCH');
+    expect(run.writes[0]?.path).toMatch(/^repos\/owner\/repo\/issues\/comments\/42$/);
+  });
+
+  jqTest('AC-47: without a bot comment holding the marker one POST creates it, no PATCH', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report([[human, botWithout]]);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.writes).toHaveLength(1);
+    expect(run.writes[0]?.method).toBe('POST');
+    expect(run.writes[0]?.path).toMatch(/^repos\/owner\/repo\/issues\/12\/comments$/);
+  });
+
+  jqTest('AC-47: with no comments at all one POST creates it', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report([[]]);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.writes.map((write) => write.method)).toEqual(['POST']);
+  });
+
+  jqTest('AC-47: with two bot comments holding the marker the first one is patched', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report([[human, botWith(42)], [botWith(50)]]);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.writes).toHaveLength(1);
+    expect(run.writes[0]?.method).toBe('PATCH');
+    expect(run.writes[0]?.path).toMatch(/issues\/comments\/42$/);
+  });
+
+  jqTest('AC-47: the body starts with the marker and has the heading and the link', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report([[]]);
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.body.split(/\r?\n/)[0]).toBe(MARKER);
+    expect(run.body).toContain('## Terraform plan');
+    expect(run.body).toContain('Full plans are in the job log of');
+  });
+
+  jqTest(
+    'AC-47: summaries are never truncated (60 000 bytes of summaries all reach the body)',
+    () => {
+      expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+      const big = (end: string): string => `${'x'.repeat(30_000)}${end}\n`;
+      const run = report([[]], { '00-a': big('END-OF-A'), '01-b': big('END-OF-B') });
+      expect(run.status, run.stderr).toBe(0);
+      expect(run.body).toContain('END-OF-A');
+      expect(run.body).toContain('END-OF-B');
+      expect(run.body).not.toMatch(/left out|too long|truncated/i);
+    },
+  );
+
+  jqTest('AC-47: the summaries come in stack order', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report([[]], { '01-b': 'SECOND-SUMMARY\n', '00-a': 'FIRST-SUMMARY\n' });
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.body.indexOf('FIRST-SUMMARY')).toBeGreaterThan(-1);
+    expect(run.body.indexOf('FIRST-SUMMARY')).toBeLessThan(run.body.indexOf('SECOND-SUMMARY'));
+  });
+});
+
+// ---- AC-48: one plan file ---------------------------------------------------------------------------
+
+describe('infra.yml: one plan file name per job (AC-48)', () => {
+  /** A shell word without its quotes. */
+  const bare = (word: string): string => word.replace(/^["']|["']$/g, '');
+
+  /** The words of a command line up to the first redirection. */
+  function words(line: string): string[] {
+    const beforeRedirect = line.split(/\s>{1,2}\s*/)[0] ?? line;
+    return beforeRedirect
+      .split(/\s+/)
+      .filter((word) => word !== '')
+      .map(bare);
+  }
+
+  function planFile(id: string): string {
+    const line = commandsOf(id).find(({ line: candidate }) => /\bterraform plan\b/.test(candidate));
+    const match = /(?:^|\s)-out=(\S+)/.exec(line?.line ?? '');
+    return bare(match?.[1] ?? '');
+  }
+
+  function showFile(id: string): string {
+    const line = commandsOf(id).find(({ line: candidate }) => /\bterraform show\b/.test(candidate));
+    return words(line?.line ?? '').at(-1) ?? '';
+  }
+
+  function applyFile(): string {
+    const line = commandsOf('apply').find(({ line: candidate }) =>
+      /\bterraform apply\b/.test(candidate),
+    );
+    return words(line?.line ?? '').at(-1) ?? '';
+  }
+
+  /** Whether the always-run cleanup step removes `file` and plan.json as whole words. */
+  function cleanupRemoves(id: string, file: string): boolean {
+    const steps = stepsOf(job(id));
+    const last = steps[steps.length - 1] as Dict;
+    const cleanup = commandLines(last).filter((line) => /(^|\s)rm\s/.test(line));
+    const tokens = cleanup.flatMap((line) => line.split(/[\s;&|]+/)).map(bare);
+    return tokens.includes(file) && tokens.includes('plan.json');
+  }
+
+  test.each(['plan', 'apply'])('AC-48: %s plans, shows and cleans up the same file', (id) => {
+    const file = planFile(id);
+    expect(file, 'terraform plan -out=<file>').not.toBe('');
+    expect(showFile(id), 'terraform show -json <file>').toBe(file);
+    expect(cleanupRemoves(id, file), `the final step of ${id} removes ${file} and plan.json`).toBe(
+      true,
+    );
+  });
+
+  test('AC-48: apply applies the same file it planned', () => {
+    const file = planFile('apply');
+    expect(file).not.toBe('');
+    expect(applyFile()).toBe(file);
+  });
+});

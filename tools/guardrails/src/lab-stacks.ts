@@ -25,3 +25,13 @@ export function labId(stack: string): string {
 export function labStateKey(stack: string): string {
   return `labs/${labId(stack)}.tfstate`;
 }
+
+/**
+ * The lab stacks a change set must plan (spec 033, AC-44). Interface stub: the implementation
+ * comes after the tests.
+ */
+export function labStacksToPlan(stacks: string[], changedFiles: string[]): string[] {
+  void stacks;
+  void changedFiles;
+  throw new Error('not implemented');
+}
