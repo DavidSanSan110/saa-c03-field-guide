@@ -53,7 +53,7 @@ function run(options: Options): number {
     return 2;
   }
   const pages = paths.map((path) => readFileSync(join(dist, path), 'utf8'));
-  const pinned = existsSync(file) ? loadInlineHashes(file) : [];
+  const pinned: string[] = existsSync(file) ? loadInlineHashes(file) : [];
   const required = requiredExtraHashes(pages, pinned);
 
   if (!options.check) {

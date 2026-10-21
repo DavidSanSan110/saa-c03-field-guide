@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 
+type Sha256Hash = `sha256-${string}`;
+
 const HASH_PATTERN = /^sha256-[A-Za-z0-9+/]{43}=$/;
 
 function invalid(path: string, reason: string): Error {
@@ -7,7 +9,7 @@ function invalid(path: string, reason: string): Error {
 }
 
 /** Reads and validates `csp-inline-hashes.json`; throws an Error naming `path` when it is not valid. */
-export function loadInlineHashes(path: string): string[] {
+export function loadInlineHashes(path: string): Sha256Hash[] {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(path, 'utf8'));
@@ -33,5 +35,5 @@ export function loadInlineHashes(path: string): string[] {
       throw invalid(path, `entry ${String(index)} is duplicated or out of order`);
     }
   }
-  return entries as string[];
+  return entries as Sha256Hash[];
 }
