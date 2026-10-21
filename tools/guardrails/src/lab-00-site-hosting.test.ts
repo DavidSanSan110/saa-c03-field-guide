@@ -1286,3 +1286,199 @@ describe('AC-34: the shape of every 301', () => {
     },
   );
 });
+
+// ---- Added after review round 1 (AC-51, AC-52) ---------------------------------------------------------
+
+// AC-51: no protocol-relative 301 locations. A uri that starts with // used to give
+// `location: //evil/`, which a browser resolves to another host.
+
+const REDIRECT_BASE = 'https://site.example.com/x';
+const EVIL_URIS = ['//evil.example', '//evil%E3%80%82com', '///evil%2ecom', '//evil', '////evil/x'];
+
+interface Outcome {
+  statusCode?: number;
+  headers?: { location?: { value?: string } };
+}
+
+/** The 301 location of a response, or undefined when the function did not redirect. */
+function locationOf(result: unknown): string | undefined {
+  const outcome = result as Outcome;
+  return outcome.statusCode === 301 ? (outcome.headers?.location?.value ?? '') : undefined;
+}
+
+describe.each(['', SITE])(
+  'AC-51: canonical host "%s": uris that start with several slashes',
+  (canonical) => {
+    test.each(EVIL_URIS)(
+      'AC-51: %s on the site host never gives a protocol-relative 301',
+      (uri) => {
+        const location = locationOf(run(canonical, uri, SITE));
+        if (location === undefined) return; // a file-like uri is served as it is: nothing to redirect
+        expect(location.startsWith('/')).toBe(true);
+        expect(location.startsWith('//')).toBe(false);
+        expect(new URL(location, REDIRECT_BASE).host).toBe('site.example.com');
+      },
+    );
+
+    test.each([
+      ['//evil', '/evil/'],
+      ['//evil%E3%80%82com', '/evil%E3%80%82com/'],
+      ['///evil%2ecom', '/evil%2ecom/'],
+      ['////evil/x', '/evil/x/'],
+    ])('AC-51: %s redirects to %s (the leading slashes collapse to one)', (uri, expected) => {
+      expect(locationOf(run(canonical, uri, SITE))).toBe(expected);
+    });
+
+    test('AC-51: the query string is kept after the collapsed path', () => {
+      expect(locationOf(run(canonical, '//evil', SITE, { a: q('1') }))).toBe('/evil/?a=1');
+    });
+
+    test('AC-51: only the leading run collapses: slashes inside the path stay', () => {
+      expect(locationOf(run(canonical, '//a//b', SITE))).toBe('/a//b/');
+    });
+
+    test('AC-51: a request rewrite (uri ending in a slash) is unchanged', () => {
+      const result = run(canonical, '//a/', SITE) as { uri?: string; statusCode?: number };
+      expect(result.statusCode).toBeUndefined();
+      expect(result.uri).toBe('//a/index.html');
+    });
+  },
+);
+
+describe('AC-51: on a *.cloudfront.net host with a canonical host', () => {
+  test.each(EVIL_URIS)('AC-51: %s redirects to the canonical host and nowhere else', (uri) => {
+    const location = locationOf(run(SITE, uri, CF_HOST));
+    expect(location).toBeDefined();
+    expect(location?.startsWith('https://site.example.com/')).toBe(true);
+    expect(new URL(location ?? '', REDIRECT_BASE).host).toBe('site.example.com');
+  });
+
+  test.each([
+    ['//evil', 'https://site.example.com/evil/'],
+    ['//evil.example', 'https://site.example.com/evil.example'],
+    ['///evil%2ecom', 'https://site.example.com/evil%2ecom/'],
+    ['////evil/x', 'https://site.example.com/evil/x/'],
+  ])('AC-51: %s redirects to %s (the leading slashes collapse to one)', (uri, expected) => {
+    expect(locationOf(run(SITE, uri, CF_HOST))).toBe(expected);
+  });
+});
+
+describe('AC-51: without a canonical host a *.cloudfront.net host gets the relative rules', () => {
+  test.each(EVIL_URIS)('AC-51: %s never gives a protocol-relative 301', (uri) => {
+    const location = locationOf(run('', uri, CF_HOST));
+    if (location === undefined) return;
+    expect(location.startsWith('//')).toBe(false);
+    expect(new URL(location, 'https://d111.cloudfront.net/x').host).toBe('d111.cloudfront.net');
+  });
+});
+
+// AC-52: every checkov skip sits inside the resource block that the spec section 11 assigns it to.
+
+/** The HCL text with comments replaced by spaces, so that offsets still match the original. */
+function blankHclComments(text: string): string {
+  let out = '';
+  let i = 0;
+  while (i < text.length) {
+    const c = text.charAt(i);
+    const two = text.slice(i, i + 2);
+    if (c === '"') {
+      const end = skipString(text, i);
+      out += text.slice(i, end);
+      i = end;
+    } else if (c === '#' || two === '//') {
+      while (i < text.length && text.charAt(i) !== '\n') {
+        out += ' ';
+        i += 1;
+      }
+    } else if (two === '/*') {
+      const found = text.indexOf('*/', i + 2);
+      const end = found === -1 ? text.length : found + 2;
+      out += text.slice(i, end).replace(/[^\n]/g, ' ');
+      i = end;
+    } else {
+      out += c;
+      i += 1;
+    }
+  }
+  return out;
+}
+
+/** The `type.name` of the resource block that contains `offset`, or undefined. */
+function enclosingResource(text: string, offset: number): string | undefined {
+  const blank = blankHclComments(text);
+  for (const match of blank.matchAll(/\bresource\s+"([^"]+)"\s+"([^"]+)"\s*\{/g)) {
+    const open = match.index + match[0].length - 1;
+    if (offset > open && offset < closeBrace(blank, open)) return `${match[1]}.${match[2]}`;
+  }
+  return undefined;
+}
+
+const BUCKET_SKIPS = ['CKV_AWS_144', 'CKV_AWS_145', 'CKV2_AWS_62', 'CKV_AWS_18'];
+const SKIP_HOMES: Record<string, string[]> = {
+  'aws_cloudfront_distribution.site': [
+    'CKV_AWS_68',
+    'CKV2_AWS_47',
+    'CKV_AWS_310',
+    'CKV_AWS_374',
+    'CKV_AWS_86',
+    'CKV_AWS_174',
+    'CKV2_AWS_42',
+  ],
+  'aws_cloudfront_response_headers_policy.site': ['CKV_AWS_259'],
+  'aws_s3_bucket.site': BUCKET_SKIPS,
+  'aws_s3_bucket.logs': [...BUCKET_SKIPS, 'CKV_AWS_21'],
+};
+
+/** Skips that are outside every resource or inside a resource that is not their home. */
+function misplacedSkips(files: { name: string; raw: string }[]): string[] {
+  return files.flatMap((file) =>
+    [...file.raw.matchAll(/#\s*checkov:skip=([^\s:]+)/g)].flatMap((match) => {
+      const id = match[1] ?? '';
+      const home = enclosingResource(file.raw, match.index);
+      return home !== undefined && (SKIP_HOMES[home] ?? []).includes(id)
+        ? []
+        : [`${file.name}: ${id} is in ${home ?? 'no resource'}`];
+    }),
+  );
+}
+
+describe('AC-52: the placement check works (self-check)', () => {
+  const resource = (type: string, name: string, body: string): string =>
+    `resource "${type}" "${name}" {\n${body}\n}\n`;
+  const skip = (id: string): string => `  #checkov:skip=${id}:a reason\n`;
+
+  test('AC-52: a skip in its home resource is fine, in another resource or outside any is reported', () => {
+    const good = resource('aws_s3_bucket', 'logs', skip('CKV_AWS_21'));
+    expect(misplacedSkips([{ name: 'a.tf', raw: good }])).toEqual([]);
+    const wrongBucket = resource('aws_s3_bucket', 'site', skip('CKV_AWS_21'));
+    expect(misplacedSkips([{ name: 'a.tf', raw: wrongBucket }])).toHaveLength(1);
+    const wrongType = resource('aws_s3_bucket_policy', 'site', skip('CKV_AWS_145'));
+    expect(misplacedSkips([{ name: 'a.tf', raw: wrongType }])).toHaveLength(1);
+    const outside = `${skip('CKV_AWS_145')}${good}`;
+    expect(misplacedSkips([{ name: 'a.tf', raw: outside }])).toHaveLength(1);
+  });
+
+  test('AC-52: braces and quotes inside comments do not move the resource boundaries', () => {
+    const raw = resource(
+      'aws_s3_bucket',
+      'site',
+      `  # a comment with a } and a " in it\n${skip('CKV_AWS_145')}`,
+    );
+    expect(misplacedSkips([{ name: 'a.tf', raw }])).toEqual([]);
+  });
+});
+
+describe('AC-52: checkov skips are inside the resource block the spec assigns them to', () => {
+  test('AC-52: every skip of the lab is in its home resource', () => {
+    const files = loadTerraformFiles();
+    expect(files.length).toBeGreaterThan(0);
+    expect(misplacedSkips(files)).toEqual([]);
+  });
+
+  test('AC-52: the lab has skips to check', () => {
+    const count = loadTerraformFiles().flatMap((file) => [
+      ...file.raw.matchAll(/#\s*checkov:skip=/g),
+    ]).length;
+    expect(count).toBeGreaterThan(0);
+  });
+});
