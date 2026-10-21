@@ -194,6 +194,8 @@ importers:
 
   tools/similarity-check: {}
 
+  tools/smoke: {}
+
   tools/sync: {}
 
 packages:

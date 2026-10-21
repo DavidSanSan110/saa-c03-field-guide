@@ -68,6 +68,55 @@ terraform init -backend-config="bucket=field-guide-tfstate-<ACCOUNT_ID>" \
 terraform plan -out=tfplan
 ```
 
+## Deploying the site
+
+`deploy.yml` builds the site and uploads it to this lab's bucket. It runs on every push to `main`
+that changes the site or what it is built from, and you can dispatch it by hand. It never runs for
+pull requests.
+
+1. The `build` job builds the site once and stores it as an artifact named after the commit. It has
+   no AWS access.
+2. The `deploy` job waits for your approval in the `production` environment, assumes the
+   `fg-site-deploy` role through GitHub OIDC (no AWS keys), uploads the site, invalidates the
+   CloudFront cache and checks that the bucket is not readable directly.
+3. The `smoke` job then checks the live site (`pnpm smoke --url <site URL>`): the pages, the
+   redirects, the 404 page, the security headers of `apps/site/headers.json`, the cache headers, the
+   content types and TLS.
+
+Set this up in your repository before the first deploy:
+
+- Create the **`production`** environment with yourself as required reviewer, `main` as the only
+  deployment branch and no administrator bypass. Leave _Prevent self-review_ off: you approve your
+  own runs. Do it first: a workflow that names a missing environment creates an unprotected one.
+- On the `production` environment, add the secret `SITE_DEPLOY_ROLE_ARN` (the `deploy_role_arn`
+  output of this stack) and the variable `SITE_DISTRIBUTION_ID` (the `distribution_id` output).
+- On the repository, add the variables `SITE_URL` (the `site_url` output, for example
+  `https://site.example.com`) and `SITE_CLOUDFRONT_DOMAIN` (the `distribution_domain_name` output).
+  Leave `SITE_CLOUDFRONT_DOMAIN` unset if you use no custom domain: the smoke test then skips the
+  checks that need one.
+
+Runs are queued one at a time, and a newer queued run replaces an older queued one.
+
+### Rolling back
+
+A bad deploy is undone without a code change, in one of two ways:
+
+- **Re-run the `deploy` job** of the last good run in the Actions tab. It uploads that run's artifact
+  again, with no new build. This works for 30 days after that run, as long as its artifact is kept.
+- **Dispatch `deploy.yml` from `main`** with `ref` set to the full SHA (40 characters) of a good
+  commit on `main`: a merge commit or a direct commit, of any age. It rebuilds that commit and
+  deploys it. A queued dispatch is replaced if a push run is queued after it.
+
+Both ways wait for your approval and end with the smoke test.
+If the job fails while waiting for the CloudFront invalidation (it waits up to 10 minutes), the new
+site is already uploaded and the invalidation is only slow: re-run the `deploy` job to finish it.
+
+### Changing the headers
+
+A push that changes `apps/site/headers.json` starts both `infra.yml`, which applies the new headers,
+and `deploy.yml`. Approve the `infra` apply first. If the `smoke` job ran before the apply finished,
+it fails on the old headers: re-run that job alone ("Re-run failed jobs") once the apply is done.
+
 ## Cost
 
 Estimated with `infracost breakdown --path .`: **$0.00 per month** of fixed cost. Nothing here costs
