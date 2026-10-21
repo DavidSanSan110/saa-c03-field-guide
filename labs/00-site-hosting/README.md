@@ -86,8 +86,8 @@ pull requests.
 Set this up in your repository before the first deploy:
 
 - Create the **`production`** environment with yourself as required reviewer, `main` as the only
-  deployment branch and no administrator bypass. Do it first: a workflow that names a missing
-  environment creates an unprotected one.
+  deployment branch and no administrator bypass. Leave _Prevent self-review_ off: you approve your
+  own runs. Do it first: a workflow that names a missing environment creates an unprotected one.
 - On the `production` environment, add the secret `SITE_DEPLOY_ROLE_ARN` (the `deploy_role_arn`
   output of this stack) and the variable `SITE_DISTRIBUTION_ID` (the `distribution_id` output).
 - On the repository, add the variables `SITE_URL` (the `site_url` output, for example
@@ -108,6 +108,8 @@ A bad deploy is undone without a code change, in one of two ways:
   deploys it. A queued dispatch is replaced if a push run is queued after it.
 
 Both ways wait for your approval and end with the smoke test.
+If the job fails while waiting for the CloudFront invalidation (it waits up to 10 minutes), the new
+site is already uploaded and the invalidation is only slow: re-run the `deploy` job to finish it.
 
 ### Changing the headers
 
