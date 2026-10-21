@@ -20,6 +20,7 @@ import {
 } from './test-lock.ts';
 import type { CommitChange, CommitInfo } from './test-lock.ts';
 import { stacksToCheck, terraformStacks } from './terraform-stacks.ts';
+import { LabStackError, labStacks } from './lab-stacks.ts';
 
 const USAGE = `Usage:
   guardrails paths [--staged | --all | <files...>]
@@ -28,7 +29,8 @@ const USAGE = `Usage:
   guardrails test-lock --base <ref> [--head <ref>]
   guardrails no-merges --base <ref> [--head <ref>]
   guardrails commits --base <ref> [--head <ref>]
-  guardrails tf-stacks (--base <ref> [--head <ref>] | --all)`;
+  guardrails tf-stacks (--base <ref> [--head <ref>] | --all)
+  guardrails lab-stacks (--base <ref> [--head <ref>] | --all | --stack <path>)`;
 
 /** `git commit -v` appends the diff below this line; it is not part of the message. */
 const SCISSORS_LINE = '# ------------------------ >8 ------------------------';
@@ -267,13 +269,28 @@ function commitInfo(sha: string): CommitInfo {
   return { sha, subject, changes };
 }
 
-/** The Terraform stacks to check, as JSON: all of them, or those a change from `<base>` touches. */
-function terraformStacksJson(args: string[]): string {
+/** The tracked Terraform stacks; with `--all` all of them, else those a change from `<base>` touches. */
+function selectedStacks(args: string[]): string[] {
   const stacks = terraformStacks(gitList(['ls-files', '-z', '--full-name']));
-  if (args.length === 1 && args[0] === '--all') return JSON.stringify(stacks);
+  if (args.length === 1 && args[0] === '--all') return stacks;
   const [base, head] = parseRange(args).split('..'); // refs cannot contain '..'
   const changed = gitList(['diff', '--name-only', '--no-renames', '-z', `${base}...${head}`, '--']);
-  return JSON.stringify(stacksToCheck(stacks, changed));
+  return stacksToCheck(stacks, changed);
+}
+
+/** The Terraform stacks to check, as JSON: all of them, or those a change from `<base>` touches. */
+function terraformStacksJson(args: string[]): string {
+  return JSON.stringify(selectedStacks(args));
+}
+
+/** The lab stacks among the same selection, as JSON; `--stack <path>` names one tracked lab. */
+function labStacksJson(args: string[]): string {
+  if (args[0] !== '--stack') return JSON.stringify(labStacks(selectedStacks(args)));
+  const [, stack, ...extra] = args;
+  if (stack === undefined || stack.startsWith('-') || extra.length > 0) throw new UsageError();
+  const tracked = labStacks(terraformStacks(gitList(['ls-files', '-z', '--full-name'])));
+  if (!tracked.includes(stack)) throw new LabStackError(`not a lab stack: ${stack}`);
+  return JSON.stringify([stack]);
 }
 
 function readStdin(): string {
@@ -326,13 +343,14 @@ function commandViolations(command: string, args: string[]): Violation[] {
 /** Runs one CLI command and resolves to the process exit code (0 ok, 1 violations, 2 usage). */
 export function main(argv: string[]): Promise<number> {
   const [command = '', ...args] = argv;
-  if (command === 'tf-stacks') {
+  if (command === 'tf-stacks' || command === 'lab-stacks') {
     // Its only stdout line is the JSON array, so a workflow can write it to $GITHUB_OUTPUT.
     try {
-      console.log(terraformStacksJson(args));
+      console.log(command === 'tf-stacks' ? terraformStacksJson(args) : labStacksJson(args));
       return Promise.resolve(0);
     } catch (error) {
-      console.error(error instanceof UsageError ? USAGE : String(error));
+      if (error instanceof UsageError) console.error(USAGE);
+      else console.error(error instanceof LabStackError ? error.message : String(error));
       return Promise.resolve(2);
     }
   }
