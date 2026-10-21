@@ -423,6 +423,19 @@ jobs:
         with:
           persist-credentials: false
 
+      # An approval can wait for days. If main has moved on, this run would apply a plan made from
+      # an older commit and could undo newer changes. The checkout's origin is this public
+      # repository, so no token is needed to read its tip.
+      - name: Refuse a run that is not the tip of main
+        run: |
+          remote="$(git ls-remote origin refs/heads/main)"
+          tip="${remote%%[[:space:]]*}"
+          if [ -z "$tip" ] || [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "::error::This run is not for the current tip of main, so it could undo newer changes. Dispatch apply (or destroy) for the stack instead."
+            exit 1
+          fi
+          echo "This run is for the tip of main: $tip"
+
       - name: Read the Terraform version
         id: terraform-version
         working-directory: ${{ github.workspace }}
@@ -481,7 +494,7 @@ jobs:
           ACTUAL: ${{ steps.digest.outputs.digest }}
         run: |
           if [ -z "$EXPECTED" ] || [ "$EXPECTED" != "$ACTUAL" ]; then
-            echo "::error::The change set differs from the approved one, so nothing was applied. Re-run all jobs of this run, or dispatch plan or apply for the stack."
+            echo "::error::The change set differs from the approved one, so nothing was applied. Dispatch apply (or destroy) for the stack to plan it again and approve the new change set."
             exit 1
           fi
           echo "The change set matches the approved digest: $ACTUAL"
@@ -582,6 +595,6 @@ jobs:
             esac
           done
           if [ "$STACKS" != "[]" ] && [ "$CAN_PLAN" = "false" ]; then
-            echo "::error::Lab changes from forks or Dependabot can't be planned. A maintainer pushes the branch to this repository."
+            echo "::error::Lab changes from forks or Dependabot can't be planned. A maintainer pushes a commit with these changes to a branch of this repository."
             exit 1
           fi
