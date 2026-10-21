@@ -17,7 +17,7 @@ on:
         options: [plan, apply, destroy]
         default: plan
       stack:
-        description: The lab stack, for example labs/99-ci-smoke
+        description: The lab stack, for example labs/00-site-hosting
         type: string
         required: true
       confirm:

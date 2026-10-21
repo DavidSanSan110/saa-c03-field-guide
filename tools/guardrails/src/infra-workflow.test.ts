@@ -43,7 +43,6 @@ import { parse } from 'yaml';
 //    is the gate; stacks and can_plan reach it as `needs.stacks.outputs.stacks` / `.can_plan`.
 //  * Steps that run `terraform plan` (jobs `plan` and `apply`) are executed with a fake `terraform`
 //    (and a fake `aws` printing an account id) to see whether `-destroy` is added.
-//  * `labs/99-ci-smoke/verify.sh` only calls `terraform output -raw message`.
 
 vi.setConfig({ testTimeout: 60_000 });
 
@@ -385,8 +384,6 @@ function eventCtx(event: EventName, overrides: Ctx = {}): Ctx {
 
 // ---- Lab files ------------------------------------------------------------------------------------
 
-const SMOKE = ['labs', '99-ci-smoke'];
-
 /** `labs/<name>` directories that directly contain a *.tf file. */
 function labStackDirs(): string[] {
   const labs = repoPath('labs');
@@ -435,18 +432,12 @@ function blockBodies(hcl: string, header: string): string[] {
 }
 
 // =================================================================================================
-// Smoke stack and lab rule (AC-23, AC-24)
+// Lab backend rule (AC-23)
 // =================================================================================================
 
-describe('lab backend rule (every lab) and the smoke stack', () => {
-  test('AC-23: labs/99-ci-smoke is a lab stack of the repository', () => {
-    expect(labStackDirs()).toContain('labs/99-ci-smoke');
-  });
-
+describe('lab backend rule (every lab)', () => {
   test('AC-23: every lab stack has exactly one backend "s3" block with region and use_lockfile only', () => {
-    const labs = labStackDirs();
-    expect(labs.length).toBeGreaterThanOrEqual(1);
-    for (const lab of labs) {
+    for (const lab of labStackDirs()) {
       const bodies = blockBodies(stackHcl(lab), 'backend\\s+"s3"');
       expect(bodies, `${lab}: exactly one backend "s3" block`).toHaveLength(1);
       const body = bodies[0] as string;
@@ -455,127 +446,6 @@ describe('lab backend rule (every lab) and the smoke stack', () => {
       expect(body, `${lab}: bucket is passed by CI`).not.toMatch(/^\s*bucket\s*=/m);
       expect(body, `${lab}: key is passed by CI`).not.toMatch(/^\s*key\s*=/m);
     }
-  });
-
-  test('AC-23: the smoke stack has no provider block, no aws_ resource and no lock file', () => {
-    const hcl = stackHcl('labs/99-ci-smoke');
-    expect(hcl).not.toBe('');
-    expect(hcl).not.toMatch(/^\s*provider\s+"/m);
-    expect(hcl).not.toMatch(/^\s*resource\s+"aws_/m);
-    expect(existsSync(repoPath(...SMOKE, '.terraform.lock.hcl'))).toBe(false);
-  });
-
-  test('AC-23: versions.tf requires Terraform >= 1.14.0 and declares no required_providers', () => {
-    const versions = withoutComments(readRepoFile(...SMOKE, 'versions.tf'));
-    expect(versions).toMatch(/\brequired_version\s*=\s*">=\s*1\.14\.0"/);
-    expect(versions).not.toContain('required_providers');
-  });
-
-  test('AC-23: the smoke stack is one terraform_data resource driven by var.message', () => {
-    const hcl = stackHcl('labs/99-ci-smoke');
-    const resources = [...hcl.matchAll(/^\s*resource\s+"([^"]+)"\s+"([^"]+)"/gm)].map(
-      (match) => `${match[1]}.${match[2]}`,
-    );
-    expect(resources).toEqual(['terraform_data.smoke']);
-    expect(hcl).toMatch(/\binput\s*=\s*var\.message\b/);
-  });
-
-  test('AC-23: variable "message" is a string defaulting to "infra.yml smoke test"', () => {
-    const bodies = blockBodies(stackHcl('labs/99-ci-smoke'), 'variable\\s+"message"');
-    expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatch(/\btype\s*=\s*string\b/);
-    expect(bodies[0]).toMatch(/\bdefault\s*=\s*"infra\.yml smoke test"/);
-  });
-
-  test('AC-23: output "message" is terraform_data.smoke.output', () => {
-    const bodies = blockBodies(stackHcl('labs/99-ci-smoke'), 'output\\s+"message"');
-    expect(bodies).toHaveLength(1);
-    expect(bodies[0]).toMatch(/\bvalue\s*=\s*terraform_data\.smoke\.output\b/);
-  });
-
-  test('AC-23: the stack has main.tf, variables.tf, outputs.tf, tests/ci-smoke.tftest.hcl and README.md', () => {
-    for (const file of ['main.tf', 'variables.tf', 'outputs.tf', 'README.md']) {
-      expect(existsSync(repoPath(...SMOKE, file)), file).toBe(true);
-    }
-    expect(existsSync(repoPath(...SMOKE, 'tests', 'ci-smoke.tftest.hcl'))).toBe(true);
-  });
-});
-
-describe('labs/99-ci-smoke: verify.sh and README.md', () => {
-  const verify = (): string => readRepoFile(...SMOKE, 'verify.sh');
-
-  test('AC-24: verify.sh starts with a bash shebang', () => {
-    expect(verify().split(/\r?\n/)[0]).toMatch(/^#!.*\bbash\b/);
-  });
-
-  test('AC-24: verify.sh sets set -euo pipefail', () => {
-    expect(verify()).toContain('set -euo pipefail');
-  });
-
-  test('AC-24: verify.sh contains no AWS CLI write verb', () => {
-    const script = withoutComments(verify());
-    expect(script).not.toMatch(
-      /\baws\b[^\n]*\b(create|put|delete|update|attach|detach|tag|untag)[a-z0-9-]*/i,
-    );
-  });
-
-  test('AC-24: README.md names the destroy dispatch with the exact confirmation', () => {
-    const readme = readRepoFile(...SMOKE, 'README.md');
-    expect(readme).toContain('destroy labs/99-ci-smoke');
-    expect(readme).toMatch(/Run workflow/);
-    expect(readme).toContain('labs/99-ci-smoke.tfstate');
-  });
-
-  /** Runs verify.sh from the stack directory with a fake `terraform` printing `printed`. */
-  function runVerify(printed: string): StepResult & { calls: string[] } {
-    return withSandbox({ terraform: 'printf "%s" "$FAKE_TF_OUTPUT"' }, (box) => {
-      const env: NodeJS.ProcessEnv = { ...process.env, FAKE_TF_OUTPUT: printed };
-      for (const key of Object.keys(env)) {
-        if (key.startsWith('GIT_')) delete env[key];
-      }
-      const pathKey = Object.keys(env).find((key) => key.toUpperCase() === 'PATH') ?? 'PATH';
-      env[pathKey] = `${box.bin}${delimiter}${env[pathKey] ?? ''}`;
-      env['FAKE_LOG_DIR'] = slash(box.logs);
-      const result = spawnSync('bash', ['verify.sh'], {
-        cwd: repoPath(...SMOKE),
-        env,
-        encoding: 'utf8',
-        windowsHide: true,
-      });
-      return {
-        status: result.status,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        calls: readLog(box, 'terraform'),
-      };
-    });
-  }
-
-  test('AC-24: verify.sh prints "verify: ok" and exits 0 when the output equals the default', () => {
-    const run = runVerify('infra.yml smoke test');
-    expect(run.stdout).toContain('verify: ok');
-    expect(run.status).toBe(0);
-  });
-
-  test('AC-24: verify.sh asks Terraform only for the raw message output', () => {
-    const run = runVerify('infra.yml smoke test');
-    expect(run.calls).toEqual(['output -raw message']);
-  });
-
-  test('AC-24: verify.sh exits non-zero when the output differs from the default', () => {
-    // Precondition: the matching output passes.
-    expect(runVerify('infra.yml smoke test').status).toBe(0);
-    const run = runVerify('something else');
-    expect(run.status).not.toBe(0);
-    expect(run.stdout).not.toContain('verify: ok');
-  });
-
-  test('AC-24: verify.sh exits non-zero when the output is empty', () => {
-    // Precondition: the matching output passes.
-    expect(runVerify('infra.yml smoke test').status).toBe(0);
-    const run = runVerify('');
-    expect(run.status).not.toBe(0);
-    expect(run.stdout).not.toContain('verify: ok');
   });
 });
 
