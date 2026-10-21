@@ -43,8 +43,9 @@ function handler(event) {
   var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
   var isFolderWithoutSlash = !uri.endsWith('/') && lastSegment.indexOf('.') === -1;
   // A location that starts with // is protocol-relative: browsers read //evil/x as the host evil.
-  // Every location is built from the uri with its leading slashes collapsed to one.
-  var safePath = uri.replace(/^\/+/, '/');
+  // Browsers also read a backslash, tab, CR or LF there as a slash (and skip the last three), so
+  // every location is built from the uri with any leading run of those collapsed to one slash.
+  var safePath = uri.replace(/^[/\\\t\r\n]+/, '/');
 
   // One hop: the redirect to the domain already carries the slash a folder needs.
   if (canonicalHost !== '' && host.endsWith('.cloudfront.net')) {
