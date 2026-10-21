@@ -2339,3 +2339,57 @@ describe('infra.yml: one plan file name per job (AC-48)', () => {
     expect(applyFile()).toBe(file);
   });
 });
+
+// ---- AC-50: decoy refs -----------------------------------------------------------------------------
+// `git ls-remote origin refs/heads/main` also lists refs that merely end with that name (a branch
+// `a/refs/heads/main`, sorted first). The stale-run step (the `apply` step whose run contains
+// `ls-remote`) must take the SHA only from the line whose second field is exactly refs/heads/main.
+
+describe('infra.yml: the stale-run step ignores decoy refs (AC-50)', () => {
+  const OLD = 'f6e5d4c3b2'.repeat(4);
+  const TIP = 'a1b2c3d4e5'.repeat(4);
+
+  /** `lines` = what the fake `git ls-remote` prints, one `<sha>\t<ref>` per entry, in order. */
+  function runDecoy(lines: [string, string][], sha: string): StepResult {
+    const step = stepsOf(job('apply')).find((candidate) => /ls-remote/.test(str(candidate['run'])));
+    if (step === undefined) throw new Error('no step of the apply job runs git ls-remote');
+    const printed = lines.map(([id, ref]) => `printf '%s\\t%s\\n' "${id}" "${ref}"`).join('\n');
+    return withSandbox({ git: printed === '' ? 'true' : printed }, (box) => {
+      const scopes = [...envScopes('apply'), runnerScope(box, { GITHUB_SHA: sha })];
+      return runStepIn(box, step, eventCtx('push'), scopes);
+    });
+  }
+
+  const decoy: [string, string] = [OLD, 'refs/heads/a/refs/heads/main'];
+  const exact: [string, string] = [TIP, 'refs/heads/main'];
+
+  test('AC-50: a plain answer with the tip passes (precondition)', () => {
+    const run = runDecoy([exact], TIP);
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+  });
+
+  test('AC-50: with a decoy printed first, GITHUB_SHA = the real tip passes', () => {
+    const run = runDecoy([decoy, exact], TIP);
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+  });
+
+  test('AC-50: with a decoy printed first, GITHUB_SHA = the decoy SHA fails with ::error::', () => {
+    // Precondition: the real tip passes with the same output.
+    expect(runDecoy([decoy, exact], TIP).status).toBe(0);
+    const run = runDecoy([decoy, exact], OLD);
+    expect(run.status).not.toBe(0);
+    expect(run.stdout + run.stderr).toContain('::error::');
+  });
+
+  test('AC-50: with only the decoy line the step fails, even for the decoy SHA', () => {
+    expect(runDecoy([exact], TIP).status).toBe(0);
+    const run = runDecoy([decoy], OLD);
+    expect(run.status).not.toBe(0);
+    expect(run.stdout + run.stderr).toContain('::error::');
+  });
+
+  test('AC-50: a decoy printed after the exact line does not matter either', () => {
+    expect(runDecoy([exact, decoy], TIP).status).toBe(0);
+    expect(runDecoy([exact, decoy], OLD).status).not.toBe(0);
+  });
+});
