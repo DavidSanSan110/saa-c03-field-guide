@@ -20,7 +20,7 @@ import {
 } from './test-lock.ts';
 import type { CommitChange, CommitInfo } from './test-lock.ts';
 import { stacksToCheck, terraformStacks } from './terraform-stacks.ts';
-import { LabStackError, labStacks } from './lab-stacks.ts';
+import { LabStackError, labStacks, labStacksToPlan } from './lab-stacks.ts';
 
 const USAGE = `Usage:
   guardrails paths [--staged | --all | <files...>]
@@ -269,27 +269,34 @@ function commitInfo(sha: string): CommitInfo {
   return { sha, subject, changes };
 }
 
-/** The tracked Terraform stacks; with `--all` all of them, else those a change from `<base>` touches. */
-function selectedStacks(args: string[]): string[] {
-  const stacks = terraformStacks(gitList(['ls-files', '-z', '--full-name']));
-  if (args.length === 1 && args[0] === '--all') return stacks;
+function trackedStacks(): string[] {
+  return terraformStacks(gitList(['ls-files', '-z', '--full-name']));
+}
+
+/** The files a change from `<base>` to `<head>` touches (three-dot, no rename detection). */
+function changedFiles(args: string[]): string[] {
   const [base, head] = parseRange(args).split('..'); // refs cannot contain '..'
-  const changed = gitList(['diff', '--name-only', '--no-renames', '-z', `${base}...${head}`, '--']);
-  return stacksToCheck(stacks, changed);
+  return gitList(['diff', '--name-only', '--no-renames', '-z', `${base}...${head}`, '--']);
 }
 
 /** The Terraform stacks to check, as JSON: all of them, or those a change from `<base>` touches. */
 function terraformStacksJson(args: string[]): string {
-  return JSON.stringify(selectedStacks(args));
+  const stacks = trackedStacks();
+  if (args.length === 1 && args[0] === '--all') return JSON.stringify(stacks);
+  return JSON.stringify(stacksToCheck(stacks, changedFiles(args)));
 }
 
-/** The lab stacks among the same selection, as JSON; `--stack <path>` names one tracked lab. */
+/** The lab stacks, as JSON: all, one tracked lab (`--stack`), or those a change must plan. */
 function labStacksJson(args: string[]): string {
-  if (args[0] !== '--stack') return JSON.stringify(labStacks(selectedStacks(args)));
+  if (args.length === 1 && args[0] === '--all') return JSON.stringify(labStacks(trackedStacks()));
+  if (args[0] !== '--stack') {
+    return JSON.stringify(labStacksToPlan(trackedStacks(), changedFiles(args)));
+  }
   const [, stack, ...extra] = args;
   if (stack === undefined || stack.startsWith('-') || extra.length > 0) throw new UsageError();
-  const tracked = labStacks(terraformStacks(gitList(['ls-files', '-z', '--full-name'])));
-  if (!tracked.includes(stack)) throw new LabStackError(`not a lab stack: ${stack}`);
+  if (!labStacks(trackedStacks()).includes(stack)) {
+    throw new LabStackError(`not a lab stack: ${stack}`);
+  }
   return JSON.stringify([stack]);
 }
 

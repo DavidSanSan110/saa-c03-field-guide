@@ -27,11 +27,14 @@ export function labStateKey(stack: string): string {
 }
 
 /**
- * The lab stacks a change set must plan (spec 033, AC-44). Interface stub: the implementation
- * comes after the tests.
+ * The lab stacks a change set must plan: those with a changed file inside, and every lab when a
+ * module or the Terraform version changed. Linter and workflow configs don't change a plan.
  */
 export function labStacksToPlan(stacks: string[], changedFiles: string[]): string[] {
-  void stacks;
-  void changedFiles;
-  throw new Error('not implemented');
+  const labs = labStacks(stacks);
+  const changed = changedFiles.map((file) => file.replaceAll('\\', '/'));
+  if (changed.some((file) => file.startsWith('modules/') || file === '.terraform-version')) {
+    return labs;
+  }
+  return labs.filter((lab) => changed.some((file) => file.startsWith(`${lab}/`)));
 }
