@@ -272,8 +272,14 @@ jobs:
         env:
           MODE: ${{ needs.stacks.outputs.mode }}
         run: |
-          changed="$(jq -cs '[.[] | select(.changed) | .stack] | sort' plan-meta/*/meta.json)"
-          digests="$(jq -cs 'map({(.stack): .digest}) | add // {}' plan-meta/*/meta.json)"
+          # One matching artifact is extracted into plan-meta/, several into plan-meta/<name>/.
+          mapfile -t metas < <(find plan-meta -name meta.json -type f | LC_ALL=C sort)
+          if [ "${#metas[@]}" -eq 0 ]; then
+            echo "::error::No plan metadata was downloaded."
+            exit 1
+          fi
+          changed="$(jq -cs '[.[] | select(.changed) | .stack] | sort' "${metas[@]}")"
+          digests="$(jq -cs 'map({(.stack): .digest}) | add // {}' "${metas[@]}")"
           {
             echo "changed=$changed"
             echo "digests=$digests"
@@ -318,12 +324,18 @@ jobs:
           PR: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # One matching artifact is extracted into plan-meta/, several into plan-meta/<name>/.
+          mapfile -t summaries < <(find plan-meta -name summary.md -type f | LC_ALL=C sort)
+          if [ "${#summaries[@]}" -eq 0 ]; then
+            echo "::error::No plan summary was downloaded."
+            exit 1
+          fi
           body="$RUNNER_TEMP/body.md"
           {
             echo "<!-- infra-plan -->"
             echo "## Terraform plan"
             echo
-            for summary in plan-meta/*/summary.md; do
+            for summary in "${summaries[@]}"; do
               cat "$summary"
               echo
             done
