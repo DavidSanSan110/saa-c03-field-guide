@@ -217,3 +217,10 @@ describe('Zod in a process where Function() throws', () => {
     expect(main.outcome.invalidDiagram.paths).toEqual(control.outcome.invalidDiagram.paths);
   });
 });
+
+// Review round 1 (AC-29): the control proves the probe is Zod's own `Function('')`, not any other call.
+describe('the control process, review round 1', () => {
+  test("AC-29: the spy's recorded calls include the argument list ['']", () => {
+    expect(control.calls).toContainEqual(['']);
+  });
+});

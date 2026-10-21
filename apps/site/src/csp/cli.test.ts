@@ -474,3 +474,41 @@ describe('errors', () => {
     expect(existsSync(file)).toBe(false);
   });
 });
+
+describe('errors, review round 1', () => {
+  test.each([
+    ['--dist followed by --check', ['--dist', '--check']],
+    ['--file followed by --check', ['--file', '--check']],
+    ['--dist followed by --file', ['--dist', '--file', 'pinned.json']],
+    ['--file followed by --dist', ['--file', '--dist', 'out']],
+    ['--dist followed by an unknown flag', ['--dist', '--bogus']],
+  ])('AC-30: %s exits 2 with the usage line and writes nothing', (_name, args) => {
+    const project = tempProject();
+    buildDist(project, [], join(project, 'apps', 'site', 'dist'));
+
+    const run = runCli(project, args);
+
+    expect(run.status).toBe(2);
+    expect(run.output).toMatch(/usage/i);
+    expect(existsSync(join(project, 'apps', 'site', 'csp-inline-hashes.json'))).toBe(false);
+    expect(existsSync(join(project, '--check'))).toBe(false);
+    expect(existsSync(join(project, 'pinned.json'))).toBe(false);
+  });
+
+  test.each([
+    ['write mode', []],
+    ['--check', ['--check']],
+  ])('AC-31: --dist pointing at an existing file exits 2 with the message (%s)', (_name, extra) => {
+    const project = tempProject();
+    const notADir = join(project, 'dist.txt');
+    writeFile(notADir, '<html></html>');
+    const file = join(project, 'csp-inline-hashes.json');
+
+    const run = runCli(project, ['--dist', notADir, '--file', file, ...extra]);
+
+    expect(run.status).toBe(2);
+    expect(run.output).toContain(NO_PAGES(notADir));
+    expect(run.output).not.toMatch(/ENOTDIR|ENOENT|EISDIR|EEXIST|errno|at .*\.(?:ts|js):\d+/);
+    expect(existsSync(file)).toBe(false);
+  });
+});

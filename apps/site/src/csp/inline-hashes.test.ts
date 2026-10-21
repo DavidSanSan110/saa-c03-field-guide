@@ -403,3 +403,25 @@ describe('uncoveredScripts', () => {
     expect(text.replace(/\s+/g, ' ').startsWith(found?.snippet.trimEnd() ?? '!')).toBe(true);
   });
 });
+
+// Review round 1 (AC-28): the snippet collapses whitespace and trims FIRST, then cuts to 80 characters.
+// Cutting first and collapsing afterwards gives a different snippet for both scripts below.
+describe('uncoveredScripts snippet order', () => {
+  test('AC-28: whitespace is collapsed before the cut (a + 100 spaces + 100 b)', () => {
+    const text = `a${' '.repeat(100)}${'b'.repeat(100)}`;
+
+    const [found] = uncoveredScripts(page([text]));
+
+    expect(found?.snippet).toBe(`a ${'b'.repeat(78)}`);
+    expect(found?.hash).toBe(hashOf(text));
+  });
+
+  test('AC-28: the text is trimmed before the cut (leading spaces + x + 70 spaces + y + 20 z)', () => {
+    const text = `  x${' '.repeat(70)}y${'z'.repeat(20)}`;
+
+    const [found] = uncoveredScripts(page([text]));
+
+    expect(found?.snippet).toBe(`x y${'z'.repeat(20)}`);
+    expect(found?.hash).toBe(hashOf(text));
+  });
+});

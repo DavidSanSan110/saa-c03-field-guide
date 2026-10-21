@@ -179,3 +179,34 @@ describe('loadInlineHashes', () => {
     expectRejected(fileWithHashes([H_EMPTY, H_EMPTY]));
   });
 });
+
+// Review round 1 (AC-32): the message says what went wrong, so a missing file is not reported as bad JSON.
+describe('loadInlineHashes error messages', () => {
+  function messageOf(path: string): string {
+    try {
+      loadInlineHashes(path);
+    } catch (error) {
+      return (error as Error).message;
+    }
+    return '';
+  }
+
+  test('AC-32: a missing file says "cannot read", names the path and does not mention JSON', () => {
+    const path = join(tempDir(), 'does-not-exist.json');
+
+    const message = messageOf(path);
+
+    expect(message).toContain(path);
+    expect(message).toContain('cannot read');
+    expect(message).not.toContain('JSON');
+  });
+
+  test('AC-32: invalid JSON says "not valid JSON" and names the path', () => {
+    const path = fileWith('{ "scriptHashes": [ ');
+
+    const message = messageOf(path);
+
+    expect(message).toContain(path);
+    expect(message).toContain('not valid JSON');
+  });
+});
