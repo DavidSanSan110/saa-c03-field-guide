@@ -1,6 +1,10 @@
-// Interface stub (spec 033): the entry file calls runTfPlan(process.argv.slice(2), ...) and exits
-// with its code. The implementation comes after the tests.
+// Entry of the plan digest/summary CLI (spec 033). Runs with plain Node, no install:
+//   node --experimental-strip-types tools/guardrails/src/terraform-plan-cli.ts <command> ...
+import { readFileSync } from 'node:fs';
 import { runTfPlan } from './terraform-plan.ts';
 
-void runTfPlan;
-throw new Error('not implemented');
+process.exitCode = runTfPlan(process.argv.slice(2), {
+  readFile: (path) => readFileSync(path, 'utf8'),
+  stdout: (text) => process.stdout.write(text),
+  stderr: (text) => process.stderr.write(text),
+});
