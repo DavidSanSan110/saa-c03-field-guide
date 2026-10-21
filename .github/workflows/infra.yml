@@ -323,21 +323,15 @@ jobs:
             echo "<!-- infra-plan -->"
             echo "## Terraform plan"
             echo
-            size=0
             for summary in plan-meta/*/summary.md; do
-              size=$((size + $(wc -c < "$summary")))
-              if [ "$size" -gt 50000 ]; then
-                echo "Summary of $(basename "$(dirname "$summary")") left out: too long for one comment."
-              else
-                cat "$summary"
-              fi
+              cat "$summary"
               echo
             done
             echo "Full plans are in the job log of $RUN_URL."
           } > "$body"
-          existing="$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- infra-plan -->"))) | .id')"
-          comment_id="${existing%%$'\n'*}"
+          # gh prints one JSON array per page; jq -s reads them all.
+          comments="$(gh api "repos/$REPO/issues/$PR/comments" --paginate)"
+          comment_id="$(jq -rs '[.[][] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- infra-plan -->")))] | first | .id // empty' <<< "$comments")"
           if [ -n "$comment_id" ]; then
             gh api --method PATCH "repos/$REPO/issues/comments/$comment_id" --field "body=@$body" > /dev/null
           else
