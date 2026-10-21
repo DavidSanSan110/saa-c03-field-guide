@@ -1,4 +1,5 @@
 // Terraform stack detection for CI (spec 030): pure, no git or file system access.
+import { stacksReadingChangedInputs } from './stack-inputs.ts';
 
 const STACK_ROOTS = ['bootstrap', 'labs', 'modules'];
 
@@ -27,7 +28,10 @@ export function terraformStacks(trackedFiles: string[]): string[] {
   return [...stacks].sort();
 }
 
-/** The stacks a change set must check: sorted, unique, always a subset of `stacks`. */
+/**
+ * The stacks a change set must check: sorted, unique, always a subset of `stacks`. A file outside
+ * a stack that the stack reads (spec 035, stack-inputs.ts) selects it too.
+ */
 export function stacksToCheck(stacks: string[], changedFiles: string[]): string[] {
   const selected = new Set<string>();
   for (const file of changedFiles) {
@@ -38,5 +42,6 @@ export function stacksToCheck(stacks: string[], changedFiles: string[]): string[
     const stack = segments.slice(0, 2).join('/');
     if (segments.length > 2 && stacks.includes(stack)) selected.add(stack);
   }
+  for (const stack of stacksReadingChangedInputs(stacks, changedFiles)) selected.add(stack);
   return [...selected].sort();
 }

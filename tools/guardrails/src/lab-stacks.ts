@@ -1,4 +1,5 @@
 // Lab stacks (spec 033): the stacks under labs/ that CI plans and applies. Pure, no I/O.
+import { stacksReadingChangedInputs } from './stack-inputs.ts';
 
 /** Lab id rule, same as modules/tags: NN-slug. */
 export const LAB_STACK_PATTERN: RegExp = /^labs\/[0-9]{2}-[a-z0-9]+(-[a-z0-9]+)*$/;
@@ -27,8 +28,9 @@ export function labStateKey(stack: string): string {
 }
 
 /**
- * The lab stacks a change set must plan: those with a changed file inside, and every lab when a
- * module or the Terraform version changed. Linter and workflow configs don't change a plan.
+ * The lab stacks a change set must plan: those with a changed file inside or a changed input outside
+ * the stack (spec 035, stack-inputs.ts), and every lab when a module or the Terraform version
+ * changed. Linter and workflow configs don't change a plan.
  */
 export function labStacksToPlan(stacks: string[], changedFiles: string[]): string[] {
   const labs = labStacks(stacks);
@@ -36,5 +38,6 @@ export function labStacksToPlan(stacks: string[], changedFiles: string[]): strin
   if (changed.some((file) => file.startsWith('modules/') || file === '.terraform-version')) {
     return labs;
   }
-  return labs.filter((lab) => changed.some((file) => file.startsWith(`${lab}/`)));
+  const inside = labs.filter((lab) => changed.some((file) => file.startsWith(`${lab}/`)));
+  return [...new Set([...inside, ...stacksReadingChangedInputs(labs, changed)])].sort();
 }
