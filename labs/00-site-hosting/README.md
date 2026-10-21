@@ -53,6 +53,9 @@ there changes the plan, and the digest check then refuses to apply. Never put se
 variables: the domain, the zone ID and the subject prefix are printed in the run log, and they are
 not secret.
 
+The same `TF_VAR_*` variables reach every lab, not only this one. A future lab must not declare
+`domain_name`, `hosted_zone_id` or `github_sub_prefix` unless it means the same value.
+
 A change to `apps/site/headers.json` plans and applies this lab, because the headers policy is built
 from that file. The plan fails, with a message that names the file, when one of the five security
 headers is missing or has a value CloudFront would reject.
