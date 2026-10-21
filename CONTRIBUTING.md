@@ -50,6 +50,18 @@ Stacks live in `bootstrap/<name>`, `labs/<name>` and `modules/<name>`. For every
 - **Tags:** every stack takes its required tags from `modules/tags` (see its README) instead of writing them by hand.
 - **Checkov skips** go inline, next to the resource, with a reason. There is no global skip list.
 
+### How labs reach AWS
+
+Labs are planned and applied only by the `infra.yml` workflow, never from a laptop. It works on the lab stacks (`labs/NN-slug`) a change touches; `bootstrap/*` is applied locally by a maintainer.
+
+- **Pull request:** every lab the PR touches gets a read-only `terraform plan` with the plan role and `-lock=false` (that role can't write the lock file). The summary appears as one PR comment and the cost estimate as an infracost comment. Pull requests from forks and from Dependabot can't be planned: a maintainer pushes the branch to this repository.
+- **Merge to `main`:** the labs the push changed are planned again, then wait for a reviewer's approval in the `infra` environment. The apply job plans again with the apply role and applies the saved plan only if its change set is exactly the one that was shown (a SHA-256 digest of it); otherwise it fails and the run is repeated. A read-only `verify.sh` then runs when the lab has one.
+- **Manual run:** Actions → Infra → Run workflow plans, applies or destroys one lab on demand, from `main` only. `destroy` needs the confirmation `destroy <stack>`, for example `destroy labs/99-ci-smoke`.
+- **Plan files** (`tfplan` and its JSON) are never uploaded or printed as a whole: only a digest and a summary without attribute values leave the plan job, and both files are deleted at its end.
+- **Backend rule:** a lab has exactly one `backend "s3"` block that sets `region = "eu-west-1"` and `use_lockfile = true` and sets neither `bucket` nor `key`; CI passes them (`labs/<id>.tfstate` in the workload account's state bucket).
+- **Roles:** every IAM role a lab creates needs `path = "/lab/"` and the `fg-workload-boundary` permissions boundary, or the apply role is denied.
+- **Removing a lab:** destroy it by dispatch before deleting its directory. CI plans only stacks that exist, so a deleted directory leaves its resources behind.
+
 ## Licence
 
 By contributing you agree that code is licensed under [MIT](LICENSE) and written content under [CC BY-SA 4.0](LICENSE-CONTENT.md).
