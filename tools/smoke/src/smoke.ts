@@ -42,6 +42,13 @@ function fromProblems(problems: string[]): Omit<CheckResult, 'id'> {
   return problems.length === 0 ? { status: 'ok' } : { status: 'fail', detail: problems.join('; ') };
 }
 
+/** The message of a failed request, with the error code of its cause when there is one. */
+function describeError(error: unknown): string {
+  const message = errorMessage(error);
+  const code = (error as { cause?: { code?: unknown } } | null)?.cause?.code;
+  return typeof code === 'string' ? `${message} (${code})` : message;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -84,7 +91,7 @@ export function runSmoke(
           body: Buffer.from(await response.arrayBuffer()),
         };
       } catch (error) {
-        if (attempt === 2) throw error;
+        if (attempt === 2) throw new Error(`${target}: ${describeError(error)}`, { cause: error });
       }
     }
   }
@@ -121,7 +128,7 @@ export function runSmoke(
   }
 
   /** The same-origin scripts and stylesheets of the home page. */
-  async function findAssets(): Promise<Asset[]> {
+  async function loadAssets(): Promise<Asset[]> {
     const html = (await getPath('/')).body.toString('utf8');
     const assets = new Map<string, Asset>();
     for (const [tag] of html.matchAll(/<(?:script|link)\b[^>]*>/gi)) {
@@ -140,6 +147,10 @@ export function runSmoke(
     }
     return [...assets.values()];
   }
+
+  // The home page is fetched once per run, by whichever check needs its assets first.
+  let assetsOfHome: Promise<Asset[]> | undefined;
+  const findAssets = (): Promise<Asset[]> => (assetsOfHome ??= loadAssets());
 
   const checks: [string, () => Promise<Omit<CheckResult, 'id'>>][] = [
     [
@@ -223,7 +234,7 @@ export function runSmoke(
           try {
             reply = await getPath(path);
           } catch (error) {
-            problems.push(`${path}: ${errorMessage(error)}`);
+            problems.push(errorMessage(error)); // already names the URL
             continue;
           }
           for (const [name, expected] of Object.entries(options.headers)) {

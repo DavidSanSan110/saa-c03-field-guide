@@ -30,6 +30,7 @@ export function tlsProbe(
       port: testOptions.port ?? 443,
       minVersion: version,
       maxVersion: version,
+      // Must stay: else Node refuses TLS 1.0 itself (ERR_SSL_LEGACY_SIGALG_DISALLOWED_OR_UNSUPPORTED), never seeing the server's refusal.
       ciphers: 'DEFAULT@SECLEVEL=0',
       rejectUnauthorized: true,
       ...(testOptions.ca === undefined ? {} : { ca: testOptions.ca }),
