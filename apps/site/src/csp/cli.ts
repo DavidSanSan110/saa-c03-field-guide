@@ -1,5 +1,5 @@
 // `pnpm csp-hashes` CLI: arguments, file I/O, output and exit codes only; the logic is in inline-hashes.ts.
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { loadInlineHashes } from './hash-file.ts';
 import { inlineScripts, requiredExtraHashes, scriptHash, snippetOf } from './inline-hashes.ts';
@@ -25,7 +25,8 @@ function parseArgs(argv: string[]): Options {
       options.check = true;
     } else if (flag === '--dist' || flag === '--file') {
       const value = argv[(index += 1)];
-      if (value === undefined) throw new UsageError(`${flag} needs a value`);
+      if (value === undefined || value.startsWith('--'))
+        throw new UsageError(`${flag} needs a value`);
       options[flag === '--dist' ? 'dist' : 'file'] = value;
     } else {
       throw new UsageError(`unknown argument ${String(flag)}`);
@@ -34,9 +35,9 @@ function parseArgs(argv: string[]): Options {
   return options;
 }
 
-/** Every `*.html` under `dist` (relative paths), or [] when the folder does not exist. */
+/** Every `*.html` under `dist` (relative paths), or [] when it is not an existing folder. */
 function htmlFiles(dist: string): string[] {
-  if (!existsSync(dist)) return [];
+  if (!existsSync(dist) || !statSync(dist).isDirectory()) return [];
   return readdirSync(dist, { recursive: true, encoding: 'utf8' })
     .filter((path) => path.endsWith('.html'))
     .sort();
