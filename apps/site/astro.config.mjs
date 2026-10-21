@@ -3,6 +3,7 @@ import react from '@astrojs/react';
 import starlight from '@astrojs/starlight';
 import { defineConfig } from 'astro/config';
 import { fileURLToPath } from 'node:url';
+import { loadInlineHashes } from './src/csp/hash-file.ts';
 import { shouldInjectFixtures } from './src/diagram/fixtures-route.ts';
 import { buildSidebar } from './src/sidebar.ts';
 
@@ -52,7 +53,21 @@ const diagrams = {
   },
 };
 
+// Content Security Policy (spec 034): Astro writes a per-page <meta> CSP with the hashes of the scripts it
+// processes; Starlight's is:inline scripts are pinned in csp-inline-hashes.json (`pnpm csp-hashes`).
+// Styles keep 'unsafe-inline' because hashes cannot cover the style="" attributes of Starlight.
 export default defineConfig({
+  security: {
+    csp: {
+      scriptDirective: {
+        resources: ["'self'", "'wasm-unsafe-eval'"],
+        hashes: loadInlineHashes(
+          fileURLToPath(new URL('./csp-inline-hashes.json', import.meta.url)),
+        ),
+      },
+      styleDirective: { resources: ["'self'", "'unsafe-inline'"] },
+    },
+  },
   integrations: [
     starlight({
       title: 'SAA-C03 Field Guide',
