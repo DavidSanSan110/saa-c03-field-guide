@@ -5,7 +5,7 @@ export interface UncoveredScript {
   snippet: string;
 }
 
-const SCRIPT = /<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi;
+const SCRIPT = /<script\b([^>]*)>([\s\S]*?)<\/script(?:[\s/][^>]*)?>/gi;
 const META = /<meta\b[^>]*>/gi;
 const ATTRIBUTE = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
 const EXECUTABLE_TYPES = ['', 'module', 'text/javascript', 'application/javascript'];
