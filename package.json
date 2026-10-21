@@ -20,6 +20,7 @@
     "verify:static": "pnpm format:check && pnpm lint && pnpm typecheck",
     "verify:fast": "pnpm verify:static && pnpm test",
     "verify": "pnpm verify:static && pnpm coverage && pnpm e2e",
+    "csp-hashes": "tsx apps/site/src/csp/cli.ts",
     "guardrails": "tsx tools/guardrails/src/cli.ts",
     "sync": "tsx tools/sync/src/cli.ts",
     "questions": "tsx tools/questions/src/cli.ts",
