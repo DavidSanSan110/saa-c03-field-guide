@@ -2393,3 +2393,185 @@ describe('infra.yml: the stale-run step ignores decoy refs (AC-50)', () => {
     expect(runDecoy([exact, decoy], OLD).status).not.toBe(0);
   });
 });
+
+// =================================================================================================
+// AC-51: one matching artifact is extracted straight into plan-meta/ (seen on PR #88)
+//
+// With several matches actions/download-artifact writes plan-meta/<artifact name>/meta.json; with
+// exactly one it writes plan-meta/meta.json. The `changes` collect step and the `report` comment
+// step (found as in AC-46 / AC-47) must read meta.json and summary.md at any depth under
+// plan-meta/, in path order, and fail with ::error:: when there are none. How the files are found
+// (find, globstar, ...) is not pinned. Tests with the real jq follow the AC-46 skip / CI rule.
+// =================================================================================================
+
+describe('infra.yml: the changes step reads any artifact layout (AC-51)', () => {
+  function collectStep(): Dict {
+    const step = stepsOf(job('changes')).find((candidate) =>
+      /meta\.json/.test(str(candidate['run'])),
+    );
+    if (step === undefined) throw new Error('no step of the changes job reads meta.json');
+    return step;
+  }
+
+  /** `files` = path under plan-meta/ -> content; an empty record leaves plan-meta/ empty. */
+  function collect(files: Record<string, string>): StepResult & {
+    outputText: string;
+    outputs: Record<string, string>;
+  } {
+    return withSandbox({}, (box) => {
+      mkdirSync(join(box.work, 'plan-meta'), { recursive: true });
+      for (const [path, content] of Object.entries(files)) {
+        const full = join(box.work, 'plan-meta', ...path.split('/'));
+        mkdirSync(dirname(full), { recursive: true });
+        writeFileSync(full, content);
+      }
+      const scopes = [...envScopes('changes'), runnerScope(box)];
+      const ctx = eventCtx('push', { 'needs.stacks.outputs.mode': 'apply' });
+      const run = runStepIn(box, collectStep(), ctx, scopes);
+      const outputText = readFileSync(box.output, 'utf8');
+      return { ...run, outputText, outputs: parseOutputs(outputText) };
+    });
+  }
+
+  const meta = (stack: string, digest: string, changed: boolean): string =>
+    JSON.stringify({ stack, digest, changed });
+  const DIGEST = 'ab12'.repeat(16);
+
+  jqTest('AC-51: meta.json directly in plan-meta/ (one changed lab) is collected', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = collect({ 'meta.json': meta('labs/00-a', DIGEST, true) });
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(JSON.parse(run.outputs['changed'] ?? 'null')).toEqual(['labs/00-a']);
+    expect(JSON.parse(run.outputs['digests'] ?? 'null')).toEqual({ 'labs/00-a': DIGEST });
+  });
+
+  jqTest('AC-51: a single unchanged lab directly in plan-meta/ gives changed=[]', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = collect({ 'meta.json': meta('labs/00-a', DIGEST, false) });
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(JSON.parse(run.outputs['changed'] ?? 'null')).toEqual([]);
+  });
+
+  jqTest('AC-51: the two-lab subdirectory layout still works', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = collect({
+      'plan-meta-01-b/meta.json': meta('labs/01-b', 'd1'.repeat(32), true),
+      'plan-meta-00-a/meta.json': meta('labs/00-a', 'd0'.repeat(32), true),
+    });
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(JSON.parse(run.outputs['changed'] ?? 'null')).toEqual(['labs/00-a', 'labs/01-b']);
+    expect(JSON.parse(run.outputs['digests'] ?? 'null')).toEqual({
+      'labs/00-a': 'd0'.repeat(32),
+      'labs/01-b': 'd1'.repeat(32),
+    });
+  });
+
+  jqTest('AC-51: an empty plan-meta/ fails with ::error:: and writes no changed=', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    // Precondition: the same step succeeds with one file.
+    expect(collect({ 'meta.json': meta('labs/00-a', DIGEST, true) }).status).toBe(0);
+    const run = collect({});
+    expect(run.status).not.toBe(0);
+    expect(run.stdout + run.stderr).toContain('::error::');
+    expect(run.outputText).not.toMatch(/^changed=/m);
+  });
+});
+
+describe('infra.yml: the report step reads any artifact layout (AC-51)', () => {
+  const MARKER = '<!-- infra-plan -->';
+
+  function commentStep(): Dict {
+    const step = stepsOf(job('report')).find((candidate) => /gh api/.test(str(candidate['run'])));
+    if (step === undefined) throw new Error('no step of the report job runs gh api');
+    return step;
+  }
+
+  /** The fake gh of AC-47: GET prints $FAKE_GH_LIST, writes only log, filtering is refused. */
+  const fakeGh = [
+    'for a in "$@"; do',
+    '  case "$a" in',
+    '    --jq|-q|--jq=*|--template|-t|--template=*)',
+    '      echo "fake gh: filtering is not supported, pipe the JSON to jq" >&2; exit 1;;',
+    '    body=@*) cp "${a#body=@}" "$FAKE_LOG_DIR/body.txt";;',
+    '    body=*) printf "%s" "${a#body=}" > "$FAKE_LOG_DIR/body.txt";;',
+    '  esac',
+    'done',
+    'case "$*" in',
+    '  *PATCH*|*POST*) ;;',
+    '  *) cat "$FAKE_GH_LIST";;',
+    'esac',
+  ].join('\n');
+
+  const botWithMarker = [
+    { id: 42, user: { login: 'github-actions[bot]' }, body: `${MARKER}\n## Terraform plan` },
+  ];
+
+  /** `files` = path under plan-meta/ -> content; `comments` = the one page of existing comments. */
+  function report(files: Record<string, string>, comments: unknown[] = []) {
+    return withSandbox({ gh: fakeGh }, (box) => {
+      const list = join(box.dir, 'gh-list.json');
+      writeFileSync(list, JSON.stringify(comments));
+      mkdirSync(join(box.work, 'plan-meta'), { recursive: true });
+      for (const [path, content] of Object.entries(files)) {
+        const full = join(box.work, 'plan-meta', ...path.split('/'));
+        mkdirSync(dirname(full), { recursive: true });
+        writeFileSync(full, content);
+      }
+      const scopes = [...envScopes('report'), runnerScope(box, { FAKE_GH_LIST: slash(list) })];
+      const ctx = eventCtx('pull_request', {
+        'github.event.pull_request.number': '12',
+        'github.repository': 'owner/repo',
+        'github.token': 'fake-token',
+      });
+      const run = runStepIn(box, commentStep(), ctx, scopes);
+      const methods = readLog(box, 'gh').flatMap((call) => {
+        const method = /(?:--method|-X)[ =](PATCH|POST)\b/.exec(call)?.[1];
+        return method === undefined ? [] : [method];
+      });
+      const bodyPath = join(box.logs, 'body.txt');
+      return {
+        ...run,
+        methods,
+        body: existsSync(bodyPath) ? readFileSync(bodyPath, 'utf8') : '',
+      };
+    });
+  }
+
+  jqTest('AC-51: summary.md directly in plan-meta/ reaches the body, and a POST creates it', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report({ 'summary.md': '### <code>labs/00-a</code>\nONLY-SUMMARY\n' });
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(run.body.split(/\r?\n/)[0]).toBe(MARKER);
+    expect(run.body).toContain('ONLY-SUMMARY');
+    expect(run.methods).toEqual(['POST']);
+  });
+
+  jqTest('AC-51: with the single layout an existing bot comment is patched', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report({ 'summary.md': 'ONLY-SUMMARY\n' }, botWithMarker);
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(run.body).toContain('ONLY-SUMMARY');
+    expect(run.methods).toEqual(['PATCH']);
+  });
+
+  jqTest('AC-51: the two-lab subdirectory layout still works, in path order', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    const run = report({
+      'plan-meta-01-b/summary.md': 'SECOND-SUMMARY\n',
+      'plan-meta-00-a/summary.md': 'FIRST-SUMMARY\n',
+    });
+    expect(run.status, run.stdout + run.stderr).toBe(0);
+    expect(run.body.indexOf('FIRST-SUMMARY')).toBeGreaterThan(-1);
+    expect(run.body.indexOf('FIRST-SUMMARY')).toBeLessThan(run.body.indexOf('SECOND-SUMMARY'));
+  });
+
+  jqTest('AC-51: an empty plan-meta/ fails with ::error:: and writes no comment', () => {
+    expect(hasJq, 'jq must be installed on CI runners').toBe(true);
+    // Precondition: the same step succeeds with one summary.
+    expect(report({ 'summary.md': 'ONLY-SUMMARY\n' }).status).toBe(0);
+    const run = report({});
+    expect(run.status).not.toBe(0);
+    expect(run.stdout + run.stderr).toContain('::error::');
+    expect(run.methods).toEqual([]);
+  });
+});
