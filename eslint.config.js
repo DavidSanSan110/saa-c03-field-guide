@@ -27,5 +27,16 @@ export default defineConfig(
     files: ['**/*.{js,mjs,cjs}'],
     extends: [tseslint.configs.disableTypeChecked],
   },
+  {
+    // CloudFront Functions are plain scripts: no import or export, and the runtime calls the global
+    // `handler`, which nothing in the file uses.
+    files: ['labs/*/functions/*.js'],
+    languageOptions: { sourceType: 'script' },
+    rules: {
+      'no-unused-vars': ['error', { varsIgnorePattern: '^handler$' }],
+      // typescript-eslint turns the base rule off everywhere and enables its own copy instead.
+      '@typescript-eslint/no-unused-vars': 'off',
+    },
+  },
   prettier,
 );

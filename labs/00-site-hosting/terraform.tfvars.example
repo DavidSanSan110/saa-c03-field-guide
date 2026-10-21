@@ -1,0 +1,13 @@
+# Every input of this lab. For a local run, copy this file to terraform.tfvars (git-ignored) and
+# fill in your own values. For CI, set each line as a repository Actions variable named
+# TF_VAR_<NAME IN CAPITALS> (for example TF_VAR_GITHUB_SUB_PREFIX); infra.yml passes them to terraform.
+# Nothing secret belongs in here or in a TF_VAR_ variable: they are plain text in the run log.
+
+# The OIDC subject prefix of your repository (same value as the bootstrap stack).
+github_sub_prefix = "repo:your-user/saa-c03-field-guide"
+
+# A custom domain for the site, or leave this line out to use the cloudfront.net name.
+domain_name = "site.example.com"
+
+# The public Route 53 hosted zone that holds the domain; set it if and only if domain_name is set.
+hosted_zone_id = "Z0123456789EXAMPLE"
