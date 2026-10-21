@@ -25,7 +25,7 @@ const REFERRER_POLICIES = [
 ];
 
 /** CloudFront rejects a Content-Security-Policy header value above this many characters. */
-export const MAX_CSP_LENGTH = 1783;
+const MAX_CSP_LENGTH = 1783;
 
 /** The problems of a header set: one message per problem, empty when it is valid. */
 export function validateSiteHeaders(headers: Record<string, string>): string[] {
