@@ -1,0 +1,10 @@
+{
+  "name": "@field-guide/smoke",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Smoke test of the live site: pages, redirects, headers, cache headers and TLS.",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
