@@ -10,11 +10,17 @@ function invalid(path: string, reason: string): Error {
 
 /** Reads and validates `csp-inline-hashes.json`; throws an Error naming `path` when it is not valid. */
 export function loadInlineHashes(path: string): Sha256Hash[] {
+  let text: string;
+  try {
+    text = readFileSync(path, 'utf8');
+  } catch (error) {
+    throw invalid(path, `cannot read it (${(error as Error).message})`);
+  }
   let parsed: unknown;
   try {
-    parsed = JSON.parse(readFileSync(path, 'utf8'));
+    parsed = JSON.parse(text);
   } catch (error) {
-    throw invalid(path, `cannot read it as JSON (${(error as Error).message})`);
+    throw invalid(path, `not valid JSON (${(error as Error).message})`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
     throw invalid(path, 'expected an object');
