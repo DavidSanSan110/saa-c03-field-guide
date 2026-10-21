@@ -425,3 +425,36 @@ describe('uncoveredScripts snippet order', () => {
     expect(found?.hash).toBe(hashOf(text));
   });
 });
+
+// PR #90 CodeQL js/bad-tag-filter (AC-33): a script ends where a browser ends it, at `</script`
+// (any case) followed by whitespace, `/` or `>` and then anything up to the next `>`.
+describe('inlineScripts closing tag', () => {
+  test('AC-33: a closing tag with whitespace (tab, newline, space) and an attribute-like tail ends the script', () => {
+    expect(inlineScripts('<script>a()</script\t\n bar>')).toEqual(['a()']);
+  });
+
+  test('AC-33: an upper-case closing tag with an attribute ends the script', () => {
+    expect(inlineScripts('<script>b()</SCRIPT foo="x">')).toEqual(['b()']);
+  });
+
+  test('AC-33: a self-closing style closing tag (</script/>) ends the script', () => {
+    expect(inlineScripts('<script>c()</script/>')).toEqual(['c()']);
+  });
+
+  test('AC-33: two scripts closed that way stay two entries', () => {
+    const html = '<script>a()</script\t\n bar><p>x</p><script>b()</SCRIPT foo="x">';
+
+    expect(inlineScripts(html)).toEqual(['a()', 'b()']);
+  });
+
+  test('AC-33: two scripts, one closed with an attribute tail and one with a slash, stay two entries', () => {
+    expect(inlineScripts('<script>a()</script foo="x"><script>c()</script/>')).toEqual([
+      'a()',
+      'c()',
+    ]);
+  });
+
+  test('AC-33: </scripts> does not end a script', () => {
+    expect(inlineScripts('<script>d()</scripts>e()</script>')).toEqual(['d()</scripts>e()']);
+  });
+});
