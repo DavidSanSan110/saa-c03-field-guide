@@ -42,17 +42,20 @@ function handler(event) {
   var host = request.headers.host ? request.headers.host.value.toLowerCase() : '';
   var lastSegment = uri.substring(uri.lastIndexOf('/') + 1);
   var isFolderWithoutSlash = !uri.endsWith('/') && lastSegment.indexOf('.') === -1;
+  // A location that starts with // is protocol-relative: browsers read //evil/x as the host evil.
+  // Every location is built from the uri with its leading slashes collapsed to one.
+  var safePath = uri.replace(/^\/+/, '/');
 
   // One hop: the redirect to the domain already carries the slash a folder needs.
   if (canonicalHost !== '' && host.endsWith('.cloudfront.net')) {
-    return redirect('https://' + canonicalHost + uri + (isFolderWithoutSlash ? '/' : '') + qs);
+    return redirect('https://' + canonicalHost + safePath + (isFolderWithoutSlash ? '/' : '') + qs);
   }
   if (uri.endsWith('/')) {
     request.uri = uri + 'index.html';
     return request;
   }
   if (isFolderWithoutSlash) {
-    return redirect(uri + '/' + qs);
+    return redirect(safePath + '/' + qs);
   }
   return request;
 }
