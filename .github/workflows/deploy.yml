@@ -1,0 +1,254 @@
+name: Deploy
+
+# Ships the site to the lab 00 bucket (spec 036):
+#   push to main   build the site once, wait for approval in the `production` environment, upload it,
+#                  invalidate the CloudFront cache, then smoke-test the live site
+#   dispatch       the same for one commit of main, given as `ref` (a full 40-character SHA; empty =
+#                  the tip of main). This is the rollback: it rebuilds an older commit and deploys it.
+# The build job holds no AWS access. Only the deploy job has the OIDC token, and only after the
+# owner approves; its role can write to the site bucket and invalidate its distribution, nothing else.
+#
+# Rollback without a new build: re-run the `deploy` job of the last good run. It uploads that run's
+# artifact again (artifacts are kept 30 days, which is also how long a run can be re-run).
+#
+# Runs are serialised and never cancelled, so an older commit can't land after a newer one. A queued
+# run is replaced by a newer queued one, so a queued rollback dispatch is replaced by a later push.
+#
+# Ordering: a push that changes apps/site/headers.json also starts infra.yml, which applies the new
+# headers. Approve the infra apply first. If the smoke job ran before it, re-run the smoke job.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/site/**
+      - packages/**
+      - tools/questions/**
+      - diagrams/**
+      - questions/**
+      - tools/smoke/**
+      - package.json
+      - pnpm-lock.yaml
+      - pnpm-workspace.yaml
+      - .nvmrc
+      - .github/workflows/deploy.yml
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Commit of main to (re)deploy, as a full 40-character SHA. Empty = the tip of main
+        type: string
+        default: ''
+
+permissions: {}
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # No environment and no AWS: it only builds. What it builds is what the deploy job uploads.
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # a rollback builds an older commit of main
+          persist-credentials: false
+
+      # Runs before any install, so nothing from the commit being built runs before this check. Only
+      # a commit on the first-parent history of main can be built: neither a fork's commit nor a
+      # commit that was only part of a merged pull request (for example a red test commit).
+      - name: Resolve the commit to deploy
+        id: resolve
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REQUESTED_REF: ${{ inputs.ref }}
+          PUSHED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "::error::Run this workflow from main, not from $GITHUB_REF."
+              exit 1
+            fi
+            if [ -z "$REQUESTED_REF" ]; then
+              sha="$(git rev-parse origin/main)"
+            else
+              case "$REQUESTED_REF" in
+                *[!0123456789abcdef]*)
+                  echo "::error::ref must be a full 40-character lower-case commit SHA."
+                  exit 1
+                  ;;
+              esac
+              if [ "${#REQUESTED_REF}" -ne 40 ]; then
+                echo "::error::ref must be a full 40-character lower-case commit SHA."
+                exit 1
+              fi
+              sha="$REQUESTED_REF"
+            fi
+          else
+            sha="$PUSHED_SHA"
+          fi
+          first_parents="$(git rev-list --first-parent origin/main)"
+          if ! grep -qxF -- "$sha" <<< "$first_parents"; then
+            echo "::error::$sha is not on the first-parent history of main, so it can't be deployed."
+            exit 1
+          fi
+          git checkout --quiet --detach "$sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Deploying $sha"
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      # No cache: this job produces what gets deployed.
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build
+        run: pnpm -r --if-present build
+
+      # A run can only be re-run for 30 days, so a longer retention would not help.
+      - name: Upload the site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: site-${{ steps.resolve.outputs.sha }}
+          path: apps/site/dist/
+          retention-days: 30
+          if-no-files-found: error
+
+  # Waits for the owner's approval. No checkout and no package manager: the only code it runs is
+  # the pinned actions and the scripts below.
+  deploy:
+    name: deploy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.SITE_URL }}
+    permissions:
+      id-token: write
+    steps:
+      - name: Download the site
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: site-${{ needs.build.outputs.sha }}
+          path: site
+
+      # Runs before the AWS login, so an empty or wrong artifact can never reach `--delete`.
+      - name: Check the artifact
+        shell: bash
+        env:
+          DISTRIBUTION_ID: ${{ vars.SITE_DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+          fail() {
+            echo "::error::$1"
+            exit 1
+          }
+          [ -n "$DISTRIBUTION_ID" ] || fail "The SITE_DISTRIBUTION_ID variable of the production environment is empty."
+          for file in site/index.html site/404.html site/practice/bank.json; do
+            [ -f "$file" ] || fail "The artifact has no $file."
+          done
+          [ -n "$(find site/_astro -type f -print -quit 2>/dev/null)" ] || fail "The artifact has no file in site/_astro."
+          [ ! -e site/fixtures ] || fail "The artifact contains site/fixtures: it was built with fixtures."
+          files="$(find site -type f | wc -l)"
+          [ "$files" -ge 20 ] || fail "The artifact has only $files files, at least 20 are expected."
+          # A rollback artifact keeps its old timestamps: touch them so `aws s3 sync` uploads every file.
+          find site -type f -exec touch {} +
+
+      - name: Log in to AWS
+        id: aws
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.SITE_DEPLOY_ROLE_ARN }}
+          role-duration-seconds: 900
+          aws-region: eu-west-1
+          mask-aws-account-id: true
+
+      # The Cache-Control values are the ones tools/smoke/src/cache.ts expects on the live site.
+      - name: Upload and invalidate
+        shell: bash
+        env:
+          ACCOUNT_ID: ${{ steps.aws.outputs.aws-account-id }}
+          DISTRIBUTION_ID: ${{ vars.SITE_DISTRIBUTION_ID }}
+        run: |
+          set -euo pipefail
+          bucket="field-guide-site-$ACCOUNT_ID"
+          asset_cache="public, max-age=31536000, immutable"
+          page_cache="max-age=0, s-maxage=86400, must-revalidate"
+
+          # Hashed assets first, without --delete: pages that are still cached can load the old ones.
+          aws s3 sync site/_astro "s3://$bucket/_astro" --cache-control "$asset_cache" --no-progress
+          aws s3 sync site "s3://$bucket" --exclude "_astro/*" --delete --cache-control "$page_cache" --no-progress
+
+          invalidation_id="$(aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION_ID" --paths "/*" --query Invalidation.Id --output text)"
+          aws cloudfront wait invalidation-completed --distribution-id "$DISTRIBUTION_ID" --id "$invalidation_id"
+
+          # The new pages are live now, so the old assets can go (versioning keeps them 30 days).
+          aws s3 sync site/_astro "s3://$bucket/_astro" --cache-control "$asset_cache" --delete --no-progress
+
+          # The bucket must stay private: reading it directly has to be denied.
+          status="$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "https://$bucket.s3.eu-west-1.amazonaws.com/index.html")" || status=000
+          if [ "$status" != "403" ]; then
+            echo "::error::The bucket answered $status to a direct request, expected 403."
+            exit 1
+          fi
+
+  # No AWS access. It checks out main, not the deployed commit: the live headers come from main's
+  # applied Terraform, so a re-run after a rollback still compares with the current headers.json.
+  # It can be re-run alone ("Re-run failed jobs") without a new approval.
+  smoke:
+    name: smoke
+    needs: deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Smoke test the live site
+        shell: bash
+        env:
+          SITE_URL: ${{ vars.SITE_URL }}
+          SITE_CLOUDFRONT_DOMAIN: ${{ vars.SITE_CLOUDFRONT_DOMAIN }}
+        run: |
+          if [ -z "$SITE_URL" ]; then
+            echo "::error::The SITE_URL repository variable is empty."
+            exit 1
+          fi
+          args=(--url "$SITE_URL")
+          # A lab without a custom domain leaves the variable unset.
+          if [ -n "$SITE_CLOUDFRONT_DOMAIN" ]; then
+            args+=(--cloudfront-domain "$SITE_CLOUDFRONT_DOMAIN")
+          fi
+          pnpm smoke "${args[@]}"
