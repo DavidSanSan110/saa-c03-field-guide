@@ -1482,3 +1482,79 @@ describe('AC-52: checkov skips are inside the resource block the spec assigns th
     expect(count).toBeGreaterThan(0);
   });
 });
+
+// ---- Added after review round 2 (AC-53) --------------------------------------------------------------------
+
+// AC-53: browsers read a backslash as a slash and drop tab, CR and LF, so the leading run that is
+// collapsed to one slash is any mix of those. The characters are built at runtime on purpose.
+
+const BACKSLASH = String.fromCharCode(92);
+const TAB = String.fromCharCode(9);
+const LF = String.fromCharCode(10);
+
+const MIXED_URIS: [string, string][] = [
+  ['/<BS>evil', `/${BACKSLASH}evil`],
+  ['/<BS><BS>evil', `/${BACKSLASH}${BACKSLASH}evil`],
+  ['/<BS>/evil', `/${BACKSLASH}/evil`],
+  ['/<TAB>/evil', `/${TAB}/evil`],
+  ['/<LF>/evil', `/${LF}/evil`],
+];
+
+describe.each(['', SITE])(
+  'AC-53: canonical host "%s": leading backslash, tab and line feed',
+  (canonical) => {
+    test.each(MIXED_URIS)(
+      'AC-53: %s on the site host is not redirected off-site',
+      (_label, uri) => {
+        const location = locationOf(run(canonical, uri, SITE));
+        if (location === undefined) return; // not redirected: nothing to resolve
+        expect(new URL(location, REDIRECT_BASE).host).toBe('site.example.com');
+      },
+    );
+
+    test.each(MIXED_URIS)(
+      'AC-53: %s on the site host gives a location that starts with exactly one slash',
+      (_label, uri) => {
+        const location = locationOf(run(canonical, uri, SITE));
+        if (location === undefined) return;
+        expect(location.startsWith('/')).toBe(true);
+        expect(location.startsWith('//')).toBe(false);
+        expect(location.charAt(1)).not.toBe(BACKSLASH);
+        expect(location).not.toContain(TAB);
+        expect(location).not.toContain(LF);
+      },
+    );
+
+    test('AC-53: /<BS>evil redirects to /evil/', () => {
+      expect(locationOf(run(canonical, `/${BACKSLASH}evil`, SITE))).toBe('/evil/');
+    });
+
+    test('AC-53: encoded characters are not decoded: /%5Cevil redirects to /%5Cevil/', () => {
+      expect(locationOf(run(canonical, '/%5Cevil', SITE))).toBe('/%5Cevil/');
+    });
+
+    test('AC-53: a backslash inside the path (not leading) is kept as it is', () => {
+      expect(locationOf(run(canonical, `/a${BACKSLASH}b`, SITE))).toBe(`/a${BACKSLASH}b/`);
+    });
+  },
+);
+
+describe('AC-53: on a *.cloudfront.net host', () => {
+  test.each(MIXED_URIS)(
+    'AC-53: %s with a canonical host resolves to exactly site.example.com',
+    (_label, uri) => {
+      const location = locationOf(run(SITE, uri, CF_HOST));
+      expect(location).toBeDefined();
+      expect(new URL(location ?? '', REDIRECT_BASE).host).toBe('site.example.com');
+    },
+  );
+
+  test.each(MIXED_URIS)(
+    'AC-53: %s without a canonical host never leaves the host',
+    (_label, uri) => {
+      const location = locationOf(run('', uri, CF_HOST));
+      if (location === undefined) return;
+      expect(new URL(location, 'https://d111.cloudfront.net/x').host).toBe('d111.cloudfront.net');
+    },
+  );
+});
