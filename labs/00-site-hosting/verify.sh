@@ -255,10 +255,12 @@ check_function() {
     --id "$DIST" || return 0
   split_tabs "$OUT"
   # The function ARN holds the account ID, so the reasons only describe it.
-  if [ "${#FIELDS[@]}" -ne 1 ] || [ -z "${FIELDS[0]}" ] || [ "${FIELDS[0]}" = None ]; then
+  if [ -z "$OUT" ]; then
+    fail "$id" 'expected one viewer-request function, got 0'
+  elif [ "${#FIELDS[@]}" -ne 1 ]; then
     fail "$id" "expected one viewer-request function, got ${#FIELDS[@]}"
   elif [[ ${FIELDS[0]} != *:function/fg-site-viewer-request ]]; then
-    fail "$id" 'the viewer-request function is not fg-site-viewer-request'
+    fail "$id" 'the viewer-request function does not end in fg-site-viewer-request'
   else
     pass "$id"
   fi
