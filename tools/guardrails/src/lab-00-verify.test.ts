@@ -1783,3 +1783,84 @@ describe('lab 00 reader docs', () => {
     expect(missing).toEqual([]);
   });
 });
+
+// =================================================================================================
+// AC-21: the wait really sleeps (review round 1)
+// =================================================================================================
+
+/**
+ * Runs verify.sh with a `sleep` stub that logs its arguments, and with VERIFY_POLL_SECONDS removed
+ * from the environment unless `poll` is given. Returns the arguments of every sleep call.
+ */
+async function sleepCalls(statusAnswers: string[], poll: string | undefined): Promise<string[]> {
+  const script = scriptPath();
+  const dir = mkdtempSync(join(tmpdir(), 'lab00-sleep-'));
+  try {
+    const work = join(dir, 'work');
+    const logs = join(dir, 'logs');
+    const bin = join(dir, 'bin');
+    const rules = join(logs, 'rules');
+    mkdirSync(work);
+    mkdirSync(logs);
+    mkdirSync(bin);
+    mkdirSync(rules);
+    const fixture = healthy('domain');
+    fixture.aws['status'] = ok(...statusAnswers);
+    writeStubs(fixture, bin, rules, TOOLS);
+    writeFileSync(
+      join(bin, 'sleep'),
+      `#!${stubShebang()}\necho "sleep $*" >> "$FAKE_LOG_DIR/sleep.log"\nexit 0\n`,
+      { mode: 0o755 },
+    );
+
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    let originalPath = '';
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === 'PATH') {
+        originalPath = env[key] ?? '';
+        delete env[key];
+      } else if (key.startsWith('GIT_') || key.startsWith('AWS_') || key.startsWith('VERIFY_')) {
+        delete env[key];
+      }
+    }
+    env['PATH'] = `${bin}${delimiter}${originalPath}`;
+    env['FAKE_LOG_DIR'] = slash(logs);
+    if (poll !== undefined) env['VERIFY_POLL_SECONDS'] = poll;
+    expect(Object.keys(env).some((key) => key.toUpperCase() === 'VERIFY_POLL_SECONDS')).toBe(
+      poll !== undefined,
+    );
+
+    const done = await execBash([script], work, env);
+    expect(done.status, done.stdout + done.stderr).toBe(0);
+    return readLines(join(logs, 'sleep.log')).map((line) => line.replace(/^sleep /, ''));
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // A leftover temp dir must not fail a test.
+    }
+  }
+}
+
+describe('verify.sh: the wait sleeps between asks', () => {
+  test.concurrent(
+    'AC-21: two InProgress answers sleep twice, for 20 seconds when VERIFY_POLL_SECONDS is unset',
+    async () => {
+      const calls = await sleepCalls(['InProgress', 'InProgress', 'Deployed'], undefined);
+      expect(calls).toEqual(['20', '20']);
+    },
+  );
+
+  test.concurrent(
+    'AC-21: two InProgress answers sleep twice, for 3 seconds when VERIFY_POLL_SECONDS is 3',
+    async () => {
+      const calls = await sleepCalls(['InProgress', 'InProgress', 'Deployed'], '3');
+      expect(calls).toEqual(['3', '3']);
+    },
+  );
+
+  test.concurrent('AC-21: a first answer of Deployed never sleeps', async () => {
+    const calls = await sleepCalls(['Deployed'], undefined);
+    expect(calls).toEqual([]);
+  });
+});
