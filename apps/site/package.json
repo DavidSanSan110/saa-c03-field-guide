@@ -11,15 +11,15 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@astrojs/react": "7.0.0",
+    "@astrojs/react": "7.1.0",
     "@astrojs/starlight": "^0.42.6",
     "@field-guide/diagram-engine": "workspace:*",
     "@field-guide/quiz-core": "workspace:*",
     "@field-guide/questions": "workspace:*",
     "@field-guide/schema": "workspace:*",
-    "astro": "^7.3.8",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "astro": "^7.4.0",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
