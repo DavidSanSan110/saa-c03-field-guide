@@ -71,7 +71,9 @@ S3 denies by default. Block Public Access is not involved: the bucket stayed pri
 ### Put it back
 
 Run `terraform plan`: it shows the bucket policy will be updated in place. Run `terraform apply` to
-restore the statement, then delete `deny-only.json`. Pages come back on the next request.
+restore the statement, then delete `deny-only.json`. Pages come back within about a minute:
+CloudFront caches the `403` and `404` error responses for 60 seconds (`error_caching_min_ttl = 60`
+in `cdn.tf`), so the error can still be served until that time is up.
 
 ### Exam angle
 
@@ -201,6 +203,6 @@ wait for the distribution to deploy (`bash verify.sh` waits for it).
 
 ### Exam angle
 
-CloudFront Functions run on viewer requests and responses only. They are lightweight and cheap, and
-suit small jobs like URL rewrites and redirects. Lambda@Edge also runs on origin requests and
-responses, can make network calls and runs longer, at a higher price.
+CloudFront Functions run on viewer requests and viewer responses. They are lightweight and cheap,
+and suit small jobs like URL rewrites and redirects. Lambda@Edge also runs on origin requests and
+origin responses, can make network calls and runs longer, at a higher price.

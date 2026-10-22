@@ -57,9 +57,11 @@ Deploy the lab from your laptop, with local Terraform state and no custom domain
 
 - Terraform 1.14 or newer (`.terraform-version` at the repository root pins the version CI uses);
 - AWS CLI v2;
-- Node and pnpm, at the versions in the root `package.json`;
-- bash 4 or newer to run `verify.sh` (Git Bash on Windows works; the bash 3.2 that macOS ships is too
-  old, so run `brew install bash`);
+- Node (the version in `.nvmrc` at the repository root) and pnpm (the `packageManager` version in the
+  root `package.json`);
+- bash 4 or newer to run `verify.sh`. On Windows use Git Bash; typing `bash` in PowerShell may start
+  WSL, which has none of your tools or your SSO session. On macOS the bash 3.2 that ships with the
+  system is too old, so run `brew install bash`;
 - an IAM Identity Center session for your AWS account: `aws sso login --profile <profile>`, then set
   `AWS_PROFILE` to that profile.
 
@@ -125,7 +127,8 @@ Run every command from `labs/00-site-hosting/` unless a step says otherwise.
    into a Windows path: start the last line with `MSYS_NO_PATHCONV=1 `, or run the three lines in
    PowerShell.
 
-6. Check the stack with `bash verify.sh` (see [Verify](#verify)). Expect
+6. Check the stack with `bash verify.sh` (see [Verify](#verify)); on Windows run it from a Git Bash
+   window, not from PowerShell. Expect
    `verify: ok (16 passed, 1 skipped)`: `redirect-to-domain` is skipped without a custom domain.
    Then, from the repository root, check the live site with `pnpm smoke --url <site_url output>`.
 
