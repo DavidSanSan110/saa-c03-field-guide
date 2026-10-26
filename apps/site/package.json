@@ -11,19 +11,19 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@astrojs/react": "7.0.0",
-    "@astrojs/starlight": "^0.42.6",
+    "@astrojs/react": "7.1.1",
+    "@astrojs/starlight": "^0.42.7",
     "@field-guide/diagram-engine": "workspace:*",
     "@field-guide/quiz-core": "workspace:*",
     "@field-guide/questions": "workspace:*",
     "@field-guide/schema": "workspace:*",
-    "astro": "^7.3.8",
-    "react": "19.3.0",
-    "react-dom": "19.3.0",
+    "astro": "^7.4.2",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
-    "@astrojs/check": "^0.9.10",
+    "@astrojs/check": "^0.9.12",
     "@types/react": "19.3.0",
     "@types/react-dom": "19.3.0",
     "typescript": "~6.0.3"
