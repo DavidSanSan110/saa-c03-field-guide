@@ -103,8 +103,24 @@ export interface BriefInput {
   ids: string[];
   draftsDir: string;
   existing: { id: string; where: 'bank' | 'draft' | 'rejected'; stem: string }[];
-  notes: { folder: string; text: string }[];
+  notes: { folder: string; text: string; aiDraft?: boolean }[];
 }
+
+/** True when a line of the notes starts with `**AI draft:**`. */
+export function hasAiDraftLine(notes: string): boolean {
+  return /^\*\*AI draft:\*\*/m.test(notes.replace(/\r\n?/g, '\n'));
+}
+
+export type NotesStatus = 'studied' | 'ai-draft' | 'not-finished';
+
+/** studied (a real Date completed) > ai-draft (an AI draft line) > not-finished. */
+export function notesStatus(notes: string): NotesStatus {
+  if (completedDate(notes) !== undefined) return 'studied';
+  return hasAiDraftLine(notes) ? 'ai-draft' : 'not-finished';
+}
+
+const AI_DRAFT_PARAGRAPH =
+  'Sections marked "(AI draft, not studied yet)" hold AI-written draft notes that the owner has not studied or checked yet. Use them only to pick topics: check every fact you rely on (limits, defaults, prices, feature support) against the AWS documentation page you cite, and if the docs disagree with the notes, follow the docs. Never reuse their wording.';
 
 const RULES = [
   'Write scenario-style stems like the real exam: a company, a workload and a requirement, then the question.',
@@ -157,7 +173,11 @@ export function renderBrief(input: BriefInput): string {
   const existingLines = [...existing]
     .sort((a, b) => compare(a.id, b.id))
     .map(({ id, where, stem }) => `- ${id} (${where}) ${stem.replace(/\s+/g, ' ').trim()}`);
-  const studyNotes = notes.map(({ folder, text }) => `### ${folder}\n\n${text.trimEnd()}`);
+  const studyNotes = notes.map(
+    ({ folder, text, aiDraft }) =>
+      `### ${folder}${aiDraft === true ? ' (AI draft, not studied yet)' : ''}\n\n${text.trimEnd()}`,
+  );
+  if (notes.some(({ aiDraft }) => aiDraft === true)) studyNotes.unshift(AI_DRAFT_PARAGRAPH);
 
   const sections = [
     `# Brief: task ${task} · ${info?.title ?? ''} (domain ${String(domain)})`,

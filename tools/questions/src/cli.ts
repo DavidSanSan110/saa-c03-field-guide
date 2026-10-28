@@ -25,7 +25,8 @@ import {
   sidecarPath,
 } from './bank.ts';
 import type { BankResult, FileMap, Problem, PromoteMove } from './bank.ts';
-import { feedingSections, completedDate, nextIds, parseSectionMap, renderBrief } from './brief.ts';
+import { feedingSections, nextIds, notesStatus, parseSectionMap, renderBrief } from './brief.ts';
+import type { BriefInput } from './brief.ts';
 import { findSimilar, roundScore, similarByDraft, withDedupe } from './dedupe.ts';
 import { withSidecarKey } from './sidecar.ts';
 import {
@@ -47,9 +48,10 @@ const USAGE = `Usage:
   questions dedupe [--threshold <t>] [--write] [options]
                                                  flag drafts that nearly repeat another question;
                                                  --write records it in each draft's check file
-  questions brief <task> [--count <n>] [--notes <dir>] [--map <file>]
+  questions brief <task> [--count <n>] [--notes <dir>] [--map <file>] [--studied-only]
                                                  print the brief of the question writer for a task
-                                                 (studied sections only)
+                                                 (studied and AI-draft sections; --studied-only
+                                                 leaves the AI-draft ones out)
   questions blind [--pending] [<file>...]        print drafts without their key, for the verifier
   questions verdict <results.yaml> [--write] [--no-fetch]
                                                  compare the verifier's answers and quotes with the
@@ -82,6 +84,7 @@ interface Options {
   map: string | undefined;
   pending: boolean;
   noFetch: boolean;
+  studiedOnly: boolean;
   positionals: string[];
 }
 
@@ -100,6 +103,7 @@ function parseArgs(argv: string[]): Options {
     map: undefined,
     pending: false,
     noFetch: false,
+    studiedOnly: false,
     positionals: [],
   };
   for (let i = 0; i < rest.length; i++) {
@@ -119,6 +123,8 @@ function parseArgs(argv: string[]): Options {
       options.noFetch = true;
     } else if (arg === '--pending' && command === 'blind') {
       options.pending = true;
+    } else if (arg === '--studied-only' && command === 'brief') {
+      options.studiedOnly = true;
     } else if (arg === '--count' && command === 'brief') {
       options.count = parseCount(rest[++i]);
     } else if ((arg === '--notes' || arg === '--map') && command === 'brief') {
@@ -362,13 +368,11 @@ function readTextIfFile(path: string): string | undefined {
 }
 
 /**
- * The notes of the finished sections that feed the task, in feed order, or undefined (with the
- * reason on stderr) when the map or the notes folder cannot be used.
+ * The notes of the studied and AI-draft sections that feed the task, in feed order (AI-draft ones
+ * left out with `--studied-only`), or undefined (with the reason on stderr) when the map or the
+ * notes folder cannot be used.
  */
-function readStudiedNotes(
-  options: Options,
-  task: TaskId,
-): { folder: string; text: string }[] | undefined {
+function readFeedingNotes(options: Options, task: TaskId): BriefInput['notes'] | undefined {
   if (!existsSync(options.notes)) {
     console.error(`no notes folder at ${options.notes}`);
     return undefined;
@@ -384,14 +388,26 @@ function readStudiedNotes(
     for (const problem of problems) console.error(`${mapFile}: ${problem}`);
     return undefined;
   }
-  const finished: { folder: string; text: string }[] = [];
+  const included: BriefInput['notes'] = [];
   for (const folder of feedingSections(map, task)) {
     const text = readTextIfFile(under(under(options.notes, folder), 'notes.md'));
-    if (text === undefined) console.error(`skipped ${folder}: no notes.md`);
-    else if (completedDate(text) === undefined) console.error(`skipped ${folder}: not finished`);
-    else finished.push({ folder, text });
+    if (text === undefined) {
+      console.error(`skipped ${folder}: no notes.md`);
+      continue;
+    }
+    const status = notesStatus(text);
+    if (status === 'studied') {
+      included.push({ folder, text });
+    } else if (status === 'not-finished') {
+      console.error(`skipped ${folder}: not finished`);
+    } else if (options.studiedOnly) {
+      console.error(`skipped ${folder}: AI draft (--studied-only)`);
+    } else {
+      console.error(`included ${folder}: AI draft`);
+      included.push({ folder, text, aiDraft: true });
+    }
   }
-  return finished;
+  return included;
 }
 
 type Where = 'bank' | 'draft' | 'rejected';
@@ -410,7 +426,7 @@ function existingOf(
 function runBrief(options: Options): number {
   const task = options.positionals[0];
   if (!isTaskId(task)) throw new UsageError();
-  const notes = readStudiedNotes(options, task);
+  const notes = readFeedingNotes(options, task);
   if (notes === undefined) return 1;
   if (notes.length === 0) {
     console.error(`no finished section feeds task ${task} (studied gate)`);
