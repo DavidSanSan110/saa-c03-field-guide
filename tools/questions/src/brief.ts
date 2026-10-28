@@ -103,7 +103,19 @@ export interface BriefInput {
   ids: string[];
   draftsDir: string;
   existing: { id: string; where: 'bank' | 'draft' | 'rejected'; stem: string }[];
-  notes: { folder: string; text: string }[];
+  notes: { folder: string; text: string; aiDraft?: boolean }[];
+}
+
+/** True when a line of the notes starts with `**AI draft:**`. */
+export function hasAiDraftLine(notes: string): boolean {
+  throw new Error(`not implemented (${String(notes.length)} chars)`);
+}
+
+export type NotesStatus = 'studied' | 'ai-draft' | 'not-finished';
+
+/** studied (a real Date completed) > ai-draft (an AI draft line) > not-finished. */
+export function notesStatus(notes: string): NotesStatus {
+  throw new Error(`not implemented (${String(notes.length)} chars)`);
 }
 
 const RULES = [
