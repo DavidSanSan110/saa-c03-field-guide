@@ -1,0 +1,36 @@
+id: 'd4-4.4-0004'
+domain: 4
+task: '4.4'
+services:
+  - 's3'
+  - 'athena'
+difficulty: medium
+type: single
+stem: "A manufacturer's sensors upload about 6 TB of raw readings per day to an Amazon S3 bucket. Every morning, analysts download the previous day's raw files to the data center over the internet and compute a daily summary of a few megabytes, which feeds an on-premises dashboard. The data transfer out bill is high. Which change is the MOST cost-effective?"
+options:
+  - key: A
+    text: 'Run the aggregation in AWS, for example with Amazon Athena in the same Region as the bucket, and download only the small summary file to the data center.'
+    correct: true
+    why: 'Data transfer into AWS is free, while data transfer out to the internet is charged by volume. Processing next to the data inside AWS means only a few megabytes leave AWS instead of terabytes.'
+  - key: B
+    text: 'Enable S3 Transfer Acceleration on the bucket and keep downloading the raw files.'
+    correct: false
+    why: 'Transfer Acceleration changes the network path to speed up transfers, not the number of bytes. The same terabytes of raw data would still be transferred out of AWS and charged.'
+  - key: C
+    text: 'Replicate the bucket to a Region closer to the data center and download the raw files from the replica.'
+    correct: false
+    why: 'Cross-Region replication adds inter-Region data transfer charges (billed on the data leaving the source Region), and the raw data still leaves AWS afterwards.'
+  - key: D
+    text: 'Move the daily files to a cheaper S3 storage class before they are downloaded.'
+    correct: false
+    why: 'Storage classes change storage and retrieval pricing, but data transfer charges depend on the source, destination and volume of the traffic. The full raw volume would still be transferred out.'
+cue: 'large raw data in AWS + only a small result needed on premises + high data transfer out bill -> process in AWS, send only the results'
+references:
+  - 'https://docs.aws.amazon.com/cur/latest/userguide/cur-data-transfers-charges.html'
+  - 'https://docs.aws.amazon.com/wellarchitected/latest/framework/cost_data_transfer_modeling.html'
+  - 'https://docs.aws.amazon.com/wellarchitected/latest/framework/cost_data_transfer_optimized_components.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

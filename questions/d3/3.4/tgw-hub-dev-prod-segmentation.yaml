@@ -1,0 +1,41 @@
+id: 'd3-3.4-0003'
+domain: 3
+task: '3.4'
+services:
+  - 'transit-gateway'
+  - 'vpc'
+difficulty: medium
+type: multiple
+stem: 'A company runs 40 VPCs in 12 accounts of one AWS Organization, all in a single Region, and a data center connected with a Site-to-Site VPN. The VPCs are currently linked with peering connections, and every new VPC means more connections to create and more routes to maintain. Development VPCs must not be able to reach production VPCs, but both groups must reach the data center. A central network team wants to own all the routing. What two steps should the network team take to meet these goals with the least effort? Choose two.'
+options:
+  - key: A
+    text: 'Create a transit gateway in the central network account, share it with the organization through AWS Resource Access Manager, and have each account attach its VPCs to it.'
+    correct: true
+    why: 'A transit gateway is a Regional hub, so each VPC needs one attachment instead of a connection to every other VPC, and the VPN attaches once to the same hub. Sharing it with AWS RAM lets member accounts create their own attachments while only the owner manages the transit gateway route tables.'
+  - key: B
+    text: 'Keep the peering mesh, add a connection for every new VPC, and use network ACLs in the production VPCs to block traffic coming from the development VPCs.'
+    correct: false
+    why: "Peering is one-to-one, so a full mesh of 40 VPCs needs 780 connections (n(n-1)/2) and grows with every VPC. Peering also cannot use another VPC's VPN, so on-premises connectivity would have to be built for each VPC. This keeps and worsens the operational burden the company wants to remove."
+  - key: C
+    text: "Create two transit gateway route tables, one for development and one for production. Associate each VPC attachment with the table of its environment and propagate routes so both tables can reach the VPN attachment but not each other's VPCs."
+    correct: true
+    why: 'Each attachment is associated with one transit gateway route table, and that table decides where its traffic can go. Separating development and production in different tables, with only the VPN routes present in both, isolates the environments at the routing layer while both still reach the data center.'
+  - key: D
+    text: 'Attach all VPCs and the VPN to the transit gateway default route table with propagation enabled, and rely on security groups to stop development from reaching production.'
+    correct: false
+    why: 'With one default table that every attachment is associated with and propagates to, all attachments can route to each other (the centralized router pattern). Isolation would then depend only on security group rules in every VPC rather than on the central routing design the team wants to control.'
+  - key: E
+    text: 'Let each account create its own transit gateway and peer all of them with transit gateway peering attachments.'
+    correct: false
+    why: 'One transit gateway per Region is normally enough, and it can be shared. Transit gateway peering supports only static routes, so a mesh of peered gateways recreates the manual route maintenance, spread over 12 accounts, instead of centralizing it.'
+cue: 'dozens of VPCs and accounts + hub + dev and prod kept apart -> Transit Gateway shared with RAM, separate TGW route tables'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/tgw/tgw-transit-gateways.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/tgw/how-transit-gateways-work.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/tgw/working-with-transit-gateways.html'
+  - 'https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/vpc-peering.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

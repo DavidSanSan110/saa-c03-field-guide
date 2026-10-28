@@ -1,0 +1,40 @@
+id: 'd1-1.2-0013'
+domain: 1
+task: '1.2'
+services:
+  - 'guardduty'
+  - 'eventbridge'
+  - 'lambda'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A software company runs a fleet of EC2 instances in a single account. The security team is worried about instances being hijacked for cryptocurrency mining, for example instances that start resolving cryptocurrency-related domain names. They want a compromised instance to be cut off from the network automatically within minutes of detection. The account has no VPC flow logs or DNS query logging configured, and the team does not want to build or operate its own log analysis. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Enable VPC Flow Logs and Route 53 Resolver query logging to Amazon S3, and run a scheduled Amazon Athena query that searches for cryptocurrency domains and addresses, then invoke a Lambda function with the results.'
+    correct: false
+    why: 'This works only as custom log analysis that the team would have to build, maintain and keep current with threat intelligence, which the requirement rules out. It is also scheduled rather than event-driven, so detection is slower.'
+  - key: B
+    text: 'Enable Amazon Inspector for the instances and create an EventBridge rule on Inspector findings that invokes a Lambda function to isolate the instance.'
+    correct: false
+    why: 'Inspector scans for software vulnerabilities and unintended network exposure. It does not watch runtime behavior such as an instance querying cryptocurrency-related domains, so it would not raise the needed finding.'
+  - key: C
+    text: "Enable Amazon GuardDuty, create an EventBridge rule that matches GuardDuty finding events for the CryptoCurrency finding types, and target a Lambda function that replaces the instance's security groups with an isolation security group."
+    correct: true
+    why: 'GuardDuty analyzes VPC flow logs and DNS logs through its own independent streams once enabled, so nothing else needs to be configured. Findings such as CryptoCurrency:EC2/BitcoinTool.B!DNS are published to EventBridge in near real time, and a rule can invoke Lambda, which can move the instance into an isolation security group as recommended for a potentially compromised instance.'
+  - key: D
+    text: "Create a CloudWatch alarm on the CPUUtilization metric of the instances that notifies an SNS topic subscribed by the security team's mailbox."
+    correct: false
+    why: 'High CPU is a weak and noisy signal: legitimate workloads also use the CPU heavily and a miner can be throttled. It does not identify cryptocurrency activity, and an email notification does not isolate anything automatically.'
+cue: 'detect cryptocurrency-related activity without enabling logs yourself, then react automatically -> GuardDuty finding -> EventBridge rule -> Lambda'
+references:
+  - 'https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_findings_cloudwatch.html'
+  - 'https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_data-sources.html'
+  - 'https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_finding-types-ec2.html'
+  - 'https://docs.aws.amazon.com/guardduty/latest/ug/compromised-ec2.html'
+  - 'https://docs.aws.amazon.com/inspector/latest/user/what-is-inspector.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

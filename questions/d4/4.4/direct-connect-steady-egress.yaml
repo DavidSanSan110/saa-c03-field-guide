@@ -1,0 +1,37 @@
+id: 'd4-4.4-0005'
+domain: 4
+task: '4.4'
+services:
+  - 'direct-connect'
+  - 'vpc'
+difficulty: medium
+type: single
+stem: 'A media company renders video on EC2 instances in a VPC and sends about 50 TB of finished output every month to its data center. The transfer is steady and is expected to continue for years. It currently travels over the internet, the data transfer bill is high, and transfer speeds fluctuate during the day. The company wants to lower the transfer cost and get consistent network performance. Which solution is the MOST cost-effective?'
+options:
+  - key: A
+    text: 'Order an AWS Direct Connect connection to the data center and send the output through a private virtual interface.'
+    correct: true
+    why: 'Direct Connect bypasses the internet and is billed by port hours plus outbound data transfer. For large, steady transfers it gives lower and more consistent cost than internet egress, along with a consistent network path.'
+  - key: B
+    text: 'Add several Site-to-Site VPN connections to a transit gateway and enable ECMP.'
+    correct: false
+    why: 'A VPN still crosses the public internet, where factors such as intermediate network shaping affect the bandwidth achieved, so the consistency problem remains. Each tunnel is also capped (up to 1.25 Gbps).'
+  - key: C
+    text: 'Schedule the transfers at night, when data transfer rates are lower.'
+    correct: false
+    why: 'Data transfer charges depend on the source, destination and volume of the traffic, not on the time of day, so rescheduling does not reduce the bill.'
+  - key: D
+    text: 'Route the output through a NAT gateway so that it leaves AWS from a single Elastic IP address.'
+    correct: false
+    why: 'A NAT gateway adds a per-hour charge and a charge for every GB it processes on top of the data transfer out, so it raises the cost rather than lowering it.'
+cue: 'large, steady transfers out of AWS + high internet egress bill + consistent performance -> Direct Connect'
+references:
+  - 'https://docs.aws.amazon.com/directconnect/latest/UserGuide/Welcome.html'
+  - 'https://docs.aws.amazon.com/wellarchitected/latest/framework/cost_data_transfer_optimized_components.html'
+  - 'https://docs.aws.amazon.com/vpn/latest/s2svpn/vpn-limits.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

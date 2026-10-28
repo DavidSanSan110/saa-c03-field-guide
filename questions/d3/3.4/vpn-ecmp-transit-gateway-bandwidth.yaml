@@ -1,0 +1,36 @@
+id: 'd3-3.4-0004'
+domain: 3
+task: '3.4'
+services:
+  - 'vpn'
+  - 'transit-gateway'
+difficulty: hard
+type: single
+stem: 'A retailer connects its data center to a hub VPC with one Site-to-Site VPN connection that ends on a virtual private gateway. The nightly data replication now needs roughly 10 Gbps of aggregate throughput, well above what a single VPN tunnel carries, and the company will soon add 15 more VPCs that need the same on-premises connectivity. A new Direct Connect link cannot be delivered in time, and the on-premises routers support BGP. Which solution increases the VPN throughput and also covers the new VPCs?'
+options:
+  - key: A
+    text: 'Create several additional Site-to-Site VPN connections to the same virtual private gateway so that their bandwidth adds up.'
+    correct: false
+    why: 'AWS documents tunnel aggregation with ECMP only for VPN connections on a transit gateway, so this design has no documented way to add the tunnels together. A virtual private gateway can also be attached to only one VPC at a time, so the 15 new VPCs would still not be reached.'
+  - key: B
+    text: 'Create a transit gateway, attach the VPCs, and add several BGP-based Site-to-Site VPN attachments to it with VPN ECMP support enabled.'
+    correct: true
+    why: 'ECMP on a transit gateway aggregates multiple VPN tunnels, which raises throughput beyond the per-tunnel maximum (up to 1.25 Gbps for a standard tunnel). ECMP requires dynamic (BGP) routing, which the routers support, and the same transit gateway also serves the new VPCs through attachments.'
+  - key: C
+    text: 'Create several statically routed Site-to-Site VPN attachments on a transit gateway with VPN ECMP support enabled, and add static routes for the data center.'
+    correct: false
+    why: 'ECMP is not supported on VPN connections that use static routing. The VPN connections must be configured for dynamic routing (BGP) for the tunnels to be aggregated.'
+  - key: D
+    text: 'Attach a second virtual private gateway to the hub VPC and create a VPN connection to each gateway.'
+    correct: false
+    why: 'Only one virtual private gateway can be attached to a VPC at a time. The design also stays limited to a single VPC, so it neither aggregates the tunnels nor connects the new VPCs.'
+cue: 'more VPN throughput than one tunnel + many VPCs + BGP -> several VPN attachments to a Transit Gateway with ECMP'
+references:
+  - 'https://docs.aws.amazon.com/vpn/latest/s2svpn/vpn-limits.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/tgw/how-transit-gateways-work.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/tgw/tgw-vpn-attachments.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

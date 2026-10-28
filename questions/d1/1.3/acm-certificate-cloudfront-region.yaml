@@ -1,0 +1,34 @@
+id: 'd1-1.3-0011'
+domain: 1
+task: '1.3'
+services:
+  - 'acm'
+  - 'cloudfront'
+difficulty: easy
+type: single
+stem: 'A company serves its website from an Application Load Balancer in eu-west-1 and puts an Amazon CloudFront distribution in front of it, using the alternate domain name www.example.com. An engineer requested a public ACM certificate for that domain in eu-west-1, but it does not appear when configuring the distribution. What should the engineer do?'
+options:
+  - key: A
+    text: 'Request or import a certificate for the domain in the US East (N. Virginia) Region and attach it to the distribution.'
+    correct: true
+    why: 'To use an ACM certificate with CloudFront, the certificate must be requested or imported in us-east-1, regardless of where the origin runs.'
+  - key: B
+    text: 'Keep the eu-west-1 certificate, because CloudFront must use a certificate from the same Region as its origin.'
+    correct: false
+    why: "CloudFront does not follow the origin's Region for certificates; it needs one in us-east-1. A certificate in the origin's Region is useful for the load balancer itself, not for the distribution."
+  - key: C
+    text: 'Attach the eu-west-1 certificate to the Application Load Balancer and let CloudFront reuse it automatically for the viewer connection.'
+    correct: false
+    why: 'CloudFront needs its own certificate for the viewer-facing domain name. A certificate deployed on the origin load balancer is not inherited by the distribution.'
+  - key: D
+    text: 'Request one certificate in each Region that has a CloudFront edge location near the users.'
+    correct: false
+    why: 'Edge locations are not ACM Regions. A single certificate in us-east-1 is used by the distribution everywhere.'
+cue: 'ACM certificate for a CloudFront distribution -> must be in us-east-1'
+references:
+  - 'https://docs.aws.amazon.com/acm/latest/userguide/acm-services.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

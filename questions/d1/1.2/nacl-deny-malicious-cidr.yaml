@@ -1,0 +1,34 @@
+id: 'd1-1.2-0014'
+domain: 1
+task: '1.2'
+services:
+  - 'vpc'
+difficulty: medium
+type: single
+stem: 'An online ticketing company runs web servers on EC2 instances in a public subnet. The subnet uses a custom network ACL whose inbound rule 100 allows TCP ports 80 and 443 from 0.0.0.0/0. The security team has identified the CIDR block 198.51.100.0/24 as the source of a continuous scraping attack and wants every packet from that range rejected before it reaches any instance in the subnet. Legitimate users from all other addresses must keep working. Which change meets this requirement?'
+options:
+  - key: A
+    text: "Add an inbound rule to the instances' security group that denies all traffic from 198.51.100.0/24."
+    correct: false
+    why: 'Security groups only support allow rules; you cannot create a deny rule in them. The only way to exclude one range there would be to enumerate every other permitted range, which does not scale.'
+  - key: B
+    text: "Add an inbound deny rule for 198.51.100.0/24 to the subnet's network ACL, using a rule number lower than 100."
+    correct: true
+    why: "Network ACL rules can deny, and they are evaluated from the lowest rule number upward with the first match applied. A deny numbered below 100 matches the attacker's packets before the allow in rule 100, while all other sources still fall through to the allow."
+  - key: C
+    text: "Add an inbound deny rule for 198.51.100.0/24 to the subnet's network ACL, using rule number 200."
+    correct: false
+    why: 'Rules are evaluated lowest number first and evaluation stops at the first match. Traffic from the attacking range matches the allow in rule 100 and is admitted, so a deny numbered 200 is never reached for those packets.'
+  - key: D
+    text: "Add an outbound deny rule for 198.51.100.0/24 to the subnet's network ACL."
+    correct: false
+    why: "Outbound rules are evaluated for traffic leaving the subnet. The attacker's requests still enter the subnet and reach the instances; only responses to that range would be affected, which does not stop the attack."
+cue: 'block one IP range at the subnet level -> network ACL deny rule with a lower number than the existing allow; security groups cannot deny'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

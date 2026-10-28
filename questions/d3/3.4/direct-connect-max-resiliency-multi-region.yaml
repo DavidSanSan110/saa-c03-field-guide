@@ -1,0 +1,45 @@
+id: 'd3-3.4-0006'
+domain: 3
+task: '3.4'
+services:
+  - 'direct-connect'
+  - 'vpc'
+difficulty: hard
+type: multiple
+stem: 'A bank has one dedicated Direct Connect connection at a single Direct Connect location, linked with a private virtual interface to a VPC in us-east-1. The bank is adding VPCs in eu-west-1 and ap-southeast-1 that must also be reached privately from the data center. The connectivity is critical: it must survive the failure of a device, a connection, or an entire Direct Connect location, and the bank wants to keep using Direct Connect rather than the internet. Which combination of actions meets these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Order a second dedicated connection of the same speed at a different Direct Connect location, terminating on a separate device, and configure BGP on both.'
+    correct: true
+    why: 'Connections that end on different devices at two or more Direct Connect locations give the highest resiliency. It protects against device, connection and complete location failures.'
+  - key: B
+    text: 'Order a second dedicated connection on a different device in the same Direct Connect location.'
+    correct: false
+    why: 'This is the development and test model. It covers a device failure but not the failure of the whole location, which the bank explicitly needs to survive.'
+  - key: C
+    text: 'Create a Direct Connect gateway, connect the virtual interfaces to it, and associate it with the virtual private gateway (or transit gateway) of the VPCs in each Region.'
+    correct: true
+    why: 'A Direct Connect gateway is a globally available resource that lets one set of connections and virtual interfaces reach VPCs in multiple Regions, which a direct private virtual interface to a single virtual private gateway cannot do.'
+  - key: D
+    text: "Create an additional private virtual interface on the existing connection for each Region, attached directly to that Region's virtual private gateway."
+    correct: false
+    why: 'A private virtual interface attached directly to a virtual private gateway reaches a single VPC in the Region of the Direct Connect location. Reaching multiple Regions requires a Direct Connect gateway. This also does nothing for resilience.'
+  - key: E
+    text: 'Replace the connection with a faster dedicated connection at the same location.'
+    correct: false
+    why: 'More bandwidth does not remove the single device or the single location as points of failure.'
+  - key: F
+    text: 'Peer the eu-west-1 and ap-southeast-1 VPCs with the us-east-1 VPC and let them use its Direct Connect connection.'
+    correct: false
+    why: "Peering does not support edge-to-edge routing: a peered VPC cannot use the other VPC's Direct Connect connection to reach the corporate network. Peering is also not a resiliency mechanism for the Direct Connect link."
+cue: 'survive a whole location failure + VPCs in several Regions -> connections at two locations + Direct Connect gateway'
+references:
+  - 'https://docs.aws.amazon.com/directconnect/latest/UserGuide/resiliency_toolkit.html'
+  - 'https://docs.aws.amazon.com/directconnect/latest/UserGuide/direct-connect-gateways-intro.html'
+  - 'https://docs.aws.amazon.com/directconnect/latest/UserGuide/Welcome.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-basics.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
