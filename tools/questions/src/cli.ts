@@ -26,6 +26,7 @@ import {
 } from './bank.ts';
 import type { BankResult, FileMap, Problem, PromoteMove } from './bank.ts';
 import { feedingSections, nextIds, notesStatus, parseSectionMap, renderBrief } from './brief.ts';
+import type { BriefInput } from './brief.ts';
 import { findSimilar, roundScore, similarByDraft, withDedupe } from './dedupe.ts';
 import { withSidecarKey } from './sidecar.ts';
 import {
@@ -371,10 +372,7 @@ function readTextIfFile(path: string): string | undefined {
  * left out with `--studied-only`), or undefined (with the reason on stderr) when the map or the
  * notes folder cannot be used.
  */
-function readStudiedNotes(
-  options: Options,
-  task: TaskId,
-): { folder: string; text: string; aiDraft?: boolean }[] | undefined {
+function readFeedingNotes(options: Options, task: TaskId): BriefInput['notes'] | undefined {
   if (!existsSync(options.notes)) {
     console.error(`no notes folder at ${options.notes}`);
     return undefined;
@@ -390,7 +388,7 @@ function readStudiedNotes(
     for (const problem of problems) console.error(`${mapFile}: ${problem}`);
     return undefined;
   }
-  const finished: { folder: string; text: string; aiDraft?: boolean }[] = [];
+  const included: BriefInput['notes'] = [];
   for (const folder of feedingSections(map, task)) {
     const text = readTextIfFile(under(under(options.notes, folder), 'notes.md'));
     if (text === undefined) {
@@ -399,17 +397,17 @@ function readStudiedNotes(
     }
     const status = notesStatus(text);
     if (status === 'studied') {
-      finished.push({ folder, text });
+      included.push({ folder, text });
     } else if (status === 'not-finished') {
       console.error(`skipped ${folder}: not finished`);
     } else if (options.studiedOnly) {
       console.error(`skipped ${folder}: AI draft (--studied-only)`);
     } else {
       console.error(`included ${folder}: AI draft`);
-      finished.push({ folder, text, aiDraft: true });
+      included.push({ folder, text, aiDraft: true });
     }
   }
-  return finished;
+  return included;
 }
 
 type Where = 'bank' | 'draft' | 'rejected';
@@ -428,7 +426,7 @@ function existingOf(
 function runBrief(options: Options): number {
   const task = options.positionals[0];
   if (!isTaskId(task)) throw new UsageError();
-  const notes = readStudiedNotes(options, task);
+  const notes = readFeedingNotes(options, task);
   if (notes === undefined) return 1;
   if (notes.length === 0) {
     console.error(`no finished section feeds task ${task} (studied gate)`);
