@@ -1,0 +1,35 @@
+id: 'd2-2.2-0010'
+domain: 2
+task: '2.2'
+services:
+  - 'cloudwatch'
+  - 'lambda'
+difficulty: hard # easy | medium | hard
+type: single # single | multiple
+stem: 'An operations team has two CloudWatch metric alarms for an application tier: one for high CPU utilization and one for high memory utilization (published by the CloudWatch agent). Each alarm currently invokes a Lambda function that runs a remediation workflow, so the workflow often runs twice or runs on a short CPU spike that is harmless. The team wants the workflow to run only when both conditions are in the ALARM state at the same time, with the least additional code. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Create a composite alarm with the rule ALARM(cpu) AND ALARM(memory), attach the Lambda invocation to the composite alarm, and remove the actions from the two metric alarms.'
+    correct: true
+    why: 'A composite alarm goes into ALARM only when its rule is true, and it can invoke a Lambda function. Moving the action to the aggregate level stops the workflow from running on a single condition and avoids duplicate runs.'
+  - key: B
+    text: 'Create a composite alarm with the rule ALARM(cpu) AND ALARM(memory) and give it the EC2 reboot action to restart the affected instances directly.'
+    correct: false
+    why: 'Composite alarms cannot perform EC2 actions or Auto Scaling actions. They can notify SNS, invoke Lambda and create Systems Manager OpsItems or incidents.'
+  - key: C
+    text: "Keep both alarms invoking the Lambda function and add code that calls DescribeAlarms to check the other alarm's state before it continues."
+    correct: false
+    why: 'It would work but needs custom code to write and maintain, and the function is still invoked on every single-condition alarm. A composite alarm provides the AND logic as a feature.'
+  - key: D
+    text: 'Increase the period and the number of evaluation periods on both metric alarms so that short spikes no longer trigger them.'
+    correct: false
+    why: 'This only makes each alarm less sensitive. Each one still fires on its own and invokes the function, so the workflow does not wait for both conditions to be true together.'
+cue: 'Act only when two alarms are in ALARM together, reduce alarm noise → composite alarm with AND; composite alarms can use SNS or Lambda but not EC2 actions.'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/alarm-combining.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/AlarmThatSendsEmail.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,36 @@
+id: 'd1-1.1-0013'
+domain: 1
+task: '1.1'
+services:
+  - 'iam-identity-center'
+  - 'directory-service'
+difficulty: medium
+type: single
+stem: 'A company runs a single-domain Microsoft Active Directory on premises and has a Direct Connect connection to AWS. It uses AWS Organizations and wants employees to sign in to the AWS access portal with their existing corporate credentials and receive permission sets in several accounts through IAM Identity Center. Users and groups must stay managed in the on-premises directory, and the company does not want to run a separate directory in AWS. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create a Simple AD directory and set up a one-way trust with the on-premises domain.'
+    correct: false
+    why: 'Simple AD is based on Samba 4, does not support trust relationships, and cannot be used as the identity source for IAM Identity Center.'
+  - key: B
+    text: 'Create an AD Connector in the management account that points to the on-premises domain controllers and choose it as the IAM Identity Center identity source.'
+    correct: true
+    why: 'AD Connector is a proxy that forwards requests to the self-managed AD without caching directory data in AWS, so users and groups stay on premises. IAM Identity Center supports it as an identity source when it resides in the management account, and a single domain fits this case.'
+  - key: C
+    text: 'Create an AWS Managed Microsoft AD directory with a one-way trust to the on-premises domain.'
+    correct: false
+    why: 'IAM Identity Center needs a two-way trust so it can read user and group data, and a one-way trust does not work. It also means running a new directory in AWS, which the company wants to avoid.'
+  - key: D
+    text: 'Create an Amazon Cognito user pool and import the on-premises users into it.'
+    correct: false
+    why: 'Cognito is for application sign-in for customers and apps, not a workforce identity source for IAM Identity Center. Importing users would also move identity management out of the on-premises directory.'
+cue: 'on-premises AD, IAM Identity Center permission sets, users stay on premises, no directory in AWS'
+references:
+  - 'https://docs.aws.amazon.com/singlesignon/latest/userguide/connectonpremad.html'
+  - 'https://docs.aws.amazon.com/singlesignon/latest/userguide/manage-your-identity-source-ad.html'
+  - 'https://docs.aws.amazon.com/directoryservice/latest/admin-guide/what_is.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

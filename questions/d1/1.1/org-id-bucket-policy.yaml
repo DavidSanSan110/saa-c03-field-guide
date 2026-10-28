@@ -1,0 +1,36 @@
+id: 'd1-1.1-0010'
+domain: 1
+task: '1.1'
+services:
+  - 's3'
+  - 'organizations'
+  - 'iam'
+difficulty: medium
+type: single
+stem: 'A company has about 80 AWS accounts in one AWS Organizations organization, and teams create new accounts every week. A shared services account owns an Amazon S3 bucket with build artifacts. Any IAM user or role in any account of the organization must be able to download the artifacts, and principals from outside the organization must not be able to. The security team wants the solution that needs the LEAST ongoing maintenance as accounts are added and removed. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Add a bucket policy statement that allows s3:GetObject to Principal "*" with a condition that matches the aws:PrincipalOrgID key against the organization ID.'
+    correct: true
+    why: 'The condition key compares the organization of the requesting principal, so accounts that join or leave the organization are covered automatically and no policy edit is needed. Principals outside the organization do not match the condition.'
+  - key: B
+    text: 'List the root ARN of each of the 80 accounts in the Principal element of the bucket policy and update the policy whenever an account is created.'
+    correct: false
+    why: 'It works, but every new or removed account needs a policy change, which is exactly the maintenance the company wants to avoid.'
+  - key: C
+    text: "Make the bucket public and restrict downloads with an aws:SourceIp condition for the company's NAT gateway addresses."
+    correct: false
+    why: 'Public access is the opposite of the requirement, and source IP addresses do not identify organization members. Workloads without those addresses would fail and others could be allowed.'
+  - key: D
+    text: 'Create an IAM role in the shared services account for each member account and have each account assume its role to read the bucket.'
+    correct: false
+    why: 'This needs a new role and trust policy for every account, so it scales poorly. Role-per-account management is more work than a single organization-wide condition.'
+cue: 'every account in the organization, accounts added weekly, least maintenance, resource-based policy'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html'
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

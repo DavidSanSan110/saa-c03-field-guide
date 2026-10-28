@@ -1,0 +1,41 @@
+id: 'd3-3.5-0006'
+domain: 3
+task: '3.5'
+services:
+  - managed-flink
+  - kinesis
+  - msk
+  - firehose
+difficulty: hard
+type: multiple
+stem: 'A telecom company is building an Amazon Managed Service for Apache Flink application that computes one-minute windowed aggregates over network events as they arrive. The team is comparing which AWS streaming services the application can read from directly as its source. Which TWO services can serve as the streaming source? Choose two.'
+options:
+  - key: A
+    text: 'An Amazon Kinesis data stream'
+    correct: true
+    why: 'The documentation lists a Kinesis data stream as a source, read with the Kinesis Streams source connector (including enhanced fan-out consumers).'
+  - key: B
+    text: 'An Amazon Data Firehose delivery stream'
+    correct: false
+    why: 'Firehose appears in the connector documentation as a sink, a place the application writes to. A Firehose delivery stream is not offered as a source to read from.'
+  - key: C
+    text: 'An Amazon SNS topic'
+    correct: false
+    why: 'An SNS topic is not among the sources documented for the service. SNS pushes messages to subscribers and has no stream the application can read with a source connector.'
+  - key: D
+    text: 'An Amazon MSK topic'
+    correct: true
+    why: 'The documentation lists an Amazon MSK topic as a source, read with the Kafka source connector.'
+  - key: E
+    text: 'An Amazon EventBridge event bus'
+    correct: false
+    why: 'EventBridge is not among the documented sources. To use EventBridge events you would first have to route them into a Kinesis data stream or an MSK topic.'
+cue: 'Managed Service for Apache Flink reads from Kinesis Data Streams or MSK, not from Firehose (Firehose is a sink)'
+references:
+  - 'https://docs.aws.amazon.com/managed-flink/latest/java/how-sources.html'
+  - 'https://docs.aws.amazon.com/managed-flink/latest/java/how-connectors.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,36 @@
+id: 'd3-3.5-0002'
+domain: 3
+task: '3.5'
+services:
+  - athena
+  - glue
+  - s3
+difficulty: medium
+type: single
+stem: 'A media company stores web server logs in Amazon S3 as gzip-compressed JSON. Every server writes a new small file every few seconds, so one prefix now holds millions of objects, each with about 60 fields. Analysts run Amazon Athena queries that almost always filter on a date range and read only four of the fields. The queries are slow and the Athena bill keeps growing. Which change reduces both query time and cost the most?'
+options:
+  - key: A
+    text: 'Switch the log objects to S3 Intelligent-Tiering so that data nobody queries costs less to store.'
+    correct: false
+    why: 'The storage class only changes what S3 charges for storing the objects. Athena is billed on the bytes it scans, and a storage class changes neither the scanned bytes nor the number of files to list and open.'
+  - key: B
+    text: 'Convert the logs to Apache Parquet, partition them by date, and compact the small files into fewer, larger files (for example with an AWS Glue ETL job).'
+    correct: true
+    why: 'Parquet is columnar, so Athena reads only the four columns that are queried and compresses them well. Date partitions mean a date-range filter reads only the matching partitions. Larger files remove the per-file overhead of millions of tiny objects. Together they cut bytes scanned (the cost driver) and planning and listing time.'
+  - key: C
+    text: 'Keep the JSON format, but partition the data by date, server ID, URL path and hour so that each query touches fewer objects.'
+    correct: false
+    why: 'Too many partition keys fragment the data into even more tiny files and add partition lookup overhead. The data is still row-oriented JSON, so every query still reads all 60 fields of each matching record.'
+  - key: D
+    text: 'Store the logs uncompressed so that Athena can split each file across more workers.'
+    correct: false
+    why: 'Athena charges for the bytes scanned before decompression, so uncompressed text costs more to query, not less. The real problem is the number of tiny files and the row-based format, which this does not fix.'
+cue: 'millions of small gzip JSON files, queries filter by date and read a few columns, Athena cost grows -> columnar format + partitions + larger files'
+references:
+  - 'https://docs.aws.amazon.com/athena/latest/ug/performance-tuning-data-optimization-techniques.html'
+  - 'https://docs.aws.amazon.com/athena/latest/ug/columnar-storage.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

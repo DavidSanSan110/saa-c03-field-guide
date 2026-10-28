@@ -1,0 +1,36 @@
+id: 'd3-3.5-0005'
+domain: 3
+task: '3.5'
+services:
+  - lake-formation
+  - athena
+  - glue
+  - s3
+difficulty: hard
+type: single
+stem: 'A retail group keeps one large sales table in Amazon S3, registered in the AWS Glue Data Catalog. Analysts from each country query it with Amazon Athena. Each country team must see only the rows for its own country, and nobody except the fraud team may see the card_number column. The security team wants one central place to manage these rules and does not want multiple copies of the dataset. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Write a separate copy of the table to a different S3 prefix for each country, with the sensitive column removed, and use IAM policies to allow each team to read only its prefix.'
+    correct: false
+    why: 'It duplicates the data, which the security team wants to avoid, and the copies must be kept in sync. The fraud team also needs a further copy that keeps the column.'
+  - key: B
+    text: "Use IAM identity policies that limit each team to the table's S3 objects and Glue catalog entries."
+    correct: false
+    why: "IAM and S3 permissions work on objects and API actions, not on the rows and columns inside a data file. They cannot return only one country's rows or hide a single column from a table query."
+  - key: C
+    text: 'Create one Athena workgroup per country and give each team access only to its own workgroup.'
+    correct: false
+    why: 'Workgroups separate query settings, result locations and cost controls. They do not filter what data a query can read, so every team would still see all rows and columns.'
+  - key: D
+    text: 'Register the data location in AWS Lake Formation, create data filters on the table (a row filter on country and a column exclusion for card_number), and grant each group SELECT on the table through the right filter.'
+    correct: true
+    why: 'Lake Formation data filters give column-level, row-level and cell-level security on Data Catalog tables, enforced in integrated engines such as Athena. A filter is chosen when SELECT is granted, so one copy of the data and one central place for permissions serve every team, and the fraud team can be granted without the column exclusion.'
+cue: 'one table, rows per country and a hidden column, central permissions, no copies -> Lake Formation data filters'
+references:
+  - 'https://docs.aws.amazon.com/lake-formation/latest/dg/data-filtering.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

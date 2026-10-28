@@ -1,0 +1,35 @@
+id: 'd3-3.5-0004'
+domain: 3
+task: '3.5'
+services:
+  - emr
+  - ec2
+difficulty: medium
+type: single
+stem: 'A research company keeps a long-running Amazon EMR cluster that stores reference datasets in HDFS and runs Apache Spark jobs. Every night the jobs need about three times the normal compute capacity for two hours. The company wants to cover this peak at the lowest cost, but the HDFS data must not be lost and the cluster must not stop because of Spot interruptions. Which configuration meets these requirements?'
+options:
+  - key: A
+    text: 'Keep the primary and core nodes On-Demand, and add a task instance group on Spot Instances that is scaled up for the nightly peak.'
+    correct: true
+    why: 'Task nodes run computation but do not run the HDFS DataNode or store data, so a Spot interruption loses no HDFS data and has a minimal effect on the cluster. On-Demand primary and core nodes keep the cluster and its HDFS data safe, and Spot is the cheap way to add temporary compute.'
+  - key: B
+    text: 'Add the extra capacity as core nodes on Spot Instances, because core nodes are the ones that process the Spark tasks.'
+    correct: false
+    why: 'Core nodes also store HDFS data. Terminating a core node, which a Spot interruption does, risks losing HDFS data, so Spot core nodes are only acceptable when partial data loss is tolerable.'
+  - key: C
+    text: 'Run the primary, core and task nodes all on Spot Instances to get the largest discount.'
+    correct: false
+    why: 'If the primary node is interrupted the cluster ends, and Spot core nodes risk HDFS data loss. A full-Spot cluster fits transient, cost-driven or test workloads, not a persistent cluster with data that must be kept.'
+  - key: D
+    text: 'Permanently provision the peak capacity as On-Demand core nodes so that nothing can be interrupted.'
+    correct: false
+    why: 'It is safe but wasteful. The company would pay for three times the capacity around the clock, although the extra compute is only needed for two hours a night.'
+cue: 'long-running EMR, HDFS data must not be lost, temporary peak -> core On-Demand, task nodes on Spot'
+references:
+  - 'https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-plan-instances-guidelines.html'
+  - 'https://docs.aws.amazon.com/emr/latest/ManagementGuide/emr-master-core-task-nodes.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

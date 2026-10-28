@@ -1,0 +1,36 @@
+id: 'd3-3.5-0008'
+domain: 3
+task: '3.5'
+services:
+  - rekognition
+  - augmented-ai
+  - s3
+difficulty: medium
+type: single
+stem: "A community website lets members upload photos that are stored in Amazon S3. The company wants unsafe or explicit images detected automatically. Images where the model's confidence for a moderation label falls in an uncertain range must go to the company's own moderation staff for a decision, and the decisions must be saved to S3. The team wants to write as little custom code and run as little review tooling as possible. Which solution fits?"
+options:
+  - key: A
+    text: 'Train a custom image classification model on Amazon SageMaker AI and build a web application for staff to review the uncertain predictions.'
+    correct: false
+    why: 'It needs labeled data, training, hosting and a custom review tool. A pre-trained moderation capability with a built-in review workflow already exists.'
+  - key: B
+    text: 'Call Amazon Rekognition DetectModerationLabels with a human loop configuration that points to an Amazon Augmented AI flow definition, with a confidence-based condition and a private work team.'
+    correct: true
+    why: "Rekognition is integrated with Amazon A2I. The flow definition holds the confidence conditions that trigger human review, the work team (the company's own reviewers can be used) and the S3 output location, and the DetectModerationLabels response shows whether review is needed."
+  - key: C
+    text: 'Call Rekognition DetectModerationLabels, put the uncertain results on an SQS queue, and build a custom website for moderators to review them.'
+    correct: false
+    why: 'The detection step is right, but it rebuilds with custom code what A2I provides: the confidence trigger, the reviewer workforce, the review UI and the saving of results to S3.'
+  - key: D
+    text: 'Send the image metadata to Amazon Comprehend to detect inappropriate content, with human review through Amazon Mechanical Turk.'
+    correct: false
+    why: "Comprehend's pre-trained analysis works on text, not on the pixels of an image. The scenario also asks for the company's own staff, not a public crowd workforce."
+cue: 'unsafe image detection with borderline confidence reviewed by humans -> Rekognition content moderation + Augmented AI (A2I)'
+references:
+  - 'https://docs.aws.amazon.com/rekognition/latest/dg/a2i-rekognition.html'
+  - 'https://docs.aws.amazon.com/rekognition/latest/dg/moderation.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

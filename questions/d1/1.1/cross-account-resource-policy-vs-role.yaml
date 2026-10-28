@@ -1,0 +1,35 @@
+id: 'd1-1.1-0012'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+  - 's3'
+  - 'dynamodb'
+difficulty: medium
+type: single
+stem: 'An application runs on Amazon EC2 in account A under an instance profile role. In a single job, it scans a DynamoDB table in account A and writes the results to an Amazon S3 bucket owned by account B. The same process must keep its permissions on the account A table the whole time, and the company does not want the code to switch credentials or manage a second set of keys. Which solution meets these requirements?'
+options:
+  - key: A
+    text: "Add a bucket policy in account B that allows the account A role to put objects, and allow s3:PutObject on that bucket in the role's identity-based policy in account A."
+    correct: true
+    why: "With a resource-based policy the caller stays in its own account and keeps its own permissions, so it can read the DynamoDB table and write to the bucket in the same session. Cross-account access needs an allow on both sides: the bucket policy and the role's policy."
+  - key: B
+    text: 'Create a role in account B that allows s3:PutObject, and have the application call sts:AssumeRole into it before running the job.'
+    correct: false
+    why: 'When a principal assumes a role it gives up its original permissions for those of the role. After the switch the job could not scan the account A table with those credentials.'
+  - key: C
+    text: 'Create an IAM user with long-term access keys in account B and store the keys on the instance for the S3 writes.'
+    correct: false
+    why: 'It adds a second set of credentials, which the company wants to avoid, and long-term keys on instances go against IAM best practices.'
+  - key: D
+    text: "Add a bucket policy in account B that names the account A role as principal and make no change to the role's own policies."
+    correct: false
+    why: "In cross-account access the principal needs an allow in its identity-based policy and in the resource-based policy. With only the bucket policy, the request is not allowed unless the role's policy also grants the S3 action."
+cue: 'keeps its permissions on the account A table, no credential switching, bucket in another account'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies-cross-account-resource-access.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

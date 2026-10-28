@@ -1,0 +1,36 @@
+id: 'd3-3.5-0009'
+domain: 3
+task: '3.5'
+services:
+  - textract
+  - lambda
+  - s3
+  - dynamodb
+difficulty: medium
+type: single
+stem: 'An insurer receives scanned claim forms as multi-page PDFs and JPEG images in an Amazon S3 bucket. The forms contain typed and handwritten entries and tables of line items. The company wants the field names with their values, and the table contents, stored in an Amazon DynamoDB table. The team has no machine learning expertise and wants a managed solution. Which approach meets these requirements?'
+options:
+  - key: A
+    text: 'Pass the scanned files directly to Amazon Comprehend entity detection and store the entities in DynamoDB.'
+    correct: false
+    why: "Comprehend's pre-trained features take UTF-8 text as input, so the scans first need text extracted from them. It also does not return form fields or table structure."
+  - key: B
+    text: 'Index the files with Amazon Kendra and let staff look up claim details by asking questions.'
+    correct: false
+    why: 'Kendra is an intelligent search service for finding answers in documents. The requirement is to extract structured fields and tables into a database, which search does not deliver.'
+  - key: C
+    text: 'Train a custom optical character recognition model on Amazon SageMaker AI and deploy it to an endpoint.'
+    correct: false
+    why: 'It needs ML expertise, labeled training data and an endpoint to run. A managed service for this exact job exists.'
+  - key: D
+    text: 'Trigger an AWS Lambda function from S3 uploads that starts Amazon Textract asynchronous document analysis with the forms and tables features, and write the parsed key-value pairs and table cells to DynamoDB.'
+    correct: true
+    why: 'Textract detects typed and handwritten text and extracts forms and tables with its document analysis API, with no ML expertise needed. Synchronous calls suit single-page documents, and the asynchronous operations extend support to multi-page files such as these PDFs.'
+cue: 'scanned PDFs and images, handwriting, forms and tables to structured data -> Textract document analysis'
+references:
+  - 'https://docs.aws.amazon.com/textract/latest/dg/what-is.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
