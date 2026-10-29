@@ -1,14 +1,251 @@
 ---
 title: 'Task 1.3: Determine appropriate data security controls'
-description: 'Placeholder for task statement 1.3.'
+description: 'Encryption at rest and in transit, KMS keys, key policies, envelope encryption and rotation, S3 encryption options, encrypted databases and snapshots, ACM certificates, CloudHSM, and protecting data from deletion, with exam cues and common traps.'
 ---
 
 import FlowDiagram from '../../../../components/FlowDiagram.astro';
 
-This chapter is being written.
+Task 1.1 decides **who** may call an API and task 1.2 **where traffic can go**. This task protects the **data itself**: whether a copy is useless to someone who shouldn't have it, whether it can be read on the wire, and whether it can be deleted or changed before its time. Most answers are a KMS key and its policy, TLS everywhere, and a feature that makes stored data immutable.
 
-Back to [Domain 1: Design Secure Architectures](/d1/).
+Part of [Domain 1: Design Secure Architectures](/d1/).
+
+## Encryption at rest and in transit
+
+Data needs protection in two places: **in transit**, while it crosses a network, and **at rest**, while it sits on a disk. At rest, the question is who does the encryption and who holds the key.
+
+| Where                | Who encrypts                                                     | Who can read the data                            | Typical tools                                                         |
+| -------------------- | ---------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------- |
+| In transit           | Both ends of the connection, with TLS                            | Only the two ends; anyone in between sees noise  | HTTPS endpoints, ACM certificates, TLS to databases                   |
+| At rest, server side | The service, after it receives the data and before it returns it | Any caller the service and the key allow         | S3, EBS, RDS, DynamoDB encryption with KMS keys                       |
+| At rest, client side | Your application, before the data leaves it                      | Only someone with the key; the service never can | AWS Encryption SDK, S3 Encryption Client, AWS Database Encryption SDK |
+
+- Most AWS storage services encrypt at rest with a **KMS key**. The design choice is rarely "encrypt or not" but **which key**, and so who controls it and who can see its use in CloudTrail.
+- Server-side encryption does not stop a caller that has permission: the service decrypts for anyone allowed. What it adds with a customer managed key is a **second permission**, the key policy, that a stolen disk or an over-broad bucket policy doesn't bypass.
+- Client-side encryption is the answer when the storage service itself must never see plaintext.
+
+## KMS keys and key policies
+
+**AWS KMS** creates and holds keys and does cryptographic operations with them; the key material of a KMS key never leaves KMS unencrypted. Every use is an API call, so it can be allowed or denied and is logged in CloudTrail.
+
+|                            | AWS owned key  | AWS managed key                                  | Customer managed key                      |
+| -------------------------- | -------------- | ------------------------------------------------ | ----------------------------------------- |
+| In your account            | No             | Yes, alias `aws/<service>` (`aws/s3`, `aws/ebs`) | Yes, created by you                       |
+| Key policy                 | Not visible    | Visible, can't be changed                        | Yours to write                            |
+| Rotation                   | Managed by AWS | Automatic every year, can't be changed           | Automatic if you turn it on, or on demand |
+| Usable from other accounts | No             | No                                               | Yes, through the key policy               |
+| Use in CloudTrail          | Not shown      | Logged                                           | Logged                                    |
+| Cost                       | Free           | No monthly fee                                   | $1 per key per month, plus requests       |
+
+- AWS managed keys are now a legacy type: services added since 2021 use AWS owned keys by default.
+- A **symmetric** key (AES-256) encrypts and decrypts, and it is what AWS services use. An **asymmetric** key pair (RSA or ECC) has a public key you can download, for encryption or signature checks outside AWS by people who can't call KMS.
+- Every KMS key has exactly **one key policy**, and nothing can use the key unless the key policy allows it, directly, by letting IAM policies decide, or through a **grant** (the temporary delegation that services such as EBS and RDS use). The **default key policy** trusts the account, which turns on IAM policies for the key. Cross-account use needs both: the key policy names the other account, and an IAM policy there allows the action.
+- A key can't be deleted at once: deletion waits **7 to 30 days** (30 by default), and you can cancel it. Disabling a key is the reversible way to stop its use. Data encrypted under a deleted key is lost for good.
+- **Secrets Manager** always encrypts secrets with a KMS key, and **Parameter Store** does for `SecureString` parameters. When the key is customer managed, reading them also needs `kms:Decrypt` on it. They are compared in [task 1.2, Application secrets and configuration](/d1/1-2-secure-workloads/#application-secrets-and-configuration).
+
+## Envelope encryption
+
+KMS doesn't encrypt large data itself: the `Encrypt` API takes at most 4 KB. Instead, KMS hands out **data keys**. Data is encrypted with a data key, and the data key is encrypted with the KMS key, like a letter in a sealed envelope. This is how S3, EBS and RDS use KMS, and how an application can encrypt its own data.
+
+<FlowDiagram id="kms-envelope-encryption" />
+
+| Step    | API call          | What happens                                                                           |
+| ------- | ----------------- | -------------------------------------------------------------------------------------- |
+| Encrypt | `GenerateDataKey` | KMS returns a data key in plaintext and encrypted; the data is encrypted locally       |
+| Store   | none              | The ciphertext is stored with the encrypted data key; the plaintext key is thrown away |
+| Decrypt | `Decrypt`         | KMS decrypts the data key if the caller is allowed; the data is decrypted locally      |
+
+- Only the small data key ever travels to KMS, so the size of the data doesn't matter, and the KMS key itself never leaves KMS.
+- The **AWS Encryption SDK** does all of this for you and stores the encrypted data key inside the encrypted message.
+- Each `GenerateDataKey` and `Decrypt` call counts toward the KMS **request quota** for the Region and costs a little. High-volume workloads cache data keys (the SDK can) or, for S3, use Bucket Keys.
+
+## Key rotation
+
+Rotating a KMS key creates new key material but keeps the same key ID and ARN. KMS keeps the old material, so data encrypted before still decrypts; nothing is re-encrypted.
+
+| Key type                                 | Rotation                                                                                  |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------- |
+| AWS managed key                          | Automatic every year; you can't change it                                                 |
+| Customer managed symmetric key           | Off by default. Automatic rotation every 90 to 2,560 days (365 by default), and on demand |
+| Symmetric key with imported key material | No automatic rotation; on-demand rotation with new imported material                      |
+| Asymmetric, HMAC or custom key store key | Manual: create a new key and point the alias at it                                        |
+
+- **Manual rotation** changes the key ID, so applications should refer to the key by an **alias** (`alias/orders-data`); moving the alias then switches them to the new key.
+- Each rotation adds a small monthly charge for the extra key material, capped after the second rotation.
+
+## Keys across Regions and accounts
+
+KMS keys are **Regional**. Data encrypted in one Region needs a key in the Region where it will be decrypted.
+
+- **Copying an encrypted EBS snapshot or AMI to another Region** re-encrypts it with a KMS key in the destination Region.
+- A **multi-Region key** is a primary key plus replicas in other Regions that share its key material and its key ID (`mrk-…`), so data encrypted in one Region decrypts in another without a cross-Region call. Each replica still has its own key policy, aliases and tags. It helps **client-side** encryption of data that moves between Regions, such as fields in DynamoDB global tables or disaster recovery copies; most AWS services, S3 replication included, treat it like a single-Region key. AWS recommends single-Region keys unless you need this.
+
+**Sharing an encrypted snapshot or AMI with another account:**
+
+1. It must be encrypted with a **customer managed key**. A snapshot encrypted with the AWS managed key `aws/ebs` can't be shared.
+2. The key policy allows the other account to use the key, and the snapshot (or the AMI's launch permission) is shared with that account.
+3. The other account copies the snapshot and re-encrypts it with its own key, or launches from the AMI.
+
+## S3 encryption options
+
+Every new object in S3 is encrypted at rest; the options differ in who manages the key and what you can audit.
+
+|                         | SSE-S3                       | SSE-KMS                               | DSSE-KMS                                 | SSE-C                                                              | Client-side               |
+| ----------------------- | ---------------------------- | ------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------ | ------------------------- |
+| Key managed by          | S3                           | KMS (AWS managed or customer managed) | KMS                                      | You; sent with every request                                       | You                       |
+| Header value            | `AES256`                     | `aws:kms`                             | `aws:kms:dsse`                           | Key and its MD5 in request headers                                 | None                      |
+| Key use in CloudTrail   | No                           | Yes                                   | Yes                                      | No                                                                 | Depends on your key store |
+| Extra permission needed | No                           | KMS permissions on the key            | KMS permissions on the key               | No                                                                 | Access to your key        |
+| Notes                   | The default for every bucket | Watch the KMS request quota           | Two layers of encryption, for compliance | HTTPS only; S3 never stores the key; off by default on new buckets | S3 only stores ciphertext |
+
+- **Default encryption** is a bucket setting (SSE-S3 unless you choose otherwise) that applies when an upload asks for nothing. To **require** a specific type, add a bucket policy that denies `s3:PutObject` when `s3:x-amz-server-side-encryption` isn't the value you want. Such a deny also refuses uploads that send no header at all, even if default encryption would have used the right type.
+- To **require HTTPS**, deny every request where `aws:SecureTransport` is `false`.
+- **SSE-C** is turned off on new buckets since April 2026: a bucket accepts it only after its encryption settings stop blocking it. AWS now suggests SSE-S3 or SSE-KMS instead, but SSE-C is still the textbook answer for "AWS must not store the key".
+- Changing a bucket's default encryption doesn't touch existing objects. To move them from SSE-S3 to SSE-KMS or to another KMS key, S3 can now change an object's encryption in place, with no copy; older answers copy the objects onto themselves or use S3 Batch Operations.
 
 ## S3 encryption with SSE-KMS
 
+With SSE-KMS, S3 does envelope encryption on your behalf: it asks KMS for a data key for each object and stores the encrypted data key with it.
+
 <FlowDiagram id="s3-sse-kms-upload" />
+
+- With a customer managed key, the caller needs `kms:GenerateDataKey` to upload (and `kms:Decrypt` too for multipart uploads) and `kms:Decrypt` to download, on top of the S3 permissions. A missing KMS permission returns Access Denied from S3. The AWS managed key `aws/s3` lets any caller in the account use it through S3, so no extra KMS permission is needed there.
+- Every upload and download is a KMS request, so busy buckets can hit the KMS request quota (10,000 to 100,000 requests per second shared by the account, depending on the Region; it can be raised). **S3 Bucket Keys** let S3 reuse a bucket-level key for a while, cutting KMS requests and their cost by up to 99%.
+- **Replication** copies unencrypted and SSE-S3 objects by default. SSE-KMS objects replicate only when the rule says so and names a key in the destination Region; the replication role needs `kms:Decrypt` on the source key and `kms:Encrypt` on the destination key.
+
+## Databases, volumes and snapshots
+
+| Service  | Encryption at rest                                                             | Encrypting something that isn't encrypted                                                               |
+| -------- | ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------- |
+| EBS      | KMS; turn on **encryption by default** per Region                              | Snapshot the volume, copy the snapshot with encryption, create a new volume                             |
+| RDS      | KMS, chosen when the DB instance is created                                    | Snapshot, copy the snapshot encrypted, restore a new instance from the copy; or a blue/green deployment |
+| Aurora   | KMS; new clusters are encrypted by default (AWS owned key) since February 2026 | Snapshot, then restore a new cluster from it with a KMS key; or a blue/green deployment                 |
+| DynamoDB | Always on; AWS owned key by default, or an AWS or customer managed key         | Already encrypted; you can switch the key                                                               |
+
+- An encrypted RDS instance also encrypts its logs, automated backups, snapshots and read replicas. An unencrypted primary can't have an encrypted read replica.
+- **In transit**, RDS and Aurora accept TLS, and a parameter can require it (`rds.force_ssl` for PostgreSQL, on by default from version 15; `require_secure_transport` for MySQL). IAM database authentication avoids database passwords for MySQL, MariaDB and PostgreSQL.
+
+## Certificates: AWS Certificate Manager
+
+**ACM** issues and renews the TLS certificates that HTTPS needs, and installs them on the services in front of your application.
+
+| Certificate              | Cost                 | Renewal                                    | Where it can be used                                         |
+| ------------------------ | -------------------- | ------------------------------------------ | ------------------------------------------------------------ |
+| ACM public               | Free                 | Automatic (with DNS validation, hands-off) | Integrated services: CloudFront, load balancers, API Gateway |
+| ACM exportable public    | Paid per certificate | Renewed by ACM; you install the new one    | Anywhere, including EC2 instances and on premises            |
+| Imported                 | Free in ACM          | None: import a new one before expiry       | Integrated services                                          |
+| Private (AWS Private CA) | Paid                 | Automatic                                  | Internal names and services                                  |
+
+- A certificate lives in one Region. For **CloudFront** (and an edge-optimized API Gateway) it must be in **us-east-1**; for a load balancer or a Regional API, in the same Region as the resource.
+- **DNS validation** is the one to prefer: a CNAME record proves you own the domain and keeps renewals automatic.
+- ACM public certificates are valid for 198 days and renewed 45 days before they expire, so short lifetimes are no extra work.
+- Before an imported certificate expires, ACM sends a daily expiry event to EventBridge (from 45 days before, by default), and the AWS Config rule `acm-certificate-expiration-check` flags certificates close to expiry.
+
+## Dedicated key hardware: CloudHSM
+
+|                   | AWS KMS                                                   | AWS CloudHSM                                                                  |
+| ----------------- | --------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Tenancy           | Multi-tenant service                                      | Single-tenant HSMs in your VPC                                                |
+| Who controls keys | AWS runs it; you control access with IAM and key policies | You alone: HSM users and keys managed in the HSM; AWS can't recover them      |
+| Integration       | Most AWS services                                         | Your applications (PKCS #11, JCE, CNG/KSP), or KMS through a custom key store |
+| Availability      | Managed by AWS                                            | A cluster of HSMs across Availability Zones                                   |
+| Cost              | Per key and per request                                   | Per HSM per hour                                                              |
+
+- KMS already runs on validated HSMs. Pick CloudHSM when a rule demands **single-tenant hardware** or keys that only you can manage.
+- A **custom key store** keeps KMS's API and service integrations while the key material lives in your CloudHSM cluster (or, with an external key store, outside AWS).
+
+## Protecting data from deletion and change
+
+| Feature                         | What it does                                                                                                               |
+| ------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| S3 Versioning                   | Keeps every version; a delete only adds a delete marker                                                                    |
+| MFA Delete                      | Requires MFA to delete a version for good or to suspend versioning; only the root user can turn it on, with the CLI or API |
+| S3 Object Lock, governance mode | WORM retention that users with a special permission can bypass                                                             |
+| S3 Object Lock, compliance mode | WORM retention nobody can shorten or bypass, not even the root user                                                        |
+| Legal hold                      | Blocks deletion of a version with no end date until someone removes the hold                                               |
+| S3 Glacier Vault Lock           | A vault policy that can't be changed once locked (Glacier vaults are closed to new customers)                              |
+| AWS Backup Vault Lock           | Makes backups in a vault immutable, in governance or compliance mode                                                       |
+
+- Object Lock needs **versioning** and can be turned on for new or existing buckets, but never turned off again. Retention applies to object versions, and a retention period can be extended but, in compliance mode, never shortened.
+- Copies of backups in **another Region or account** protect against a Region outage and against a compromised account.
+
+## Sharing S3 data safely
+
+- A **presigned URL** lets anyone with the link get or put one object for a limited time, with the permissions of whoever signed it (up to 7 days; less when signed with temporary credentials).
+- **S3 access points** give each application or team its own hostname and policy on a shared bucket, and can be limited to one VPC.
+- **Server access logs** record requests to a bucket, allowed or denied, on a best-effort basis, in another bucket in the same Region and account; CloudTrail data events are the alternative.
+- **S3 Object Lambda** could redact data as it is read, but it has been closed to new customers since November 2025.
+
+## Finding sensitive data
+
+**Amazon Macie** scans S3 buckets with machine learning and pattern matching for sensitive data such as personal information, and reports buckets that are public, unencrypted or shared outside the account. AWS Config rules can flag unencrypted resources across the account, such as EBS volumes or RDS instances without encryption.
+
+## If the exam says… → think…
+
+| If the exam says…                                                                     | Think…                                                                                                                 |
+| ------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Encrypt data at rest and audit who used the key                                       | SSE-KMS (or KMS encryption) with a customer managed key; CloudTrail                                                    |
+| Encrypt S3 objects with no key management and no extra cost                           | SSE-S3, the default                                                                                                    |
+| The company must manage its own keys outside AWS; AWS must never store them           | SSE-C, or client-side encryption                                                                                       |
+| Two layers of encryption for S3 objects                                               | DSSE-KMS                                                                                                               |
+| Refuse any upload that isn't encrypted with KMS                                       | A bucket policy that denies `PutObject` without `aws:kms` in the encryption header                                     |
+| Refuse any request over plain HTTP                                                    | A bucket policy that denies requests with `aws:SecureTransport` false                                                  |
+| SSE-KMS uploads are throttled, or KMS costs too much                                  | S3 Bucket Keys, or a KMS quota increase                                                                                |
+| Encrypt data larger than 4 KB with KMS                                                | Envelope encryption: `GenerateDataKey`, or the AWS Encryption SDK                                                      |
+| The storage service must never see plaintext                                          | Client-side encryption                                                                                                 |
+| Rotate keys yearly with no downtime and no re-encryption                              | Automatic rotation of a customer managed key                                                                           |
+| Client-side encrypted data must be readable in a second Region, with no re-encryption | A multi-Region key                                                                                                     |
+| Share an encrypted snapshot or AMI with another account                               | A customer managed key, shared through its key policy                                                                  |
+| Encrypt an existing unencrypted RDS database                                          | Snapshot, copy it with encryption, restore from the copy (or a blue/green deployment)                                  |
+| Every new EBS volume must be encrypted                                                | EBS encryption by default for the Region                                                                               |
+| Single-tenant HSM, or keys that only the company controls                             | CloudHSM, or a KMS custom key store backed by it                                                                       |
+| HTTPS on CloudFront with a free, auto-renewing certificate                            | An ACM public certificate in us-east-1                                                                                 |
+| A TLS certificate for software running on EC2 or on premises                          | An ACM exportable public certificate, a private one from AWS Private CA, or a third-party certificate installed by you |
+| Be warned before an imported certificate expires                                      | ACM expiry events in EventBridge, or the `acm-certificate-expiration-check` rule                                       |
+| Data must be kept unchanged for 7 years, and no one may delete it                     | S3 Object Lock in compliance mode                                                                                      |
+| Prevent accidental deletion of S3 objects                                             | Versioning, plus MFA Delete                                                                                            |
+| Backups must be immutable                                                             | AWS Backup Vault Lock                                                                                                  |
+| Give a user temporary access to one private object                                    | A presigned URL                                                                                                        |
+| Rotate a database password automatically                                              | Secrets Manager (compared in task 1.2)                                                                                 |
+| Find personal data stored in S3                                                       | Macie                                                                                                                  |
+
+## Common traps
+
+- **SSE-KMS with a customer managed key needs KMS permissions.** S3 permissions alone get Access Denied.
+- **AWS managed keys can't be shared** across accounts, and their key policy can't be edited. Cross-account means a customer managed key.
+- **An IAM policy alone can't open a KMS key.** The key policy must allow it, at least by trusting the account.
+- **KMS keys are Regional.** Copying encrypted data to another Region means a key there, unless you use a multi-Region key.
+- **A multi-Region key is not one global key**: each replica has its own policy.
+- **Rotation doesn't re-encrypt anything**, and old data still decrypts. Manual rotation changes the key ID, so use aliases.
+- **Encryption at rest can't be turned on in place** for an RDS instance or an EBS volume: it is snapshot, encrypted copy, restore. For Aurora, the encryption is chosen at the restore instead: copying an unencrypted cluster snapshot can't encrypt it.
+- **SSE-C needs HTTPS** and the key on every request; lose the key and the data is gone. New buckets also refuse SSE-C until it is allowed.
+- **Default encryption only applies when an upload asks for nothing**; it doesn't refuse other types. A bucket policy deny does.
+- **SSE-KMS replication is off** until the replication rule turns it on.
+- **ACM certificates for CloudFront live in us-east-1.**
+- **Free ACM public certificates can't be exported** to an EC2 instance; that needs an exportable certificate (paid) or a certificate installed by you.
+- **Imported certificates don't renew.**
+- **Object Lock compliance mode can't be undone**, not even by the root user; governance mode can be bypassed with permission.
+- **MFA Delete is turned on by the root user** with the CLI or API, not in the console.
+- **Deleting a KMS key takes 7 to 30 days**, and after that, data under it is unreadable.
+
+## Links
+
+**AWS documentation**
+
+- [AWS KMS concepts](https://docs.aws.amazon.com/kms/latest/developerguide/concepts.html) and [envelope encryption](https://docs.aws.amazon.com/kms/latest/developerguide/kms-cryptography.html#enveloping)
+- [Key policies in AWS KMS](https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html)
+- [Rotate AWS KMS keys](https://docs.aws.amazon.com/kms/latest/developerguide/rotate-keys.html)
+- [Multi-Region keys](https://docs.aws.amazon.com/kms/latest/developerguide/multi-region-keys-overview.html)
+- [Protecting data with encryption in Amazon S3](https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingEncryption.html) and [S3 Bucket Keys](https://docs.aws.amazon.com/AmazonS3/latest/userguide/bucket-key.html)
+- [Encrypting Amazon RDS resources](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Overview.Encryption.html)
+- [AWS Certificate Manager](https://docs.aws.amazon.com/acm/latest/userguide/acm-overview.html)
+- [AWS CloudHSM](https://docs.aws.amazon.com/cloudhsm/latest/userguide/introduction.html)
+- [S3 Object Lock](https://docs.aws.amazon.com/AmazonS3/latest/userguide/object-lock.html)
+- [Amazon Macie](https://docs.aws.amazon.com/macie/latest/user/what-is-macie.html)
+
+**Practice**
+
+- [Practice tests](/practice/): in the **Practice** card, choose **Practice by: Task** and then **1.3** to drill only this task.
+
+**Labs**
+
+- A lab with an SSE-KMS bucket, a bucket policy that denies unencrypted uploads and server access logs is being built.
