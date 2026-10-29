@@ -1,0 +1,41 @@
+id: 'd1-1.2-0008'
+domain: 1
+task: '1.2'
+services:
+  - 'cloudwatch'
+  - 'kinesis'
+  - 'iam'
+difficulty: hard # easy | medium | hard
+type: multiple # single | multiple
+stem: 'A company runs its workloads in several AWS accounts. Application logs are written to CloudWatch Logs log groups in each workload account. The security team operates a separate security account and must receive these log events in near real time to feed its own analysis tooling, which reads from a Kinesis data stream. What two things must be set up to deliver the logs this way? (Choose two.)'
+options:
+  - key: A
+    text: 'In the security account, create a Kinesis data stream, an IAM role that CloudWatch Logs can assume to put records into it, and a CloudWatch Logs destination whose access policy lets the workload accounts call logs:PutSubscriptionFilter.'
+    correct: true
+    why: 'The recipient account owns the destination. The destination points to the stream through the role, and its access policy is what allows other accounts to subscribe to it.'
+  - key: B
+    text: 'In each workload account, create a subscription filter on the application log groups that targets the destination in the security account.'
+    correct: true
+    why: 'The subscription filter is created in the sender account, on the log group. It streams matching log events to the cross-account destination soon after ingestion.'
+  - key: C
+    text: 'In each workload account, schedule a CreateExportTask on the log groups to export the data to an S3 bucket in the security account every hour.'
+    correct: false
+    why: 'Exports to S3 are batch jobs that can take many hours to complete, so they are not near real time and do not feed a Kinesis stream.'
+  - key: D
+    text: 'In each workload account, create a metric filter on the log groups and share the resulting metrics with the security account.'
+    correct: false
+    why: 'A metric filter turns matching events into a numeric metric. The log events themselves are not forwarded, so the analysis tooling would never receive them.'
+  - key: E
+    text: 'In the security account, create the subscription filters directly on the log groups of the workload accounts, with the Kinesis stream as the target.'
+    correct: false
+    why: "A subscription filter belongs to the account that owns the log group. The security account can only grant the right to subscribe through a destination access policy and cannot create filters on other accounts' log groups."
+cue: "Near real-time logs from many accounts to a central account's Kinesis stream → destination + access policy in the recipient account, subscription filters in the sender accounts (export tasks are not real time)."
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CreateDestination.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/CrossAccountSubscriptions.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/Subscriptions.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

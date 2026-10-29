@@ -1,0 +1,36 @@
+id: 'd3-3.5-0003'
+domain: 3
+task: '3.5'
+services:
+  - redshift
+  - s3
+  - glue
+difficulty: medium
+type: single
+stem: 'A retailer runs an Amazon Redshift cluster that holds the last three months of sales plus customer and product dimension tables. Ten years of older sales history sits in Amazon S3 as Parquet files and is already described in the AWS Glue Data Catalog. Analysts want to run ad hoc SQL from their existing Redshift connection that joins the history with the dimension tables in the cluster. The history is far too large to be worth loading into the cluster. Which approach needs the LEAST operational effort?'
+options:
+  - key: A
+    text: 'Run a COPY command to load the ten years of history into Redshift tables and resize the cluster to hold it.'
+    correct: false
+    why: 'This works technically, but the scenario says the history is too large to load. It adds a data-load process and a much bigger cluster that stores data that is rarely queried.'
+  - key: B
+    text: 'Launch an Amazon EMR cluster with Presto, point it at both Redshift and S3, and give analysts that endpoint.'
+    correct: false
+    why: 'It needs a second system to build, size and operate, and analysts must change their connection. Redshift can already reach S3 data natively.'
+  - key: C
+    text: 'Create an external schema in Redshift that points to the Glue Data Catalog and query the S3 data as external tables with Redshift Spectrum, joining them to the local tables.'
+    correct: true
+    why: 'Redshift Spectrum reads the files in S3 in place through external tables registered in a catalog such as AWS Glue. Those tables can be queried and joined like any other Redshift table, so analysts keep their connection and nothing is loaded.'
+  - key: D
+    text: 'Schedule a nightly AWS Glue ETL job that joins the history with an export of the dimension tables and writes the result back to S3.'
+    correct: false
+    why: 'A fixed nightly batch job produces one precomputed result. It cannot support ad hoc SQL joins, and it adds pipeline code to maintain.'
+cue: 'history stays in S3 (Parquet, Glue catalog), ad hoc joins with tables in Redshift, do not load -> Redshift Spectrum external tables'
+references:
+  - 'https://docs.aws.amazon.com/redshift/latest/dg/c-spectrum-overview.html'
+  - 'https://docs.aws.amazon.com/redshift/latest/dg/c-using-spectrum.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

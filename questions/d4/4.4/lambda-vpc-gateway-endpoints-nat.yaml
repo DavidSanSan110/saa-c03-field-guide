@@ -1,0 +1,38 @@
+id: 'd4-4.4-0002'
+domain: 4
+task: '4.4'
+services:
+  - 'vpc'
+  - 'lambda'
+  - 'dynamodb'
+  - 's3'
+difficulty: medium
+type: single
+stem: "An order-processing application runs AWS Lambda functions attached to private subnets of a VPC, because the functions must also reach an Amazon RDS database in that VPC. The functions read and write a DynamoDB table and an S3 bucket, both in the same Region, and the VPC's only route to them is a NAT gateway. The monthly bill shows a very high NAT gateway data processing charge, most of it from the DynamoDB and S3 traffic. Which change reduces cost the most while keeping the functions in the private subnets?"
+options:
+  - key: A
+    text: 'Create gateway VPC endpoints for Amazon S3 and Amazon DynamoDB and associate them with the route tables of the private subnets.'
+    correct: true
+    why: 'Gateway endpoints add a prefix-list route to the route table so S3 and DynamoDB traffic skips the NAT gateway, and there is no additional charge for gateway endpoints. The NAT gateway no longer processes (and bills per GB for) that traffic.'
+  - key: B
+    text: 'Create interface VPC endpoints for Amazon S3 and Amazon DynamoDB in every Availability Zone used.'
+    correct: false
+    why: 'Both services do support interface endpoints, but these are billed per hour in each Availability Zone and per GB processed. Gateway endpoints cover the same Region-local traffic with no additional charge, so this is not the cheapest option.'
+  - key: C
+    text: 'Create a gateway endpoint for Amazon S3 only and keep sending DynamoDB traffic through the NAT gateway.'
+    correct: false
+    why: 'DynamoDB also supports gateway endpoints. Leaving its traffic on the NAT gateway keeps paying per-GB processing for a large share of the traffic that could be removed.'
+  - key: D
+    text: 'Remove the functions from the VPC so that they reach DynamoDB and S3 through their public endpoints.'
+    correct: false
+    why: 'The functions must reach the RDS database in the VPC, which requires them to stay attached to the VPC. Taking them out of the VPC would break that requirement.'
+cue: 'private subnets + NAT gateway data processing cost + S3 and DynamoDB in the same Region -> gateway VPC endpoints'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/privatelink/gateway-endpoints.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html'
+  - 'https://docs.aws.amazon.com/wellarchitected/latest/framework/cost_data_transfer_optimized_components.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,37 @@
+id: 'd1-1.2-0006'
+domain: 1
+task: '1.2'
+services:
+  - 'cloudtrail'
+  - 'eventbridge'
+  - 'sns'
+  - 'vpc'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A logistics company wants its security mailbox notified within minutes whenever anyone adds an inbound rule to an EC2 security group in a production account, whether through the console, the CLI or an SDK. The solution should use managed services and no custom polling code. The account currently relies only on the default CloudTrail Event history and has never created a trail. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Create a trail that logs management events, and create an EventBridge rule on the default event bus that matches AWS API Call via CloudTrail events with the event name AuthorizeSecurityGroupIngress and targets an SNS topic with the mailbox subscribed.'
+    correct: true
+    why: 'CloudTrail records the API call whichever tool made it, and EventBridge only receives CloudTrail-based events when a trail with logging enabled exists. The rule matches the specific call and pushes it to SNS within minutes.'
+  - key: B
+    text: 'Create the same EventBridge rule and SNS target, but skip the trail because Event history already feeds every API call to EventBridge.'
+    correct: false
+    why: 'Event history is separate from EventBridge delivery. To record events with the CloudTrail detail types in EventBridge you must have a trail with logging turned on.'
+  - key: C
+    text: 'Write a Lambda function on a one-minute EventBridge schedule that calls LookupEvents for AuthorizeSecurityGroupIngress and publishes any hit to SNS.'
+    correct: false
+    why: 'It can be made to work, but it is custom polling code that has to be written, deduplicated and maintained. The requirement is for managed, event-driven services and an event rule does the same without code.'
+  - key: D
+    text: 'Enable VPC Flow Logs for the VPCs and add a metric filter and alarm on rejected traffic that notifies SNS.'
+    correct: false
+    why: 'Flow logs describe network traffic that was accepted or rejected. They say nothing about someone changing a security group rule, so no alert is produced at the moment of the change.'
+cue: "Notify when an API call (AuthorizeSecurityGroupIngress) is made, from any tool → CloudTrail trail + EventBridge rule on 'AWS API Call via CloudTrail' → SNS."
+references:
+  - 'https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-service-event-cloudtrail.html'
+  - 'https://docs.aws.amazon.com/awscloudtrail/latest/userguide/view-cloudtrail-events.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

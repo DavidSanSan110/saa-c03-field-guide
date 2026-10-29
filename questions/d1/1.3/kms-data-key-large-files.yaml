@@ -1,0 +1,34 @@
+id: 'd1-1.3-0008'
+domain: 1
+task: '1.3'
+services:
+  - 'kms'
+difficulty: medium
+type: single
+stem: "A media company's application must encrypt video files of up to 2 GB on the application server before uploading them to a third-party archive. The company wants the encryption to be protected by a symmetric AWS KMS customer managed key, and developers report that calling the KMS Encrypt operation directly on a file fails. Which approach should a solutions architect recommend?"
+options:
+  - key: A
+    text: 'Call GenerateDataKey for the KMS key, encrypt the file locally with the plaintext data key, store the encrypted copy of the data key next to the file, and discard the plaintext key from memory. To decrypt, call KMS Decrypt on the stored data key.'
+    correct: true
+    why: 'This is envelope encryption. KMS generates the data key and returns a plaintext copy plus a copy encrypted under the KMS key. The bulk encryption happens locally with the data key, so the file size does not matter, and only the small encrypted data key needs the KMS key to be unwrapped later.'
+  - key: B
+    text: 'Split each file into chunks of 4,096 bytes or less and call Encrypt once per chunk with the KMS key.'
+    correct: false
+    why: 'Encrypt accepts at most 4,096 bytes per call with a symmetric key, so it can technically be done, but a 2 GB file would need hundreds of thousands of KMS calls. It is not the intended pattern for large data; data keys exist for this case.'
+  - key: C
+    text: 'Create an asymmetric RSA 4096 KMS key and call Encrypt with it, because asymmetric keys accept larger plaintexts than symmetric keys.'
+    correct: false
+    why: 'Asymmetric keys accept much less plaintext, not more: even RSA 4096 with OAEP SHA-1 is limited to 470 bytes per Encrypt call. The requirement also names a symmetric key.'
+  - key: D
+    text: 'Call GenerateDataKey and then send the file together with the encrypted data key to KMS so that KMS can encrypt the file with it.'
+    correct: false
+    why: 'KMS does not use data keys to encrypt your data, and it does not store or track them. Data keys are returned to the caller, who must perform the bulk encryption outside KMS (for example with the AWS Encryption SDK or OpenSSL).'
+cue: 'file far larger than the Encrypt limit, symmetric customer managed key, encrypt locally -> GenerateDataKey and envelope encryption'
+references:
+  - 'https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html'
+  - 'https://docs.aws.amazon.com/kms/latest/developerguide/data-keys.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

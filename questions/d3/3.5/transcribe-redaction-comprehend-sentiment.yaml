@@ -1,0 +1,45 @@
+id: 'd3-3.5-0007'
+domain: 3
+task: '3.5'
+services:
+  - transcribe
+  - comprehend
+  - s3
+difficulty: medium
+type: multiple
+stem: 'A bank stores recordings of English (US) customer service calls as audio files in Amazon S3. Compliance requires that the stored transcripts contain no names, addresses or card numbers. Management also wants a positive, negative, neutral or mixed rating for each call. The team has no machine learning experience and wants the least development effort. Which TWO actions should the solutions architect take? Choose two.'
+options:
+  - key: A
+    text: 'Run Amazon Transcribe batch transcription jobs with PII redaction enabled for the relevant PII types.'
+    correct: true
+    why: 'Transcribe converts the speech to text and, with content redaction turned on, replaces the identified PII in the transcript with a [PII] marker. Redaction is available for en-US batch jobs, and the output goes to S3.'
+  - key: B
+    text: 'Send the redacted transcripts to Amazon Comprehend and call its sentiment detection operation for each call.'
+    correct: true
+    why: "Comprehend's pre-trained sentiment analysis works on text and returns positive, negative, neutral or mixed with a score, with no model to build."
+  - key: C
+    text: 'Use Amazon Polly to convert the recordings to text and remove the sensitive words.'
+    correct: false
+    why: 'Polly does the opposite job: it turns text into speech. It cannot transcribe audio.'
+  - key: D
+    text: 'Use Amazon Translate on the audio files to produce English transcripts and a sentiment label.'
+    correct: false
+    why: 'Translate only turns text in one language into another language; it does not transcribe speech, redact PII or score sentiment.'
+  - key: E
+    text: 'Build and train a sentiment model on Amazon SageMaker using historical call data.'
+    correct: false
+    why: 'It can work, but it needs ML expertise, training data and ongoing model operations. The requirement is the least effort, and Comprehend already provides sentiment analysis.'
+  - key: F
+    text: 'Run Amazon Transcribe with automatic language identification in the same job as the PII redaction.'
+    correct: false
+    why: 'The calls are all in English (US), so language identification is not needed. It is also documented as not compatible with PII redaction in a batch job.'
+cue: 'audio calls, transcripts without PII, sentiment per call, no ML expertise -> Transcribe redaction + Comprehend sentiment'
+references:
+  - 'https://docs.aws.amazon.com/transcribe/latest/dg/pii-redaction-batch.html'
+  - 'https://docs.aws.amazon.com/transcribe/latest/dg/content-redaction.html'
+  - 'https://docs.aws.amazon.com/comprehend/latest/dg/how-sentiment.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,37 @@
+id: 'd1-1.2-0007'
+domain: 1
+task: '1.2'
+services:
+  - 'config'
+  - 'systems-manager'
+  - 'vpc'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'Developers at a software company occasionally open SSH (port 22) to 0.0.0.0/0 on EC2 security groups for quick testing and forget to close it. The security team wants every such group to be detected, to appear as noncompliant in a compliance history, and to be fixed automatically, using as little custom code as possible. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Enable AWS Config, add the managed rule restricted-ssh, and attach an automatic remediation that runs an AWS Systems Manager Automation runbook to remove the open rule from noncompliant security groups.'
+    correct: true
+    why: 'restricted-ssh evaluates security groups on configuration changes and periodically and marks any group allowing SSH from 0.0.0.0/0 or ::/0 as NON_COMPLIANT, with the history kept in Config. Config remediation runs an SSM Automation document against each noncompliant resource, and AWS provides managed documents so little code is needed.'
+  - key: B
+    text: 'Enable AWS Config and add the managed rule restricted-ssh so that the API call authorizing 0.0.0.0/0 on port 22 is rejected before it succeeds.'
+    correct: false
+    why: 'Config rules evaluate resources after they change and flag them. They do not sit in front of the API and cannot reject or block the action.'
+  - key: C
+    text: 'Create a trail and an EventBridge rule that matches AuthorizeSecurityGroupIngress and sends an SNS email so that an administrator closes the port by hand.'
+    correct: false
+    why: 'This detects the change but fixes nothing automatically, and it does not evaluate existing groups or keep a per-resource compliance timeline.'
+  - key: D
+    text: 'Send VPC Flow Logs to CloudWatch Logs and run a weekly Logs Insights query for inbound traffic on port 22 from the internet.'
+    correct: false
+    why: 'Flow logs show traffic that happened, not how a security group is configured. A weekly manual query is slow, does not show compliance state and does not remediate anything.'
+cue: 'Detect a security group that allows SSH from anywhere + fix automatically → Config managed rule (restricted-ssh) + SSM Automation remediation; Config does not block actions.'
+references:
+  - 'https://docs.aws.amazon.com/config/latest/developerguide/restricted-ssh.html'
+  - 'https://docs.aws.amazon.com/config/latest/developerguide/remediation.html'
+  - 'https://docs.aws.amazon.com/config/latest/developerguide/setup-autoremediation.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

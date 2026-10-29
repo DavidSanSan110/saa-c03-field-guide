@@ -1,0 +1,37 @@
+id: 'd1-1.2-0010'
+domain: 1
+task: '1.2'
+services:
+  - 'waf'
+  - 'elb'
+difficulty: medium
+type: single
+stem: 'An online ticketing company serves its website through an internet-facing Application Load Balancer. Attackers are running credential-stuffing attempts against the POST /login page: individual client IP addresses send hundreds of login requests per minute, and the addresses keep changing. Normal visitors may legitimately load many pages and images quickly, and those other URLs must not be throttled. The company wants the attack stopped automatically, with as little maintenance as possible. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Associate a web ACL with the load balancer that has a rule blocking an IP set, and have the security team add the offending addresses to the set each day.'
+    correct: false
+    why: 'A static IP set only blocks addresses someone has already identified. The attackers keep changing addresses, so this needs constant manual updates and always lags behind the attack.'
+  - key: B
+    text: 'Associate a web ACL with the load balancer that has a rate-based rule aggregating requests by source IP address, with a scope-down statement matching the /login URI path, and the Block action.'
+    correct: true
+    why: 'A rate-based rule counts requests per aggregation key (here, each IP) over an evaluation window and applies the action to a client that goes over the limit. The scope-down statement restricts counting and limiting to requests that match the login path, so other pages are not throttled. Because it works on request rate, it needs no list of known bad addresses.'
+  - key: C
+    text: 'Associate a web ACL with the load balancer that has a rate-based rule counting all requests from each IP address regardless of URL, with the Block action.'
+    correct: false
+    why: 'Without a scope-down statement the rule counts every request from an IP across the whole site. A legitimate visitor loading many pages and images quickly could exceed the limit and be blocked, which violates the requirement that other URLs must not be throttled.'
+  - key: D
+    text: 'Enable Amazon GuardDuty in the account and rely on its findings to stop the login attempts.'
+    correct: false
+    why: 'GuardDuty is a threat detection service that produces findings (for example sent to EventBridge). It does not sit in the request path and does not block or rate limit HTTP requests to a load balancer by itself.'
+cue: "per-client request rate limited to the /login path only, behind an Application Load Balancer, attackers' IPs keep changing -> WAF rate-based rule with a scope-down statement"
+references:
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/waf-rule-statement-type-rate-based-high-level-settings.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/waf-chapter.html'
+  - 'https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_findings_cloudwatch.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

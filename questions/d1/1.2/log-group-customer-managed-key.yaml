@@ -1,0 +1,34 @@
+id: 'd1-1.2-0009'
+domain: 1
+task: '1.2'
+services:
+  - 'cloudwatch'
+  - 'kms'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'An insurance company ships application logs to a CloudWatch Logs log group in eu-west-1. A new policy requires that the stored log data be encrypted with a key the company creates, controls and can revoke, rather than a key managed for it by the service. Which configuration meets this requirement?'
+options:
+  - key: A
+    text: 'Create a symmetric customer managed KMS key in eu-west-1, allow the CloudWatch Logs service principal for that Region to use the key in its key policy, and associate the key with the log group.'
+    correct: true
+    why: 'Encryption with KMS is enabled per log group by associating a key. The key policy must give the Logs service principal (logs.eu-west-1.amazonaws.com) the encrypt, decrypt and data key permissions, and the key must be in the same Region as that principal.'
+  - key: B
+    text: "Create an asymmetric KMS key pair, associate the public key with the log group and keep the private key in the security team's account."
+    correct: false
+    why: 'CloudWatch Logs supports only symmetric KMS keys. An asymmetric key must not be used to encrypt log group data.'
+  - key: C
+    text: "Create a customer managed KMS key whose key policy allows only the application's EC2 instance role to use it, and associate the key with the log group."
+    correct: false
+    why: 'CloudWatch Logs itself must be allowed to use the key to encrypt incoming data and decrypt it on read. Granting only the instance role leaves out the Logs service principal.'
+  - key: D
+    text: 'Turn on SSE-KMS for the Amazon EBS volumes of the instances that run the application, because log data is encrypted with the volume key before it is shipped.'
+    correct: false
+    why: 'EBS encryption protects data at rest on the volumes. It has no effect on how CloudWatch Logs stores the log events after ingestion.'
+cue: 'Log data encrypted with a key the company controls → customer managed symmetric KMS key, key policy for logs.<region> service principal, associated with the log group.'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudWatch/latest/logs/encrypt-log-data-kms.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

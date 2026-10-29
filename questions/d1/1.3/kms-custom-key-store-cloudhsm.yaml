@@ -1,0 +1,36 @@
+id: 'd1-1.3-0012'
+domain: 1
+task: '1.3'
+services:
+  - 'kms'
+  - 'cloudhsm'
+  - 'ebs'
+  - 'rds'
+difficulty: medium
+type: single
+stem: 'A bank must show regulators that the key material protecting its database volumes is generated and stored in single-tenant hardware security modules that the bank itself owns and manages inside AWS. The bank wants Amazon EBS and Amazon RDS to keep encrypting data through their normal AWS KMS integration, and the request volume is low. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create a customer managed key in the standard AWS KMS key store and use it for EBS and RDS encryption.'
+    correct: false
+    why: 'A standard KMS key is protected by FIPS-validated HSMs, but they are a shared fleet managed by AWS, not single-tenant HSMs owned by the bank.'
+  - key: B
+    text: 'Set up an AWS CloudHSM cluster, connect it to AWS KMS as a custom key store, create KMS keys in that store, and select those keys for EBS and RDS encryption.'
+    correct: true
+    why: 'A CloudHSM key store keeps the key material in a cluster the bank owns, while EBS and RDS still use the keys through AWS KMS. The low request volume suits it, since CloudHSM key stores have lower throughput and no availability SLA, so they are meant for low-TPS uses such as EBS and RDS encryption.'
+  - key: C
+    text: 'Deploy an AWS CloudHSM cluster on its own and let EBS and RDS use its keys directly.'
+    correct: false
+    why: 'EBS and RDS encrypt through AWS KMS keys. Without a custom key store linking the cluster to KMS, the HSM keys are available only to applications that talk to the cluster themselves.'
+  - key: D
+    text: 'Generate the key material on premises and import it into a customer managed key in the standard KMS key store.'
+    correct: false
+    why: 'Imported key material proves where the key was generated, but the copy that KMS uses still lives in the standard multi-tenant KMS HSMs, not in an HSM the bank owns.'
+cue: 'single-tenant HSMs the company controls + EBS/RDS keep using KMS -> custom key store backed by CloudHSM'
+references:
+  - 'https://docs.aws.amazon.com/kms/latest/developerguide/key-store-overview.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

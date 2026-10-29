@@ -1,0 +1,39 @@
+id: 'd1-1.1-0009'
+domain: 1
+task: '1.1'
+services:
+  - 'organizations'
+  - 'iam'
+difficulty: medium
+type: multiple
+stem: 'A company has an AWS Organizations organization with a management account and several member accounts. The FullAWSAccess SCP is still attached everywhere. A cloud engineer attaches an additional SCP to the organization root with a single statement that denies ec2:RunInstances. Both the management account and the member accounts contain IAM users that have the AdministratorAccess managed policy. Which statements about the result are true? (Choose two.)'
+options:
+  - key: A
+    text: 'An IAM user with AdministratorAccess in a member account can no longer launch EC2 instances.'
+    correct: true
+    why: 'An explicit deny in an SCP at any level above the account overrides the allows in the account, including AdministratorAccess. SCPs set the maximum permissions for member-account users and roles.'
+  - key: B
+    text: 'An IAM user with AdministratorAccess in the management account can still launch EC2 instances.'
+    correct: true
+    why: 'Principals of the management account are outside the reach of SCPs, even an SCP attached to the root. They apply only to member accounts.'
+  - key: C
+    text: 'The deny applies to the management account too, because it is attached to the organization root.'
+    correct: false
+    why: 'Attaching at the root covers all member accounts, but the management account is not restricted by SCPs.'
+  - key: D
+    text: 'An administrator of a member account can restore the permission by adding an IAM policy that explicitly allows ec2:RunInstances to the user.'
+    correct: false
+    why: 'An IAM allow cannot override an SCP deny. The effective permissions are the intersection of the SCPs and the identity-based policies, and an explicit deny always wins.'
+  - key: E
+    text: 'The root user of each member account is exempt from the deny, so it can still launch EC2 instances.'
+    correct: false
+    why: 'SCPs restrict every user and role in a member account, including its root user. Only a short list of tasks, such as actions by service-linked roles, is outside SCP control.'
+cue: 'SCP deny at the root, AdministratorAccess users, management account vs member accounts'
+references:
+  - 'https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html'
+  - 'https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps_evaluation.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

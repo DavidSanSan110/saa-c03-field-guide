@@ -1,0 +1,37 @@
+id: 'd1-1.2-0004'
+domain: 1
+task: '1.2'
+services:
+  - 'cloudtrail'
+  - 's3'
+  - 'athena'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A pharmaceutical company keeps clinical study reports in an Amazon S3 bucket. After a data-handling complaint, the compliance team must find out which IAM principals downloaded objects from the bucket during the last six months, and must be able to run the same kind of investigation again in the future. The account has never had a trail created: the team only used the CloudTrail Event history page, and it shows no GetObject calls at all. Which approach meets the requirement going forward?'
+options:
+  - key: A
+    text: 'Run the LookupEvents API against Event history and filter on the event name GetObject for the six-month window.'
+    correct: false
+    why: 'Event history only holds management events and only the last 90 days, so object-level reads never appear there and the window is too short anyway.'
+  - key: B
+    text: 'Turn on AWS Config recording for the bucket and review its configuration timeline to see who read each object.'
+    correct: false
+    why: 'AWS Config records how a resource is configured and how that changes over time. It does not record individual object reads or the principal behind them.'
+  - key: C
+    text: 'Create a trail that logs S3 data events for the bucket and delivers the log files to a dedicated S3 bucket, then query the files with Amazon Athena when an investigation is needed.'
+    correct: true
+    why: 'Object-level S3 activity (GetObject, PutObject, DeleteObject) is a data event, which no trail logs by default. A trail with data events selected for the bucket records the caller identity, and the log files in S3 can be kept as long as needed and queried with Athena.'
+  - key: D
+    text: 'Enable S3 request metrics on the bucket and use Amazon CloudWatch to see which principals generated the GET requests.'
+    correct: false
+    why: 'S3 request metrics are aggregated counts such as number of GET requests and bytes downloaded. They carry no information about the identity of the caller.'
+cue: 'Who downloaded objects over six months; Event history shows no GetObject → S3 data events are off by default, so use a trail with data events delivered to S3 and query with Athena.'
+references:
+  - 'https://docs.aws.amazon.com/awscloudtrail/latest/userguide/logging-data-events-with-cloudtrail.html'
+  - 'https://docs.aws.amazon.com/awscloudtrail/latest/userguide/view-cloudtrail-events.html'
+  - 'https://docs.aws.amazon.com/athena/latest/ug/cloudtrail-logs.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

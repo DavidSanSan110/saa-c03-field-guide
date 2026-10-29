@@ -1,0 +1,35 @@
+id: 'd1-1.3-0015'
+domain: 1
+task: '1.3'
+services:
+  - 'kms'
+  - 'dynamodb'
+difficulty: hard
+type: single
+stem: 'A company runs an application in us-east-1 and eu-west-1 on an Amazon DynamoDB global table. One attribute holds a national ID number that must be encrypted on the client, so that DynamoDB never sees it in plaintext. Items written in one Region are read by the application in the other Region, and the company wants decryption to work locally in each Region without calling KMS in another Region and without re-encrypting data. Which design meets these requirements?'
+options:
+  - key: A
+    text: 'Use one single-Region customer managed key in us-east-1. The application in eu-west-1 calls KMS in us-east-1 to decrypt the attribute.'
+    correct: false
+    why: 'It works functionally, but every decryption in eu-west-1 becomes a cross-Region call to KMS, which the requirement rules out, and eu-west-1 would depend on us-east-1 being available.'
+  - key: B
+    text: 'Create a separate customer managed key in each Region and have each application encrypt with its local key.'
+    correct: false
+    why: "Single-Region keys with different key material cannot decrypt each other's ciphertext, so an attribute written in one Region could not be read in the other."
+  - key: C
+    text: "Create a multi-Region primary key in one Region and a replica in the other, encrypt the attribute in the application with a client-side encryption library, and give each Region's application access to its local key through that key's own policy."
+    correct: true
+    why: 'Related multi-Region keys share key ID and key material, so ciphertext produced in one Region can be decrypted by the replica in the other with no cross-Region call and no re-encryption. Each key is managed independently, so its key policy must be set per Region. Multi-Region keys are usable with client-side libraries such as the AWS Database Encryption SDK.'
+  - key: D
+    text: 'Turn on DynamoDB server-side encryption with a customer managed key in each Region.'
+    correct: false
+    why: 'That is encryption at rest handled by DynamoDB, not client-side encryption of an attribute. Any principal allowed to read the item gets the plaintext value, and it does not satisfy the requirement that DynamoDB never sees it.'
+cue: 'client-side encryption of an attribute, decrypt locally in each Region of a global table -> multi-Region keys'
+references:
+  - 'https://docs.aws.amazon.com/kms/latest/developerguide/multi-region-keys-overview.html'
+  - 'https://docs.aws.amazon.com/database-encryption-sdk/latest/devguide/what-is-database-encryption-sdk.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

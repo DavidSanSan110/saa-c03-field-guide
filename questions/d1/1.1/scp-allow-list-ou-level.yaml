@@ -1,0 +1,35 @@
+id: 'd1-1.1-0008'
+domain: 1
+task: '1.1'
+services:
+  - 'organizations'
+  - 'iam'
+difficulty: hard
+type: single
+stem: 'A company uses AWS Organizations with an allow-list strategy. The organization root and the account Payments-Prod each have the FullAWSAccess service control policy (SCP) attached. Payments-Prod sits in the Regulated OU. For that OU, FullAWSAccess was detached and replaced by a custom SCP that allows only Amazon EC2, Amazon RDS and Amazon S3. Security has now approved Amazon SQS for every account in the Regulated OU. An application role in Payments-Prod already has an IAM policy that allows sqs:*, but its calls to SQS are denied. What should a solutions architect do to make the calls succeed?'
+options:
+  - key: A
+    text: 'Attach a new SCP that allows sqs:* directly to the Payments-Prod account.'
+    correct: false
+    why: "An allow is needed at every level from the root through each OU to the account. The Regulated OU's SCP still has no allow for SQS, so the implicit deny at the OU level keeps blocking the calls."
+  - key: B
+    text: 'Add the AdministratorAccess managed policy to the application role in Payments-Prod.'
+    correct: false
+    why: 'SCPs set the maximum permissions for the account. Even AdministratorAccess cannot exceed what the SCPs allow, so the role stays blocked.'
+  - key: C
+    text: 'Add sqs:* to the allow statements of the SCP attached to the Regulated OU.'
+    correct: true
+    why: "The root and the account already allow everything, so the only level missing an allow for SQS is the OU. Once the OU's SCP allows SQS, the effective SCP permissions include it and the role's own IAM policy can take effect."
+  - key: D
+    text: 'Detach FullAWSAccess from the organization root and attach an SCP that allows only sqs:*.'
+    correct: false
+    why: 'The effective SCP is the intersection of all levels, so a root SCP that allows only SQS would block every other service in every member account, and the OU would still need an SQS allow.'
+cue: 'allow-list strategy, FullAWSAccess replaced at the OU, an allow is needed at every level from root to account'
+references:
+  - 'https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps_evaluation.html'
+  - 'https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

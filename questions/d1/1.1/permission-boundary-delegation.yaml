@@ -1,0 +1,33 @@
+id: 'd1-1.1-0011'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+difficulty: hard
+type: single
+stem: 'A company wants its application team leads to create IAM roles for new AWS Lambda functions without waiting for the central security team. The team leads must not be able to give any role more access than the company allows, such as administrator access or the ability to manage IAM. The security team has written a managed policy that lists the services Lambda functions may use. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Attach the IAMFullAccess managed policy to the team leads and ask them to attach only approved policies to each role.'
+    correct: false
+    why: 'Full IAM access lets a team lead create a role with AdministratorAccess or edit policies. Nothing technically enforces the limit, so privilege escalation is possible.'
+  - key: B
+    text: "Let the team leads create roles and attach policies only when the request sets the security team's managed policy as the role's permissions boundary, enforced with the iam:PermissionsBoundary condition key. Deny them changes to that boundary policy."
+    correct: true
+    why: 'A permissions boundary caps what any identity policy on the new role can grant, so each role is limited to the approved services. The condition key forces the boundary on every role the leads create, and denying edits to the boundary closes the escalation path.'
+  - key: C
+    text: "Put the team leads in an IAM group and attach the security team's managed policy to the group as a permissions boundary."
+    correct: false
+    why: 'Permissions boundaries can be set only on IAM users and roles, not on groups. A boundary on the leads would also limit the leads themselves rather than the roles they create.'
+  - key: D
+    text: 'Allow iam:CreateRole and iam:AttachRolePolicy for the team leads only for role names that start with a given prefix.'
+    correct: false
+    why: 'A name prefix limits which roles can be touched, not what permissions those roles can receive. A lead can still attach AdministratorAccess to a role with the right name.'
+cue: 'delegate role creation, no privilege escalation, maximum permissions'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

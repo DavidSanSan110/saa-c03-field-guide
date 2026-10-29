@@ -1,0 +1,36 @@
+id: 'd1-1.2-0017'
+domain: 1
+task: '1.2'
+services:
+  - 'network-firewall'
+  - 'vpc'
+difficulty: hard
+type: single
+stem: 'A payments company runs application servers in private subnets of a VPC. Compliance requires that these servers can open outbound HTTPS connections only to a short list of approved domains, such as api.partner.example and the wildcard *.updates.example. The IP addresses behind these domains change frequently, so IP-based rules are not workable. The company wants a managed AWS service that enforces the list at the VPC level. Which solution meets these requirements?'
+options:
+  - key: A
+    text: "Add outbound rules to the servers' security group that list the approved domain names as destinations."
+    correct: false
+    why: 'Security group rules accept IP addresses, CIDR blocks, prefix lists or other security groups as source or destination, not domain names.'
+  - key: B
+    text: "Add outbound allow rules for the approved domain names to the private subnets' network ACL and deny everything else."
+    correct: false
+    why: 'Network ACL rules match on protocol, ports and CIDR ranges, not on domain names, and they cannot follow the changing IP addresses behind a domain.'
+  - key: C
+    text: 'Create an AWS Network Firewall firewall with its endpoints in dedicated firewall subnets, attach a stateful domain list rule group set to allow the approved domains, and update the route tables to send outbound traffic through the firewall endpoints.'
+    correct: true
+    why: 'Network Firewall domain list rule groups match the TLS SNI (HTTPS) or HTTP Host header against an allow list, with wildcard support. With the allow action, traffic of that protocol type that does not match is denied under default action ordering. Traffic reaches the firewall endpoints because the route tables steer it there.'
+  - key: D
+    text: 'Create a Network Firewall firewall with its endpoint in the same private subnet as the application servers, and attach a stateful domain list rule group set to allow the approved domains.'
+    correct: false
+    why: 'A firewall endpoint cannot filter traffic entering or leaving the subnet it sits in, so firewall subnets must be dedicated to Network Firewall and must not host the workloads you want to protect.'
+cue: 'outbound only to approved domains, IPs change -> Network Firewall stateful domain allow-list, endpoints in dedicated subnets, routes steer traffic'
+references:
+  - 'https://docs.aws.amazon.com/network-firewall/latest/developerguide/stateful-rule-groups-domain-names.html'
+  - 'https://docs.aws.amazon.com/network-firewall/latest/developerguide/what-is-aws-network-firewall.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

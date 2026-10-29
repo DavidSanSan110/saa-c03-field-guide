@@ -1,0 +1,40 @@
+id: 'd1-1.2-0011'
+domain: 1
+task: '1.2'
+services:
+  - 'global-accelerator'
+  - 'waf'
+  - 'elb'
+difficulty: hard
+type: single
+stem: 'A payments company exposes its HTTPS API to business partners through a Network Load Balancer with Elastic IP addresses in front of EC2 web servers. The partners allow-list those addresses in their firewalls and will only accept a small, fixed set of IP addresses. The security team now requires that every request is inspected for SQL injection patterns before it reaches the web servers, and the fixed addresses given to the partners must keep working across future infrastructure changes. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Keep the Network Load Balancer and associate an AWS WAF web ACL that includes the SQL database managed rule group directly with it.'
+    correct: false
+    why: 'AWS WAF can be associated only with specific resource types such as CloudFront distributions, Application Load Balancers, API Gateway REST APIs, AppSync APIs and Cognito user pools. A Network Load Balancer is not one of them.'
+  - key: B
+    text: 'Subscribe to AWS Shield Advanced and protect the Elastic IP addresses of the Network Load Balancer so that requests are inspected for SQL injection.'
+    correct: false
+    why: 'Shield Advanced can protect a Network Load Balancer through its Elastic IP addresses, but it is a DDoS protection service. The inspection of web request contents for SQL injection patterns comes from AWS WAF rules, which cannot be attached to a Network Load Balancer.'
+  - key: C
+    text: 'Create a standard AWS Global Accelerator accelerator with the Network Load Balancer as the endpoint and associate the web ACL with the accelerator.'
+    correct: false
+    why: 'A Global Accelerator accelerator is not a resource type that an AWS WAF web ACL can be associated with, and WAF cannot be attached to the Network Load Balancer behind it either, so no SQL injection inspection would happen.'
+  - key: D
+    text: "Put the web servers behind an Application Load Balancer and attach the web ACL to it. Create a standard Global Accelerator accelerator with the Application Load Balancer as its endpoint, and give the partners the accelerator's static IP addresses."
+    correct: true
+    why: 'The web ACL is attached to the Application Load Balancer, a supported WAF resource, so requests are inspected for SQL injection before reaching the servers. The accelerator provides two static anycast IPv4 addresses that stay assigned for as long as the accelerator exists, regardless of changes to the endpoints behind it, and a standard accelerator accepts an Application Load Balancer as an endpoint.'
+cue: 'fixed IP addresses for partners plus WAF inspection, currently an NLB -> WAF cannot attach to an NLB, so Global Accelerator (static IPs) in front of an ALB that carries the web ACL'
+references:
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/waf-chapter.html'
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/what-is-global-accelerator.html'
+  - 'https://docs.aws.amazon.com/global-accelerator/latest/dg/introduction-how-it-works.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/ddos-advanced-summary-protected-resources.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/ddos-advanced-summary-capabilities.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/aws-managed-rule-groups-use-case.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

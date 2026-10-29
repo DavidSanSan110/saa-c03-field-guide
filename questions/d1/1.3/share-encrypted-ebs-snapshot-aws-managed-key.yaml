@@ -1,0 +1,35 @@
+id: 'd1-1.3-0009'
+domain: 1
+task: '1.3'
+services:
+  - 'ebs'
+  - 'kms'
+difficulty: medium
+type: single
+stem: 'A company wants to hand a nightly Amazon EBS snapshot to a partner that has its own AWS account, in the same Region. The volume was created with default EBS encryption, so the snapshot is encrypted with the AWS managed key aws/ebs. The partner must be able to create volumes from the snapshot. What should a solutions architect do?'
+options:
+  - key: A
+    text: "Edit the key policy of aws/ebs to allow the partner's account, then share the snapshot with that account."
+    correct: false
+    why: 'Snapshots encrypted with the default AWS managed key cannot be shared with other accounts at all. Only snapshots encrypted with a customer managed key can be shared.'
+  - key: B
+    text: "Copy the snapshot and encrypt the copy with a customer managed key, add the partner's account to that key's policy, and share the copy with the partner's account."
+    correct: true
+    why: 'A snapshot can only be shared when it is encrypted with a customer managed key, and the key itself must be shared as well. Copying re-encrypts the data under a key the company controls; the key policy then lets the partner account use it, and the snapshot permission lets the partner create volumes.'
+  - key: C
+    text: "Share the original snapshot with the partner's account, and have the partner attach an IAM policy that allows kms:Decrypt on aws/ebs."
+    correct: false
+    why: 'Sharing the original snapshot is not possible while it uses the AWS managed key, so an IAM policy on the partner side cannot fix it.'
+  - key: D
+    text: 'Make the snapshot public so the partner can use it, since the data is protected by encryption anyway.'
+    correct: false
+    why: 'Only unencrypted snapshots can be shared publicly. Even if it were possible, it would expose the snapshot to every account instead of only the partner.'
+cue: 'encrypted with aws/ebs, share with another account -> copy to customer managed key, share key and snapshot'
+references:
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-modifying-snapshot-permissions.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/share-kms-key.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

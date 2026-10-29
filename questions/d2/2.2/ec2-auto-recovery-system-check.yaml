@@ -1,0 +1,35 @@
+id: 'd2-2.2-0009'
+domain: 2
+task: '2.2'
+services:
+  - 'ec2'
+  - 'cloudwatch'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A research company runs a licensing server on a single Amazon EC2 instance with only EBS volumes. Partners have allow-listed its Elastic IP address and private IP address, and the instance is part of a cluster placement group. If the underlying host fails, the instance must come back automatically on healthy hardware with the same instance ID, IP addresses, metadata and placement group, and without anyone replacing it by hand. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create a CloudWatch alarm on the StatusCheckFailed_System metric for the instance and configure the recover instance action.'
+    correct: true
+    why: 'A failed system status check points to a problem with the host. The recover action migrates the instance to other hardware and preserves its instance ID, public, private and Elastic IP addresses, metadata and placement group.'
+  - key: B
+    text: 'Create a CloudWatch alarm on the StatusCheckFailed_Instance metric and configure the reboot instance action.'
+    correct: false
+    why: 'The instance status check reflects problems inside the instance, such as the operating system. A reboot runs on the same failing host, so it does not move the instance to healthy hardware.'
+  - key: C
+    text: 'Put the instance in an Auto Scaling group sized to exactly one instance, so a failed instance is replaced by a new one.'
+    correct: false
+    why: 'A replacement is a new instance with a new instance ID and, unless extra automation is built, new IP addresses and possibly a different placement. The requirement is for the same instance to be recovered.'
+  - key: D
+    text: 'Take an AMI of the instance every hour and use a Lambda function triggered by an alarm to launch a new instance from the latest AMI.'
+    correct: false
+    why: 'This creates a different instance with a new ID and private IP, depends on custom code and loses changes made since the last AMI.'
+cue: 'Same instance ID, IPs, metadata and placement group after a host failure → CloudWatch alarm on StatusCheckFailed_System with the recover action.'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-recover.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/cloudwatch-recovery.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

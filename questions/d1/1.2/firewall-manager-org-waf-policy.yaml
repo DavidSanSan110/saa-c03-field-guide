@@ -1,0 +1,39 @@
+id: 'd1-1.2-0012'
+domain: 1
+task: '1.2'
+services:
+  - 'firewall-manager'
+  - 'waf'
+  - 'organizations'
+difficulty: medium
+type: single
+stem: 'A company uses AWS Organizations with about 60 member accounts. A new security standard says that every Application Load Balancer and every CloudFront distribution in the organization must be protected by a web ACL that includes the AWS managed SQL database rule group. The standard must also apply automatically to accounts that join the organization later and to load balancers and distributions that teams create later, without the security team touching each account. What is the approach that needs the LEAST ongoing operational work?'
+options:
+  - key: A
+    text: 'Designate a Firewall Manager administrator account, make sure AWS Config is enabled in the member accounts, and create a Firewall Manager AWS WAF policy that includes the managed rule group and covers Application Load Balancers and CloudFront distributions across the organization.'
+    correct: true
+    why: "Firewall Manager is built for this: a WAF policy applies the chosen rule groups to all in-scope resources across the organization's accounts, and it automatically protects new accounts and resources that come into scope. It relies on AWS Config being enabled to track the resources."
+  - key: B
+    text: 'Attach a service control policy to the organization root that prevents creating load balancers and distributions unless a web ACL is present.'
+    correct: false
+    why: 'SCPs only set the maximum permissions available to IAM principals in member accounts. They never grant permissions and do not create web ACLs or associate rule groups with resources, and they do not affect the management account.'
+  - key: C
+    text: 'Create the web ACL once in the management account and publish a runbook that asks every application team to associate it with their load balancers and distributions.'
+    correct: false
+    why: 'This depends on people following a procedure. Nothing enforces it, nothing automatically covers accounts and resources created later, and it adds ongoing work, which is exactly what the requirement rules out.'
+  - key: D
+    text: 'Subscribe every member account to AWS Shield Advanced and add protections to the load balancers and distributions.'
+    correct: false
+    why: 'Shield Advanced provides DDoS protection and only protects resources that have been explicitly added (or added through a Firewall Manager policy). It does not by itself deploy a chosen set of WAF managed rule groups, such as the SQL database group, across all accounts.'
+cue: 'same web ACL / managed rule group on all accounts of an Organization, including new accounts and later resources, least overhead -> Firewall Manager policy'
+references:
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/fms-chapter.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/waf-policies.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/enable-config.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/ddos-advanced-summary-protected-resources.html'
+  - 'https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,36 @@
+id: 'd4-4.4-0003'
+domain: 4
+task: '4.4'
+services:
+  - 'vpc'
+  - 'ec2'
+difficulty: hard
+type: single
+stem: 'A company runs application servers in private subnets across three Availability Zones. All outbound calls to third-party SaaS APIs go through a single NAT gateway in one Availability Zone, and every private subnet route table points to it. The cost report shows large Regional data transfer charges between Availability Zones, and the NAT gateway also carries a lot of traffic. The application must keep working if one Availability Zone fails, and the servers must stay without public IP addresses. Which change lowers the cost?'
+options:
+  - key: A
+    text: "Add one NAT gateway per Availability Zone that hosts application servers, and point each private subnet's route table to the NAT gateway in its own zone."
+    correct: true
+    why: 'Traffic from servers in the other two zones currently crosses Availability Zones to reach the NAT gateway, and cross-AZ traffic within a Region is charged. Giving each zone its own NAT gateway keeps that traffic in-zone and also removes the dependency on one zone for outbound access. The documentation lists this as a strategy for reducing NAT gateway data transfer charges.'
+  - key: B
+    text: 'Move all application servers into the Availability Zone that hosts the NAT gateway.'
+    correct: false
+    why: 'This removes the cross-AZ transfer but also removes the ability to survive an Availability Zone failure, which is a stated requirement.'
+  - key: C
+    text: 'Create gateway VPC endpoints for Amazon S3 and Amazon DynamoDB and associate them with the private subnet route tables.'
+    correct: false
+    why: 'Gateway endpoints only carry traffic to S3 and DynamoDB. The expensive traffic here goes to third-party SaaS APIs on the internet, so it still crosses zones to the single NAT gateway.'
+  - key: D
+    text: 'Assign a public IPv4 address to each server in a public subnet and remove the NAT gateway.'
+    correct: false
+    why: 'The servers must stay without public IP addresses. AWS also charges for every public IPv4 address, so this adds a recurring cost per server.'
+cue: 'one NAT gateway for several AZs + Regional data transfer charges + still highly available -> NAT gateway per AZ'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-pricing.html'
+  - 'https://docs.aws.amazon.com/cur/latest/userguide/cur-data-transfers-charges.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-instance-addressing.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,36 @@
+id: 'd3-3.4-0005'
+domain: 3
+task: '3.4'
+services:
+  - 'vpc'
+  - 'elb'
+difficulty: medium
+type: single
+stem: "A software company runs a billing API on EC2 instances in its own VPC. Hundreds of customers, each in a separate AWS account and VPC, must call this API privately without sending traffic over the internet. Many customer VPCs use the same 10.0.0.0/16 range, which also overlaps with the provider's VPC. Customers must only be able to open connections to the API and must not be able to reach anything else in the provider's VPC. What should the company do, keeping operational work to a minimum?"
+options:
+  - key: A
+    text: 'Create a VPC peering connection between the provider VPC and every customer VPC.'
+    correct: false
+    why: 'Peering cannot be created between VPCs with matching or overlapping CIDR blocks. It also gives full bidirectional routing between the VPCs instead of access to a single service, and it needs a connection and routes for each of the hundreds of customers.'
+  - key: B
+    text: 'Put the API behind a Network Load Balancer, publish that load balancer as a VPC endpoint service, allow the customer accounts to connect, and have each customer create an interface VPC endpoint in their VPC.'
+    correct: true
+    why: "PrivateLink places a network interface in each consumer's own subnet, with an address from that subnet's range, so overlapping address ranges are not a problem. Only the consumer can initiate connections, and only to the service behind the load balancer, with no peering, route configuration, NAT or internet gateway."
+  - key: C
+    text: 'Share a transit gateway with all customer accounts through AWS RAM and have each customer attach its VPC.'
+    correct: false
+    why: 'A transit gateway gives layer-3 routing between whole VPCs and routes by destination IP address, so attached VPCs need distinct CIDR ranges. It exposes more than the single API and requires routing to be managed for hundreds of attachments.'
+  - key: D
+    text: "Put the API behind an internet-facing Application Load Balancer and restrict access with security groups to the customers' public IP addresses."
+    correct: false
+    why: 'Customer traffic would travel over the public internet, which breaks the requirement for private connectivity. Maintaining the allowed IP list for hundreds of customers also adds operational work.'
+cue: 'expose one service to many customer VPCs + overlapping CIDRs + one-way access -> PrivateLink (NLB + interface endpoints)'
+references:
+  - 'https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/aws-privatelink.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/privatelink/privatelink-share-your-services.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/peering/vpc-peering-basics.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

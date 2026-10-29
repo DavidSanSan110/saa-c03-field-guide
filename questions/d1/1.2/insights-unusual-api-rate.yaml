@@ -1,0 +1,36 @@
+id: 'd1-1.2-0005'
+domain: 1
+task: '1.2'
+services:
+  - 'cloudtrail'
+  - 'eventbridge'
+  - 'sns'
+difficulty: hard # easy | medium | hard
+type: single # single | multiple
+stem: 'A fintech company wants to be told when API activity in its production account looks abnormal, for example a sudden burst of RunInstances or TerminateInstances calls compared with what is usual for that account. Nobody wants to guess and maintain fixed thresholds for each API, and the alert must reach an SNS topic used by the security on-call rotation. The account has no trail yet. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create a trail that logs write management events and enable CloudTrail Insights for API call rate. Create an EventBridge rule that matches the Insights event type and targets the SNS topic.'
+    correct: true
+    why: "Insights builds a baseline of the account's normal write management API call rate and emits an Insights event when current activity deviates from it. Those events are sent to EventBridge, so a rule can forward them to SNS without any hand-set thresholds."
+  - key: B
+    text: 'Send the trail to CloudWatch Logs, create a metric filter that counts each sensitive event name, and set a static threshold alarm on each metric that notifies SNS.'
+    correct: false
+    why: 'This works only with thresholds that someone has to pick and tune for every API, which the company explicitly wants to avoid. It also does not learn what is normal for the account.'
+  - key: C
+    text: 'Create a trail that logs only read-only management events and enable CloudTrail Insights for API call rate, then forward the Insights events to SNS through EventBridge.'
+    correct: false
+    why: 'The API call rate Insight is computed from write management events. A trail that logs only read events cannot produce it, so no abnormal call-rate events would ever be raised.'
+  - key: D
+    text: 'Add an AWS Config managed rule that evaluates the number of API calls per hour and notifies SNS when a resource becomes noncompliant.'
+    correct: false
+    why: 'AWS Config tracks resource configuration and compliance with rules. It does not measure API call volume, so it cannot detect unusual call rates.'
+cue: 'Unusual API call volume, no static thresholds, baseline → CloudTrail Insights (needs write management events), Insights events go to EventBridge.'
+references:
+  - 'https://docs.aws.amazon.com/awscloudtrail/latest/userguide/logging-insights-events-with-cloudtrail.html'
+  - 'https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-service-event-cloudtrail.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

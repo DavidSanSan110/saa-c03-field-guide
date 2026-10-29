@@ -1,0 +1,42 @@
+id: 'd1-1.2-0016'
+domain: 1
+task: '1.2'
+services:
+  - 'vpc'
+  - 's3'
+difficulty: medium
+type: multiple
+stem: "A healthcare analytics company runs batch workers on EC2 instances in private subnets of one VPC. The workers read and write patient export files in an Amazon S3 bucket in the same Region. Security requires that this traffic never traverses the public internet and that the bucket rejects requests that do not arrive through the company's VPC endpoint. Only the workers inside the VPC need access, and the company wants to avoid extra charges for the endpoint. Which combination of steps meets these requirements? (Choose two.)"
+options:
+  - key: A
+    text: "Add an S3 gateway endpoint to the VPC and select the private subnets' route tables for it."
+    correct: true
+    why: 'A gateway endpoint adds a route for S3 to the associated route tables, so traffic from the private subnets reaches S3 without an internet gateway or NAT device. There is no additional charge for gateway endpoints, and access is needed only from inside the VPC.'
+  - key: B
+    text: 'Add a bucket policy statement that denies S3 actions unless the aws:sourceVpce condition key equals the ID of the gateway endpoint.'
+    correct: true
+    why: 'The bucket policy can restrict access to a specific endpoint with aws:sourceVpce. A deny with StringNotEquals rejects any request that did not come through that endpoint.'
+  - key: C
+    text: 'Use an S3 interface endpoint, placed in the private subnets, instead of a gateway endpoint.'
+    correct: false
+    why: 'An interface endpoint would keep traffic private, but it carries an additional cost and is meant for cases a gateway endpoint cannot serve, such as access from on-premises networks. Here all access comes from inside the VPC and cost matters, so the gateway endpoint is the better fit.'
+  - key: D
+    text: "Route the private subnets through a NAT gateway and add a bucket policy that allows only the NAT gateway's Elastic IP address through the aws:SourceIp condition key."
+    correct: false
+    why: 'Traffic through a NAT gateway leaves via the internet gateway and reaches S3 over public IP space, which violates the requirement that traffic avoids the public internet.'
+  - key: E
+    text: "Add a bucket policy that allows access only when aws:SourceIp is within the VPC's private CIDR block."
+    correct: false
+    why: 'aws:SourceIp cannot be used for requests that traverse a VPC endpoint; the docs point to aws:VpcSourceIp instead. A private CIDR match also does not tie the request to a specific endpoint, which the requirement asks for.'
+  - key: F
+    text: 'Enable S3 Block Public Access on the bucket and keep sending requests through the existing internet path.'
+    correct: false
+    why: 'Block Public Access does not change the network path, so traffic still leaves through the internet, and it does not limit requests to a particular VPC endpoint.'
+cue: 'traffic must not use the internet, same-Region S3, in-VPC only, no extra cost -> gateway endpoint + aws:sourceVpce in bucket policy'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
