@@ -1,0 +1,108 @@
+# A request from the internet to a web server, filtered by the subnet's network ACL (stateless) and
+# the instance's security group (stateful), and what breaks when either one is missing a rule.
+# Sources: https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html
+#          https://docs.aws.amazon.com/vpc/latest/userguide/security-group-rules.html
+#          https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html
+#          https://docs.aws.amazon.com/vpc/latest/userguide/custom-network-acl.html
+#          https://docs.aws.amazon.com/vpc/latest/userguide/flow-log-records.html
+id: sg-vs-nacl
+title: Security groups vs network ACLs
+description: How a subnet's network ACL and an instance's security group each filter a request and its reply.
+groups:
+  - { id: region, label: eu-west-1, kind: region }
+  - { id: vpc, label: VPC, kind: vpc, parent: region }
+  - { id: subnet, label: Public subnet, kind: public-subnet, parent: vpc }
+  - { id: sg-web, label: Security group web-sg, kind: security-group, parent: subnet }
+nodes:
+  - { id: client, icon: user, label: Client, sub: 'Internet, port 50123' }
+  - { id: igw, icon: internet-gateway, label: Internet gateway, group: vpc }
+  - {
+      id: nacl,
+      icon: network-access-control-list,
+      label: Network ACL,
+      sub: Subnet level,
+      group: subnet,
+    }
+  - { id: web, icon: ec2, label: EC2 instance, sub: Web server, group: sg-web }
+edges:
+  - { id: in, from: client, to: igw }
+  - { id: to-nacl, from: igw, to: nacl }
+  - { id: to-web, from: nacl, to: web }
+scenarios:
+  - id: allowed
+    label: Request and reply allowed
+    steps:
+      - edge: in
+        packet: TCP 443
+        caption: A client opens an HTTPS connection to the server's public IP. It will get the reply on a random ephemeral port, here 50123.
+      - edge: to-nacl
+        packet: TCP 443
+        caption: The subnet's network ACL checks its inbound rules in number order. Rule 100 allows TCP 443 from anywhere, so the packet goes on.
+      - edge: to-web
+        packet: TCP 443
+        caption: The security group allows inbound TCP 443. It only has allow rules, and all of them are checked together.
+      - edge: to-web
+        reverse: true
+        packet: Reply
+        caption: The server replies. The security group is stateful, so the reply of an allowed connection goes out with no outbound rule.
+      - edge: to-nacl
+        reverse: true
+        packet: Reply to 50123
+        caption: The network ACL is stateless and checks the reply too. Outbound rule 100 allows TCP 1024-65535, which covers port 50123.
+      - edge: in
+        reverse: true
+        packet: Reply
+        caption: The reply reaches the client. Both layers had to agree, the ACL for the whole subnet and the security group for this instance.
+  - id: ephemeral-missing
+    label: ACL ephemeral ports missing
+    steps:
+      - edge: in
+        packet: TCP 443
+        caption: Same request, but this subnet has a custom network ACL whose only outbound rule allows TCP 443.
+      - edge: to-nacl
+        packet: TCP 443
+        caption: Inbound rule 100 allows TCP 443, so the packet enters the subnet.
+      - edge: to-web
+        packet: TCP 443
+        caption: The security group allows TCP 443 and the server gets the request.
+      - edge: to-web
+        reverse: true
+        packet: Reply
+        caption: The reply leaves the instance. The stateful security group lets it out without any outbound rule.
+      - node: nacl
+        caption: The ACL checks its outbound rules. None allows port 50123, so the final * rule denies it and the reply is dropped.
+        state: { nacl: highlighted, to-nacl: broken }
+      - node: client
+        caption: The client times out. Flow logs show the request ACCEPT and the reply REJECT, which points at the ACL, not the security group.
+        state: { client: highlighted, nacl: normal }
+  - id: sg-rule-missing
+    label: Security group rule missing
+    steps:
+      - edge: in
+        packet: TCP 443
+        caption: Same request, but the server's security group has no inbound rule for TCP 443.
+      - edge: to-nacl
+        packet: TCP 443
+        caption: The network ACL allows it, so the packet reaches the instance's network interface.
+      - edge: to-web
+        packet: TCP 443
+        caption: No security group rule allows it, so it is dropped. A security group never denies; anything it doesn't allow is blocked.
+        state: { to-web: broken, sg-web: highlighted }
+      - node: client
+        caption: The client just times out. A timeout, not "connection refused", usually means a security group or ACL dropped the packet.
+        state: { client: highlighted }
+  - id: deny-one-ip
+    label: ACL denies one IP
+    steps:
+      - edge: in
+        packet: TCP 443
+        caption: The client at 203.0.113.7 floods the site. Blocking one address needs a deny rule; of these two filters, only the ACL has them.
+      - edge: to-nacl
+        packet: TCP 443
+        caption: Inbound rule 90 denies 203.0.113.7/32. Rules run lowest number first, so it matches before rule 100 allows everyone.
+        state: { to-nacl: broken }
+      - group: sg-web
+        caption: The packet never reaches the security group or the instance. Every other client still gets in through rule 100.
+      - node: nacl
+        caption: Numbered 110 instead, the deny would do nothing. Rule 100 would match first, and the first matching rule wins.
+        state: { nacl: highlighted }
