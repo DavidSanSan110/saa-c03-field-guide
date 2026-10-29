@@ -1,0 +1,114 @@
+# Cross-account access through an IAM role: a role in account A assumes a role in account B with
+# AWS STS. Both accounts must allow it; then the trust policy, the caller's policy and the external ID
+# each fail once.
+# Sources: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic-cross-account.html
+#          https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html
+#          https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_common-scenarios_third-party.html
+#          https://docs.aws.amazon.com/IAM/latest/UserGuide/confused-deputy.html
+#          https://docs.aws.amazon.com/IAM/latest/UserGuide/cloudtrail-integration.html
+id: iam-cross-account-assume-role
+title: IAM cross-account AssumeRole
+description: How a role in one account assumes a role in another with AWS STS, and the three ways the request is denied.
+groups:
+  - { id: acct-a, label: Account A (trusted), kind: account }
+  - { id: acct-b, label: Account B (trusting), kind: account }
+nodes:
+  - { id: caller, icon: iam-role, label: App role, sub: Identity policy, group: acct-a }
+  - { id: sts, icon: security-token-service, label: AWS STS, sub: Temporary credentials }
+  - { id: target, icon: iam-role, label: ReportsReader, sub: Trust policy, group: acct-b }
+  - { id: bucket, icon: simple-storage-service, label: S3 bucket, sub: Reports, group: acct-b }
+edges:
+  - { id: assume, from: caller, to: sts }
+  - { id: trust, from: sts, to: target }
+  - { id: call, from: caller, to: bucket }
+scenarios:
+  - id: assume
+    label: Assume the role
+    steps:
+      - node: caller
+        caption: A job in account A runs as App role. Its identity policy allows sts:AssumeRole on the ReportsReader role in account B.
+        state: { caller: highlighted }
+      - edge: assume
+        packet: AssumeRole
+        caption: It calls STS AssumeRole with the role's ARN and a session name, signed with App role's own credentials.
+        state: { caller: normal }
+      - edge: trust
+        packet: Trust policy?
+        caption: STS reads the role's trust policy in account B. It names account A as a principal, so B lets A choose who assumes it.
+      - node: target
+        caption: AWS evaluates both accounts and both allow. A's identity policy alone, or B's trust policy alone, would not be enough.
+        state: { target: highlighted }
+      - edge: assume
+        reverse: true
+        packet: Temporary credentials
+        caption: STS returns an access key ID, secret key and session token, valid 1 hour by default. Both accounts log it in CloudTrail.
+        state: { target: normal }
+      - edge: call
+        packet: GetObject
+        caption: The job signs GetObject with the new credentials. S3 sees a ReportsReader session, not App role.
+      - node: bucket
+        caption: The role's permissions policy allows the read. During the session the job has only the role's permissions, none of its own.
+        state: { bucket: highlighted }
+  - id: no-trust
+    label: Trust policy doesn't allow
+    steps:
+      - node: target
+        caption: Account B edits the ReportsReader trust policy, which now trusts only account C. App role's own policy hasn't changed.
+        state: { target: highlighted }
+      - edge: assume
+        packet: AssumeRole
+        caption: The job calls AssumeRole as before. Account A's side still allows it, since the identity policy grants sts:AssumeRole.
+        state: { target: normal }
+      - edge: trust
+        packet: Trust policy?
+        caption: STS evaluates the trust policy in account B. No statement names account A or App role, so B gives no allow.
+        state: { trust: broken, target: failed }
+      - edge: assume
+        reverse: true
+        packet: AccessDenied
+        caption: STS refuses. App role is not authorized to perform sts:AssumeRole on the role, and no credentials are issued.
+      - node: caller
+        caption: An allow on one side is not enough. CloudTrail logs the failure in account A; B doesn't log denied cross-account attempts.
+        state: { caller: highlighted }
+  - id: no-permission
+    label: Caller lacks sts:AssumeRole
+    steps:
+      - node: caller
+        caption: The trust policy trusts account A again, but App role's identity policy now has no statement for sts:AssumeRole.
+        state: { caller: highlighted }
+      - edge: assume
+        packet: AssumeRole
+        caption: The job calls AssumeRole on the ReportsReader role in account B.
+        state: { caller: normal }
+      - node: caller
+        caption: Account A's evaluation fails. Nothing in App role's policies allows sts:AssumeRole on that ARN, and the default is deny.
+        state: { caller: failed }
+      - edge: assume
+        reverse: true
+        packet: AccessDenied
+        caption: STS returns AccessDenied. Across accounts, the caller always needs an allow from its own account too.
+        state: { assume: broken }
+      - node: target
+        caption: That is why trusting a whole account works. Account A's admins still decide which of their roles may call sts:AssumeRole.
+        state: { target: highlighted }
+  - id: external-id
+    label: Wrong external ID
+    steps:
+      - node: target
+        caption: Account A is a vendor and B one of its customers. B's trust policy requires sts:ExternalId to match the ID the vendor gave B.
+        state: { target: highlighted }
+      - edge: assume
+        packet: AssumeRole + ExternalId
+        caption: Another customer gives the vendor B's role ARN. The vendor calls AssumeRole with that other customer's external ID.
+        state: { target: normal }
+      - edge: trust
+        packet: Trust policy?
+        caption: Account A is trusted, but the sts:ExternalId condition doesn't match, so no statement in the trust policy allows the call.
+        state: { trust: broken, target: failed }
+      - edge: assume
+        reverse: true
+        packet: AccessDenied
+        caption: AssumeRole is denied. The other customer can't use the vendor to reach B's data, so the confused deputy problem is avoided.
+      - node: caller
+        caption: The vendor creates one external ID per customer and always sends the one it is acting for. The ID is not a secret.
+        state: { caller: highlighted }

@@ -1,0 +1,135 @@
+# How AWS decides one request from a role in a member account: an explicit deny anywhere wins, then
+# the SCP, the identity-based policy and the permissions boundary must each allow it (the intersection).
+# Sources: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic_policy-eval-denyallow.html
+#          https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_boundaries.html
+#          https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html
+#          https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_examples_aws_deny-requested-region.html
+id: scp-permission-evaluation
+title: SCP and permissions boundary evaluation
+description: How AWS evaluates one request against the SCP, the identity-based policy and the permissions boundary, and how each of them, or an explicit deny, can block it.
+groups:
+  - { id: ou, label: OU Workloads, kind: generic }
+  - { id: account, label: Member account, kind: account, parent: ou }
+nodes:
+  - { id: role, icon: iam-role, label: Dev role, sub: Makes the request, group: account }
+  - {
+      id: eval,
+      icon: identity-and-access-management,
+      label: Policy evaluation,
+      sub: Every policy that applies,
+      group: account,
+    }
+  - { id: scp, icon: organizations, label: SCP, sub: Attached to the OU, group: ou }
+  - {
+      id: identity,
+      icon: iam-permissions,
+      label: Identity policy,
+      sub: AdministratorAccess,
+      group: account,
+    }
+  - {
+      id: boundary,
+      icon: iam-permissions,
+      label: Permissions boundary,
+      sub: S3 and EC2 only,
+      group: account,
+    }
+  - { id: bucket, icon: simple-storage-service, label: S3 bucket, sub: eu-west-1, group: account }
+edges:
+  # The SCP feeds the evaluation from the OU, so its edge points into eval (steps that ask it run in
+  # reverse). This edge order makes the layout stack identity policy, boundary and bucket.
+  - { id: request, from: role, to: eval }
+  - { id: ask-scp, from: scp, to: eval }
+  - { id: ask-boundary, from: eval, to: boundary }
+  - { id: call, from: eval, to: bucket }
+  - { id: ask-identity, from: eval, to: identity }
+scenarios:
+  - id: allowed
+    label: Allowed by all three
+    steps:
+      - edge: request
+        packet: s3:GetObject
+        caption: Dev role, in a member account, calls s3:GetObject on a bucket in eu-west-1. AWS evaluates every policy that applies.
+      - node: eval
+        caption: First it looks for an explicit Deny in all of them, from the SCPs to the boundary. None matches this call.
+        state: { eval: highlighted }
+      - edge: ask-scp
+        reverse: true
+        packet: Allowed?
+        caption: The SCPs from the organization root down to the account must allow S3. FullAWSAccess does, and the Region-deny SCP doesn't match.
+      - edge: ask-identity
+        packet: Allowed?
+        caption: An SCP grants nothing, so an identity-based policy must allow the action too. Dev role's AdministratorAccess does.
+      - edge: ask-boundary
+        packet: Allowed?
+        caption: The role's permissions boundary allows S3 and EC2, so the action is inside the boundary as well.
+      - edge: call
+        packet: GetObject
+        caption: Allowed by all three. The effective permissions are the intersection of the SCPs, the boundary and the identity policy.
+        state: { eval: normal }
+  - id: scp-blocks
+    label: Blocked by the SCP
+    steps:
+      - edge: request
+        packet: ec2:RunInstances
+        caption: Dev role calls ec2:RunInstances in us-east-1. Its AdministratorAccess policy and its boundary both allow EC2.
+      - edge: ask-scp
+        reverse: true
+        packet: Deny?
+        caption: The OU's SCP denies actions outside eu-west-1 with aws:RequestedRegion. Global services such as IAM are exempted with NotAction.
+      - node: scp
+        caption: That Deny matches, and an explicit deny ends the evaluation. Nothing inside the account can override it.
+        state: { scp: failed }
+      - edge: request
+        reverse: true
+        packet: AccessDenied
+        caption: AccessDenied. An SCP limits every user and role in a member account, the account's root user included.
+        state: { request: broken }
+      - group: account
+        caption: SCPs never limit the management account or service-linked roles. Admin rights inside a member account don't help.
+        state: { account: highlighted }
+  - id: boundary-blocks
+    label: Blocked by the boundary
+    steps:
+      - edge: request
+        packet: iam:CreateUser
+        caption: Dev role calls iam:CreateUser. Its identity policy, AdministratorAccess, allows every action.
+      - edge: ask-scp
+        reverse: true
+        packet: Allowed?
+        caption: No Deny matches, and the SCP allows it, because the Region guardrail exempts global services such as IAM.
+      - edge: ask-identity
+        packet: Allowed?
+        caption: AdministratorAccess allows iam:CreateUser, so an identity-based policy grants the action.
+      - edge: ask-boundary
+        packet: Allowed?
+        caption: The boundary allows only S3 and EC2. iam:CreateUser isn't in it, so the boundary gives no allow.
+      - node: boundary
+        caption: Implicitly denied. The boundary caps what identity-based policies can give the role, however broad they are.
+        state: { boundary: failed }
+      - edge: request
+        reverse: true
+        packet: AccessDenied
+        caption: AccessDenied. Require a boundary on the roles a team creates, and the team can't grant itself more than the boundary.
+        state: { request: broken }
+  - id: explicit-deny
+    label: Explicit deny
+    steps:
+      - node: identity
+        caption: An admin adds an inline policy to Dev role that denies s3:DeleteBucket. AdministratorAccess still allows s3:* as well.
+        state: { identity: highlighted }
+      - edge: request
+        packet: s3:DeleteBucket
+        caption: Dev role calls s3:DeleteBucket in eu-west-1. The SCP and the boundary would both allow it.
+        state: { identity: normal }
+      - edge: ask-identity
+        packet: Deny?
+        caption: AWS checks every policy for a matching Deny before any allow. The inline statement matches the action and the bucket.
+      - node: identity
+        caption: An explicit deny beats every allow, in the same policy or any other. The evaluation stops here.
+        state: { identity: failed }
+      - edge: request
+        reverse: true
+        packet: AccessDenied
+        caption: AccessDenied. For a deny that even the account's admins can't remove, put it in an SCP instead.
+        state: { request: broken }
