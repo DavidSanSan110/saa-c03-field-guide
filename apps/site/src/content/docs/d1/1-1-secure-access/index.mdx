@@ -3,6 +3,8 @@ title: 'Task 1.1: Design secure access to AWS resources'
 description: 'IAM identities and policies, how AWS evaluates a request, cross-account access, Organizations and SCPs, IAM Identity Center, Directory Service, Cognito and auditing access, with exam cues and common traps.'
 ---
 
+import FlowDiagram from '../../../../components/FlowDiagram.astro';
+
 This task is about one question: **who may call which API on which resource, and what decides it.** Almost every answer is a mix of the same few pieces: an identity, a policy, temporary credentials and, with many accounts, a guardrail set by the organization.
 
 Part of [Domain 1: Design Secure Architectures](/d1/).
@@ -78,6 +80,8 @@ Either way, cross-account access needs an allow on **both** sides: the caller's 
 **Role sessions.** `AssumeRole` returns credentials that last 1 hour by default, from 15 minutes up to the role's maximum session duration (1 to 12 hours). When one role session assumes another role (_role chaining_), the new session is capped at 1 hour.
 
 **Third parties and the external ID.** When a vendor that serves many customers assumes a role in your account, someone else could hand the vendor your role ARN and trick it into acting on your account (the _confused deputy_ problem). The fix is an **external ID**: the vendor gives you a value that is unique to you, and your role's trust policy requires it with the `sts:ExternalId` condition. The vendor always sends the ID of the customer it is working for, so the other customer can't use your role. The external ID is not a secret and you don't make it up yourself; the vendor generates it.
+
+<FlowDiagram id="iam-cross-account-assume-role" />
 
 **Services acting for you.** An AWS service also needs permission to reach its targets. An EventBridge rule, for example, writes to CloudWatch Logs through the log group's resource-based policy, can invoke Lambda or publish to SNS and SQS through either a resource-based policy or a role, and needs an IAM role for targets such as Kinesis Data Streams or ECS tasks.
 
@@ -175,7 +179,7 @@ With identity pools, IAM policy variables (the user's Cognito identity ID) give 
 | Employees already exist in on-premises Active Directory                          | Identity Center with AD Connector, or AWS Managed Microsoft AD with a trust   |
 | Set up a new multi-account environment with best-practice guardrails             | AWS Control Tower                                                             |
 | Millions of mobile or web app users need accounts and sign-in                    | Cognito user pools                                                            |
-| App users must upload directly to S3 or read their own DynamoDB items            | Cognito identity pools with IAM policy variables                              |
+| Each app user must upload directly to S3 or read only their own DynamoDB items   | Cognito identity pools with IAM policy variables                              |
 | Find who deleted a resource                                                      | CloudTrail                                                                    |
 | Keep API activity for years and query it                                         | A CloudTrail trail to S3, queried with Athena                                 |
 | Require MFA before a dangerous action                                            | `aws:MultiFactorAuthPresent` in a deny statement                              |
