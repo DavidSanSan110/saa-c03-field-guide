@@ -5,6 +5,7 @@ import { defineConfig } from 'astro/config';
 import { fileURLToPath } from 'node:url';
 import { loadInlineHashes } from './src/csp/hash-file.ts';
 import { shouldInjectFixtures } from './src/diagram/fixtures-route.ts';
+import { focusableTables } from './src/markdown/integration.ts';
 import { buildSidebar } from './src/sidebar.ts';
 
 const diagramsDir = fileURLToPath(new URL('../../diagrams/', import.meta.url));
@@ -49,6 +50,11 @@ const diagrams = {
           new URL('../../e2e/fixtures/diagram-page.astro', import.meta.url),
         ),
       });
+      // Content-table fixture (spec 039): Markdown tables rendered through the real pipeline.
+      injectRoute({
+        pattern: '/fixtures/tables/',
+        entrypoint: fileURLToPath(new URL('../../e2e/fixtures/tables-page.astro', import.meta.url)),
+      });
     },
   },
 };
@@ -87,6 +93,8 @@ export default defineConfig({
         Footer: './src/components/Footer.astro',
       },
     }),
+    // Keyboard-reachable content tables (spec 039): after starlight(), which sets up the Sätteri processor.
+    focusableTables,
     react(),
     diagrams,
   ],

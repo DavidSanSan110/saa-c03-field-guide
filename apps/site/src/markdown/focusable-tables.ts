@@ -1,4 +1,4 @@
-// Keyboard-reachable content tables (spec 039). Interface stub: the implementation comes after the tests.
+// Keyboard-reachable content tables (spec 039): gives every Markdown table a tab stop and an accessible name.
 
 /** Minimal local hast shapes (no @types/hast: it is not resolvable from apps/site). */
 export interface HastText {
@@ -26,20 +26,79 @@ export interface TablePlan {
   ariaLabel?: string;
 }
 
-export function planTableLabels(root: HastRoot): TablePlan[] {
-  void root;
-  return [];
+const HEADINGS = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6']);
+
+function isElement(node: HastNode): node is HastElement {
+  return node.type === 'element';
 }
 
-/** A Sätteri hast plugin: `{ name: 'focusable-tables', before(root, ctx) }`. */
+function hasClass(element: HastElement, name: string): boolean {
+  const value = element.properties?.['className'] ?? element.properties?.['class'];
+  if (Array.isArray(value)) return value.includes(name);
+  return typeof value === 'string' && value.split(/\s+/).includes(name);
+}
+
+function hasAny(element: HastElement, keys: string[]): boolean {
+  return keys.some((key) => element.properties !== undefined && key in element.properties);
+}
+
+/** The text of `node`, leaving out Starlight's heading anchor links. */
+function textOf(node: HastNode): string {
+  if (node.type === 'text') return String((node as HastText).value);
+  if (!isElement(node) || hasClass(node, 'sl-anchor-link')) return '';
+  return node.children.map(textOf).join('');
+}
+
+/** What to set on each `table` element of `root`, in document order. Never mutates `root`. */
+export function planTableLabels(root: HastRoot): TablePlan[] {
+  const plans: TablePlan[] = [];
+  let heading = TABLE_FALLBACK_NAME;
+  let count = 0;
+
+  const visit = (node: HastNode): void => {
+    if (!isElement(node)) {
+      if (node.type === 'root') (node as HastRoot).children.forEach(visit);
+      return;
+    }
+    if (HEADINGS.has(node.tagName)) {
+      heading = textOf(node).replace(/\s+/g, ' ').trim() || TABLE_FALLBACK_NAME;
+      count = 0;
+      return;
+    }
+    if (node.tagName === 'table') {
+      count += 1;
+      const plan: TablePlan = { table: node };
+      if (!hasAny(node, ['tabIndex', 'tabindex'])) plan.tabIndex = 0;
+      if (!hasAny(node, ['ariaLabel', 'aria-label', 'ariaLabelledBy', 'aria-labelledby'])) {
+        plan.ariaLabel = count === 1 ? heading : `${heading} (table ${count})`;
+      }
+      plans.push(plan);
+      return;
+    }
+    node.children.forEach(visit);
+  };
+  visit(root);
+  return plans;
+}
+
+interface SatteriContext {
+  setProperty(node: unknown, name: string, value: unknown): void;
+}
+
+/** A Sätteri hast plugin: applies `planTableLabels` to every table of the page. */
 export function focusableTablesPlugin(): {
   name: string;
   before(root: unknown, ctx: unknown): void;
 } {
   return {
     name: 'focusable-tables',
-    before() {
-      // not implemented
+    before(root, ctx) {
+      for (const { table, tabIndex, ariaLabel } of planTableLabels(root as HastRoot)) {
+        if (tabIndex !== undefined)
+          (ctx as SatteriContext).setProperty(table, 'tabIndex', tabIndex);
+        if (ariaLabel !== undefined)
+          (ctx as SatteriContext).setProperty(table, 'ariaLabel', ariaLabel);
+      }
     },
   };
 }
