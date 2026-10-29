@@ -1,0 +1,105 @@
+# A private EC2 instance reading from S3, first through a NAT gateway, then through an S3 gateway
+# endpoint, and an endpoint policy that limits which buckets can be reached. Prices: us-east-1.
+# Sources: https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html
+#          https://docs.aws.amazon.com/vpc/latest/userguide/nat-gateway-basics.html
+#          https://docs.aws.amazon.com/vpc/latest/privatelink/gateway-endpoints.html
+#          https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-s3.html
+#          https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-access.html
+#          https://aws.amazon.com/vpc/pricing/
+#          https://aws.amazon.com/s3/pricing/
+id: vpc-nat-vs-gateway-endpoint
+title: NAT gateway vs S3 gateway endpoint
+description: How a private instance reaches S3 through a NAT gateway or through a gateway endpoint, and what each path costs.
+groups:
+  - { id: region, label: us-east-1, kind: region }
+  - { id: vpc, label: VPC, kind: vpc, parent: region }
+  - { id: public, label: Public subnet, kind: public-subnet, parent: vpc }
+  - { id: private, label: Private subnet, kind: private-subnet, parent: vpc }
+nodes:
+  - { id: app, icon: ec2, label: EC2 instance, sub: 'App, no public IP', group: private }
+  - { id: nat, icon: nat-gateway, label: NAT gateway, sub: Elastic IP, group: public }
+  - { id: igw, icon: internet-gateway, label: Internet gateway, group: vpc }
+  - { id: vpce, icon: vpc-endpoints, label: Gateway endpoint, sub: S3, group: vpc }
+  - { id: s3, icon: simple-storage-service, label: S3 bucket, sub: app-data, group: region }
+edges:
+  - { id: to-nat, from: app, to: nat }
+  - { id: nat-igw, from: nat, to: igw }
+  - { id: igw-s3, from: igw, to: s3 }
+  - { id: to-vpce, from: app, to: vpce }
+  - { id: vpce-s3, from: vpce, to: s3 }
+scenarios:
+  - id: via-nat
+    label: Through the NAT gateway
+    initial: { vpce: hidden, to-vpce: hidden, vpce-s3: hidden }
+    steps:
+      - node: app
+        caption: The app runs in a private subnet with no public IP. Its route table sends 0.0.0.0/0 to a NAT gateway that sits in a public subnet.
+      - edge: to-nat
+        packet: GetObject
+        caption: It calls S3 GetObject. The S3 endpoint is a public address, so the request follows the default route to the NAT gateway.
+        metrics: { NAT gateway: $0.045 per hour }
+      - edge: nat-igw
+        packet: GetObject
+        caption: The NAT gateway replaces the private source IP with its Elastic IP and sends the request out through the internet gateway.
+      - edge: igw-s3
+        packet: GetObject
+        caption: S3 sees a request from the NAT gateway's public IP and checks the app role's permissions as usual.
+      - edge: igw-s3
+        reverse: true
+        packet: 200 OK
+        caption: S3 returns the object along the same path, back through the internet gateway.
+      - edge: to-nat
+        reverse: true
+        packet: 200 OK
+        caption: Every GB through the NAT gateway is billed, whatever the destination. 100 GB a day of S3 reads adds about $4.50 a day.
+        metrics: { NAT gateway: $0.045 per hour, Data processed: $0.045 per GB }
+  - id: via-endpoint
+    label: Through a gateway endpoint
+    initial: { vpce: hidden, to-vpce: hidden, vpce-s3: hidden }
+    steps:
+      - node: vpce
+        caption: Add an S3 gateway endpoint to the private route table. AWS adds a route from the S3 prefix list (pl-…) to the endpoint.
+        state: { vpce: appearing, to-vpce: appearing, vpce-s3: appearing }
+      - edge: to-vpce
+        packet: GetObject
+        caption: The prefix-list route is more specific than 0.0.0.0/0, so S3 traffic now takes the endpoint. The app's code doesn't change.
+        state: { vpce: normal, to-vpce: normal, vpce-s3: normal }
+      - edge: vpce-s3
+        packet: GetObject
+        caption: The request reaches S3 over the AWS network, with the instance's private IP. No NAT gateway, internet gateway or public IP.
+      - edge: vpce-s3
+        reverse: true
+        packet: 200 OK
+        caption: S3 returns the object through the endpoint.
+      - edge: to-vpce
+        reverse: true
+        packet: 200 OK
+        caption: A gateway endpoint has no hourly or per-GB charge, and S3 to EC2 transfer in the same Region is free.
+        metrics: { Gateway endpoint: $0, Data processed: $0 }
+      - node: nat
+        caption: The NAT gateway stays for other internet traffic, such as OS updates. Gateway endpoints exist only for S3 and DynamoDB.
+  - id: policy-deny
+    label: Endpoint policy denies a bucket
+    steps:
+      - node: vpce
+        caption: The endpoint has its own policy, a resource-based policy. This one allows s3:GetObject only on the app-data bucket.
+        state: { vpce: highlighted }
+      - edge: to-vpce
+        packet: GetObject other-bucket
+        caption: Code on the instance, perhaps an attacker's, tries to read from another bucket through the endpoint.
+      - edge: vpce-s3
+        packet: GetObject other-bucket
+        caption: S3 checks the endpoint policy along with the IAM and bucket policies. Nothing in it allows other-bucket.
+        state: { vpce: normal, s3: highlighted }
+      - edge: vpce-s3
+        reverse: true
+        packet: 403 Access Denied
+        caption: S3 refuses the request with 403 Access Denied, and the answer comes back through the endpoint.
+        state: { s3: normal, vpce-s3: broken }
+      - edge: to-vpce
+        reverse: true
+        packet: 403 Access Denied
+        caption: The app gets 403 even though its role allows the call. An endpoint policy only narrows access; it never grants any.
+      - node: s3
+        caption: The other way round, a bucket policy with the aws:SourceVpce condition can refuse every request that doesn't use this endpoint.
+        state: { s3: highlighted }

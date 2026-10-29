@@ -1,0 +1,216 @@
+---
+title: 'Task 1.2: Design secure workloads and applications'
+description: 'VPC segmentation, security groups and network ACLs, NAT gateways and VPC endpoints, hybrid connections, CloudFront with OAC, WAF and Shield, secrets, and threat detection, with exam cues and common traps.'
+---
+
+import FlowDiagram from '../../../../components/FlowDiagram.astro';
+
+Task 1.1 decides **who** may call an API. This task is about **where traffic can go** and **what watches it**: which network paths exist to a workload, which filters sit on them, how an application keeps its secrets, and which services notice when something goes wrong. Most answers combine a private network, a few filters at different layers and a managed service that does the watching.
+
+Part of [Domain 1: Design Secure Architectures](/d1/).
+
+## Network segmentation: subnets, routes and gateways
+
+A **VPC** is a private network in one Region. It is split into **subnets**, and each subnet lives in exactly one Availability Zone. What makes a subnet public or private is not its name but its **route table**:
+
+| Subnet type | Route for internet traffic                           | Typical contents                                             |
+| ----------- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| Public      | `0.0.0.0/0` → internet gateway                       | Load balancers, NAT gateways, a bastion host if you have one |
+| Private     | `0.0.0.0/0` → a NAT gateway (outbound only), or none | App servers, containers, Lambda functions in the VPC         |
+| Isolated    | No route out of the VPC at all                       | Databases that only the app tier talks to                    |
+
+- Every route table has a `local` route for the VPC's own range, so all subnets can reach each other unless a filter stops them. The most specific route wins.
+- An **internet gateway** is attached to one VPC and lets resources with a public IP talk to the internet in both directions. A **NAT gateway** lets private resources start connections out, while nothing on the internet can start one in.
+- For IPv6, every address is public, so outbound-only access uses an **egress-only internet gateway** instead of a NAT gateway.
+- The usual design is a public and a private subnet in each of two or three Availability Zones, with the load balancer in the public subnets and everything else behind it.
+
+**Reaching private instances.** The classic answer is a **bastion host**: an instance in a public subnet whose security group allows SSH only from the company's IP range, and the private instances allow SSH only from the bastion's security group. Today there are two options with nothing exposed: **Session Manager** (part of AWS Systems Manager) gives a shell through the SSM agent, with no inbound port, no bastion and no SSH keys, and can log every session; **EC2 Instance Connect Endpoint** lets you SSH or RDP into instances that have no public IP.
+
+## Security groups and network ACLs
+
+Two firewalls filter traffic inside a VPC. A **security group** wraps each network interface (an instance, a load balancer, an RDS database, a Lambda function in the VPC). A **network ACL** sits on the edge of a subnet and applies to everything in it. A packet from the internet to an instance crosses both, and so does its reply.
+
+<FlowDiagram id="sg-vs-nacl" />
+
+|               | Security group                                    | Network ACL                                                       |
+| ------------- | ------------------------------------------------- | ----------------------------------------------------------------- |
+| Applies to    | The network interfaces it is attached to          | Every resource in the subnets it is associated with               |
+| Rules         | Allow only                                        | Allow and deny                                                    |
+| State         | Stateful: replies to allowed traffic always pass  | Stateless: replies are checked against the rules like any traffic |
+| Evaluation    | All rules together; any match allows              | In number order (1 to 32766), the first match decides             |
+| Default       | New group: no inbound rules, all outbound allowed | Default ACL allows everything; a new custom ACL denies everything |
+| Can reference | Other security groups, IP ranges, prefix lists    | IP ranges only                                                    |
+
+- **Referencing security groups** is the clean way to build tiers: the app servers allow port 8080 from the load balancer's security group, the database allows 3306 from the app servers' security group. No IP addresses to maintain when instances come and go. In a peered VPC this works only within the same Region.
+- **Ephemeral ports.** A client receives the reply on a temporary high port (Linux typically uses 32768-61000, Windows 49152-65535). Because an ACL is stateless, it needs an outbound rule for those ports, or replies are dropped. AWS suggests allowing 1024-65535.
+- **Blocking one address** or a small range (an attacker's IP) needs a deny rule, so between these two filters it is an ACL job. Give the deny a lower number than the allow it must beat. Whole countries are a job for CloudFront geographic restrictions or a WAF geo match rule.
+- A **timeout** usually means a security group or ACL dropped the packet. A "connection refused" means the packet arrived and nothing was listening.
+- **VPC Flow Logs** record accepted and rejected connections per VPC, subnet or network interface, to CloudWatch Logs, S3 or Data Firehose. An inbound ACCEPT followed by an outbound REJECT for the same connection points at a network ACL, because a security group would have let the reply out.
+
+## Private access to AWS services: NAT gateway or VPC endpoint
+
+Services such as S3, DynamoDB or SQS answer on public endpoints. A private instance can reach them through a NAT gateway, but a **VPC endpoint** keeps the traffic on the AWS network without any route to the internet, and is often cheaper.
+
+<FlowDiagram id="vpc-nat-vs-gateway-endpoint" />
+
+|             | NAT gateway                                                          | Gateway endpoint                                | Interface endpoint (PrivateLink)                                        |
+| ----------- | -------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------------------------------- |
+| Reaches     | Anything on the internet (IPv4)                                      | S3 and DynamoDB only                            | Most AWS services, plus your own or partners' services                  |
+| How         | Route `0.0.0.0/0` → a zonal NAT gateway that sits in a public subnet | Route from the service's prefix list → endpoint | A network interface with a private IP in your subnets; DNS points to it |
+| Filtering   | No security group; ACLs on its subnet                                | Endpoint policy                                 | Security group + endpoint policy                                        |
+| Usable from | Its VPC, or other VPCs through a transit gateway (not peering)       | Its VPC only, in the same Region                | Its VPC, and also from on premises, peered VPCs or a transit gateway    |
+| Cost        | Per hour + per GB processed                                          | Free                                            | Per hour per Availability Zone + per GB                                 |
+
+- A NAT gateway scales from 5 Gbps up to 100 Gbps and needs no patching, unlike a **NAT instance** (an EC2 instance you manage, with the source/destination check turned off).
+- A classic (zonal) NAT gateway is redundant only inside its Availability Zone. For high availability, put one in each zone and route each zone's private subnets to their own. A newer **regional NAT gateway** spans the zones by itself and needs no public subnet.
+- An **endpoint policy** limits what can be reached through the endpoint, for example only your own buckets, which helps stop data leaving to someone else's bucket. It never grants anything. The opposite direction is a bucket policy with the `aws:SourceVpce` condition, which accepts requests only through one endpoint.
+- A gateway endpoint can't be used by traffic that enters the VPC over VPN, Direct Connect, peering or a transit gateway. On-premises access to S3 over a private link needs an **interface** endpoint.
+- **PrivateLink** also works the other way: expose your own service, behind a Network Load Balancer, to many customer VPCs without peering and without opening it to the internet.
+
+## Connecting other networks
+
+| Option           | What it is                                                                      | Security notes                                                                       |
+| ---------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| VPC peering      | A private link between two VPCs, across accounts and Regions if needed          | Not transitive; CIDRs must not overlap; routes needed on both sides                  |
+| Transit Gateway  | A regional hub that routes between many VPCs, VPNs and Direct Connect           | Its route tables segment traffic (for example, dev can't reach prod); share with RAM |
+| Site-to-Site VPN | IPsec tunnels over the internet to a virtual private gateway or transit gateway | Encrypted; two tunnels per connection; ready in minutes                              |
+| Direct Connect   | A dedicated private connection through a Direct Connect location                | Private but **not encrypted** by default; takes weeks to set up                      |
+
+- To encrypt Direct Connect traffic, run a Site-to-Site VPN over it, or use MACsec on dedicated 10, 100 or 400 Gbps connections.
+- A peered VPC can't use its peer's internet gateway, NAT gateway, VPN or Direct Connect. Every pair that must talk needs its own peering, which is why many VPCs end up on a Transit Gateway.
+- A Site-to-Site VPN is also the cheap backup for a Direct Connect link.
+
+## Delivering through CloudFront
+
+Putting **CloudFront** in front of an application is a security decision as well as a performance one: the origin is hidden, viewers connect to edge locations that absorb attacks, and HTTPS, WAF and geo rules all apply at the edge. For an S3 origin, **origin access control (OAC)** keeps the bucket private while CloudFront reads from it.
+
+<FlowDiagram id="cloudfront-oac" />
+
+| Origin                             | How to keep it private                                                                                               |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| S3 bucket                          | OAC: the bucket policy allows only the CloudFront service for this distribution's ARN                                |
+| ALB, NLB or EC2 in private subnets | A **VPC origin**: CloudFront reaches them with no public endpoint at all                                             |
+| Public ALB or EC2                  | A security group that allows only CloudFront's managed prefix list (`com.amazonaws.global.cloudfront.origin-facing`) |
+
+- OAC is the successor of origin access identity (OAI), which is now legacy. Only OAC works with buckets encrypted with **SSE-KMS**; the KMS key policy must also let CloudFront use the key.
+- OAC needs the bucket's REST endpoint. An S3 **website endpoint** is a custom origin, and OAC can't protect it.
+- **Geographic restrictions** allow or block countries for the whole distribution, and blocked viewers get a 403. For finer rules (a country on one path only) use a WAF geo match rule.
+- With OAC the bucket can keep Block Public Access on. A bucket made public "so CloudFront can read it" is the wrong answer.
+
+## Filtering attacks: WAF, Shield and Network Firewall
+
+| Service              | Layer                                  | Protects                                                                                                  | Use it for                                                                       |
+| -------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| AWS WAF              | HTTP (layer 7)                         | CloudFront, ALB, API Gateway REST APIs, AppSync, Cognito user pools, App Runner, Verified Access, Amplify | SQL injection, cross-site scripting, bad IPs, rate limits, geo rules             |
+| AWS Shield Standard  | Network and transport (layers 3 and 4) | Every customer, automatically and for free                                                                | SYN floods, UDP reflection and other common DDoS attacks                         |
+| AWS Shield Advanced  | Layers 3, 4 and 7                      | EC2 Elastic IPs, load balancers, CloudFront, Global Accelerator, Route 53 hosted zones                    | Frequent or costly DDoS attacks: response team, cost protection                  |
+| AWS Network Firewall | Layers 3 to 7, whole VPC               | Traffic routed through its firewall endpoints in dedicated subnets                                        | Domain allow lists for outbound traffic, intrusion prevention, protocol blocking |
+| AWS Firewall Manager | (management)                           | WAF, Shield Advanced, security group, ACL and Network Firewall policies across an organization            | One set of rules applied to every account, including new ones                    |
+
+- **WAF** rules live in a web ACL. A **rate-based rule** blocks a source that sends too many requests (brute force on `/login`, simple HTTP floods); **managed rule groups** cover common exploits and known bad IPs; an IP set holds up to 10,000 addresses or ranges. A web ACL for CloudFront is global; for a regional resource such as an ALB, it must be in the resource's Region.
+- WAF can't attach to a **Network Load Balancer** or to an instance. For fixed IP addresses and WAF together, put **Global Accelerator** (static IPs) in front of an ALB with WAF.
+- **Shield Advanced** costs $3,000 a month with a one-year commitment, billed once per payer account. It adds 24/7 access to the Shield Response Team (with Business or Enterprise Support), credits for scaling charges caused by an attack, automatic layer 7 mitigation that writes WAF rules for you, and WAF at no extra charge for the protected resources.
+- **DDoS resilience by design:** serve from CloudFront and Route 53 at the edge, keep instances behind load balancers in Auto Scaling groups, and expose nothing that doesn't need to be public.
+
+## Application secrets and configuration
+
+An application should never carry long-lived credentials. Code on EC2, ECS or Lambda uses its **IAM role**, and anything else it needs (database passwords, API keys, connection strings) goes into a managed store, read at run time.
+
+|                    | AWS Secrets Manager                                                                 | SSM Parameter Store                                                              |
+| ------------------ | ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Built for          | Secrets                                                                             | Configuration, with secrets as `SecureString` parameters                         |
+| Encryption         | Always, with KMS                                                                    | Optional, with KMS for `SecureString`                                            |
+| Automatic rotation | Yes: built in for RDS, Aurora, Redshift and DocumentDB, or your own Lambda function | No; advanced parameters can only expire or send a notification                   |
+| Other features     | Replicate a secret to other Regions                                                 | Hierarchies such as `/my-app/prod/db-url`, versions, public AWS parameters       |
+| Cost               | $0.40 per secret per month + API calls                                              | Standard tier free (10,000 parameters, 4 KB); advanced tier paid (100,000, 8 KB) |
+
+Access to both is controlled with IAM, so a dev function can read only `/my-app/dev/*` and a prod function only `/my-app/prod/*`. When a value is encrypted with a customer managed KMS key, reading it also needs `kms:Decrypt` on that key.
+
+## Detecting threats and misconfigurations
+
+| Service          | What it looks at                                                                                                                                         | Finds                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Amazon GuardDuty | CloudTrail management events, VPC Flow Logs and DNS query logs (read on its own), plus optional sources such as S3 data events, EKS and runtime activity | Threats: compromised instances, crypto mining, unusual API calls, calls from known bad IPs |
+| Amazon Inspector | EC2 instances, container images in ECR, Lambda functions                                                                                                 | Software vulnerabilities (CVEs) and, for EC2, unintended network exposure                  |
+| Amazon Macie     | S3 buckets                                                                                                                                               | Sensitive data such as personal information, and buckets that are public or unencrypted    |
+| AWS Config       | The configuration of your resources over time                                                                                                            | Rules that report non-compliance, such as a security group open to SSH from anywhere       |
+| AWS Security Hub | Findings from the services above and others, plus security standard checks                                                                               | One place to see and prioritise findings across accounts                                   |
+
+- **GuardDuty**'s foundational sources need no agents and no setup: you don't have to turn on flow logs or DNS logging for it. Its findings go to **EventBridge**, so a rule can notify a team through SNS or run a Lambda function that isolates an instance.
+- **Config rules don't prevent anything.** They evaluate and report; an automatic remediation (an SSM Automation document) can then fix the resource, for example remove an open SSH rule.
+- **CloudWatch** closes the loop: a metric filter can count matching log lines (such as rejected SSH attempts in flow logs) and an alarm can notify through SNS. CloudTrail events reach EventBridge too, so a change such as `AuthorizeSecurityGroupIngress` can trigger an alert. Who made a change is a CloudTrail question, covered in [task 1.1, Auditing access](/d1/1-1-secure-access/#auditing-access).
+- **Security Hub** on the exam means the service that collects findings in one place. Its security standard checks are now a separate part called Security Hub CSPM.
+
+## If the exam says… → think…
+
+| If the exam says…                                                                          | Think…                                                                            |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------- |
+| Block one IP address or range from reaching a subnet                                       | A network ACL deny rule with a lower number than the allow                        |
+| Only the web tier may reach the database                                                   | The database's security group allows the port from the web tier's security group  |
+| Instances in private subnets need software updates from the internet                       | One NAT gateway per AZ, each placed in a public subnet, or a regional NAT gateway |
+| Private instances or Lambda functions read S3 or DynamoDB; lowest cost                     | A gateway VPC endpoint                                                            |
+| On-premises servers must reach S3 privately over Direct Connect or VPN                     | An S3 interface endpoint (PrivateLink)                                            |
+| Expose a service privately to many customer VPCs                                           | PrivateLink: a Network Load Balancer and an endpoint service                      |
+| Many VPCs and on premises must route to each other, with isolation between some            | Transit Gateway with separate route tables                                        |
+| Traffic over Direct Connect must be encrypted                                              | A Site-to-Site VPN over Direct Connect (or MACsec on a dedicated connection)      |
+| Admin access to instances with no open inbound ports and no bastion                        | Session Manager                                                                   |
+| S3 content served only through CloudFront                                                  | Origin access control with a bucket policy for the distribution                   |
+| A private ALB must be served through CloudFront without a public endpoint                  | A CloudFront VPC origin                                                           |
+| Block SQL injection, cross-site scripting or one abusive client by request rate            | AWS WAF with managed rules and a rate-based rule                                  |
+| Content must not be served in certain countries                                            | CloudFront geographic restrictions (or a WAF geo match rule)                      |
+| Static IP addresses for an application that needs WAF                                      | Global Accelerator in front of an ALB with WAF                                    |
+| Frequent large DDoS attacks, expert help and protection from scaling costs                 | Shield Advanced                                                                   |
+| Same WAF and security group rules on every account in the organization, including new ones | Firewall Manager                                                                  |
+| Allow outbound traffic only to approved domains, or inspect all VPC traffic for intrusions | AWS Network Firewall                                                              |
+| Store a database password and rotate it automatically                                      | Secrets Manager                                                                   |
+| Store configuration and a few secrets cheaply, in a hierarchy                              | SSM Parameter Store (`SecureString` for the secrets)                              |
+| Detect compromised instances or unusual API activity                                       | GuardDuty                                                                         |
+| Scan EC2, container images or Lambda functions for known vulnerabilities                   | Inspector                                                                         |
+| Find personal data in S3 buckets                                                           | Macie                                                                             |
+| Flag security groups that allow SSH from anywhere, and fix them automatically              | An AWS Config rule with an SSM Automation remediation                             |
+| Find why connections to an instance are rejected                                           | VPC Flow Logs                                                                     |
+
+## Common traps
+
+- **Security groups can't deny.** "Block this IP" is never a security group answer.
+- **Network ACLs are stateless.** An ACL that allows port 443 in but has no outbound rule for ephemeral ports breaks every connection, and the symptom is a timeout.
+- **ACL rule order matters.** A deny numbered after an allow that already matches does nothing.
+- **A new custom network ACL denies everything**; only the default ACL allows all.
+- **"Public subnet" means its route table points to an internet gateway.** A public IP alone doesn't make an instance reachable.
+- **A NAT gateway is outbound only.** It doesn't let the internet reach private instances, and outbound-only IPv6 traffic uses an egress-only internet gateway instead.
+- **A NAT gateway has no security group**, and a zonal one is a single point of failure for other zones that route through it.
+- **Gateway endpoints are free but limited**: S3 and DynamoDB only, and only for traffic that starts inside that VPC.
+- **NAT gateways charge for every GB**, even to S3 in the same Region. Heavy S3 or DynamoDB traffic from private subnets is a gateway endpoint question.
+- **VPC peering is not transitive**, and overlapping CIDRs can't be peered.
+- **Direct Connect is private, not encrypted.**
+- **OAI is legacy and can't read SSE-KMS objects.** Use OAC, and allow CloudFront in the KMS key policy.
+- **WAF doesn't work on a Network Load Balancer** or directly on EC2.
+- **Shield Standard is already on** for everyone at no charge; only Advanced is a purchase.
+- **Parameter Store doesn't rotate secrets.** Automatic rotation is Secrets Manager.
+- **GuardDuty, Inspector and Macie are easy to mix up:** threats from logs, vulnerabilities in software, sensitive data in S3.
+- **AWS Config detects; it doesn't block.** Prevention is an SCP, an IAM policy or a security group.
+
+## Links
+
+**AWS documentation**
+
+- [Control traffic with security groups](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-security-groups.html)
+- [Control subnet traffic with network access control lists](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-network-acls.html)
+- [NAT gateways](https://docs.aws.amazon.com/vpc/latest/userguide/vpc-nat-gateway.html)
+- [Gateway endpoints](https://docs.aws.amazon.com/vpc/latest/privatelink/gateway-endpoints.html) and [endpoint policies](https://docs.aws.amazon.com/vpc/latest/privatelink/vpc-endpoints-access.html)
+- [VPC Flow Logs](https://docs.aws.amazon.com/vpc/latest/userguide/flow-logs.html)
+- [Restricting access to an Amazon S3 origin (OAC)](https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html)
+- [Resources that AWS WAF can protect](https://docs.aws.amazon.com/waf/latest/developerguide/how-aws-waf-works-resources.html)
+- [AWS Shield Advanced overview](https://docs.aws.amazon.com/waf/latest/developerguide/ddos-advanced-summary.html)
+- [What is AWS Network Firewall?](https://docs.aws.amazon.com/network-firewall/latest/developerguide/what-is-aws-network-firewall.html)
+- [AWS Secrets Manager](https://docs.aws.amazon.com/secretsmanager/latest/userguide/intro.html) and [Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html)
+- [GuardDuty foundational data sources](https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_data-sources.html)
+
+**Practice**
+
+- [Practice tests](/practice/): in the **Practice** card, choose **Practice by: Task** and then **1.2** to drill only this task.
+
+**Labs**
+
+- [Lab 00: this website](https://github.com/DavidSanSan110/saa-c03-field-guide/tree/main/labs/00-site-hosting) deploys CloudFront with OAC in front of a private S3 bucket, the setup in the diagram above.
+- A lab comparing a NAT gateway with an S3 gateway endpoint is being built.

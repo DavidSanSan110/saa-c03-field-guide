@@ -1,0 +1,97 @@
+# CloudFront in front of a private S3 bucket with origin access control (OAC): a cache miss, a cache
+# hit, a direct request to the bucket, and what happens when the bucket policy loses the OAC statement.
+# Sources: https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/private-content-restricting-access-to-s3.html
+#          https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/HowCloudFrontWorks.html
+#          https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/Expiration.html
+#          https://docs.aws.amazon.com/AmazonS3/latest/userguide/access-control-block-public-access.html
+#          https://aws.amazon.com/s3/pricing/
+id: cloudfront-oac
+title: CloudFront with origin access control
+description: How CloudFront reads from a private S3 bucket with origin access control, and why direct requests to the bucket fail.
+groups:
+  - { id: region, label: eu-west-1, kind: region }
+nodes:
+  - { id: viewer, icon: user, label: Viewer, sub: Web browser }
+  - { id: cloudfront, icon: cloudfront, label: CloudFront, sub: Edge location }
+  - { id: bucket, icon: simple-storage-service, label: S3 bucket, sub: Private, group: region }
+edges:
+  - { id: request, from: viewer, to: cloudfront }
+  - { id: origin, from: cloudfront, to: bucket }
+  - { id: direct, from: viewer, to: bucket }
+scenarios:
+  - id: cache-miss
+    label: Cache miss
+    initial: { direct: hidden }
+    steps:
+      - edge: request
+        packet: GET /index.html
+        caption: The browser asks for /index.html. DNS sends it to a nearby CloudFront edge location, never to the bucket.
+      - node: cloudfront
+        caption: The edge has no fresh copy in its cache, a cache miss, so it must fetch the object from the origin, the S3 bucket.
+        state: { cloudfront: highlighted }
+      - edge: origin
+        packet: GetObject (SigV4)
+        caption: With origin access control, CloudFront signs the origin request with SigV4 as the CloudFront service for this distribution.
+        state: { cloudfront: normal }
+      - node: bucket
+        caption: The bucket policy allows s3:GetObject to cloudfront.amazonaws.com when AWS:SourceArn is this distribution's ARN.
+        state: { bucket: highlighted }
+      - edge: origin
+        reverse: true
+        packet: 200 OK
+        caption: S3 returns the object. The edge keeps a copy until its TTL expires, so nearby viewers won't need the bucket for a while.
+        state: { bucket: normal }
+      - edge: request
+        reverse: true
+        packet: 200 OK
+        caption: The browser gets the page. The bucket stayed private the whole time; only this distribution could read it.
+  - id: cache-hit
+    label: Cache hit
+    initial: { direct: hidden }
+    steps:
+      - edge: request
+        packet: GET /index.html
+        caption: A minute later, another viewer near the same edge location asks for /index.html.
+      - node: cloudfront
+        caption: The edge still has a fresh copy, a cache hit. It answers from its cache with lower latency and no request to S3.
+        state: { cloudfront: highlighted }
+        metrics: { Requests to S3: 0 }
+      - edge: request
+        reverse: true
+        packet: 200 OK
+        caption: Hits save S3 request charges too, and data from S3 to CloudFront has no transfer charge.
+        state: { cloudfront: normal }
+  - id: direct-bucket
+    label: Direct bucket URL
+    initial: { request: hidden, origin: hidden }
+    steps:
+      - edge: direct
+        packet: GET bucket URL
+        caption: Someone skips CloudFront and requests the object from the bucket's own S3 URL, with no credentials.
+      - node: bucket
+        caption: Block Public Access is on, and the bucket policy allows only the CloudFront service. Nothing allows an anonymous caller.
+        state: { bucket: highlighted }
+      - edge: direct
+        reverse: true
+        packet: 403 Access Denied
+        caption: S3 answers 403. Viewers can only reach the content through CloudFront, where HTTPS, WAF and geo restrictions apply.
+        state: { direct: broken, bucket: normal }
+  - id: oac-removed
+    label: OAC statement removed
+    initial: { direct: hidden }
+    steps:
+      - node: bucket
+        caption: Someone edits the bucket policy and deletes the statement that allowed the CloudFront service.
+        state: { bucket: highlighted }
+      - edge: request
+        packet: GET /about/
+        caption: A viewer asks for a page the edge hasn't cached yet.
+        state: { bucket: normal }
+      - edge: origin
+        packet: GetObject (SigV4)
+        caption: CloudFront still signs the request, but no policy allows it now. Signing proves who is calling; it doesn't grant access.
+        state: { origin: broken }
+      - edge: request
+        reverse: true
+        packet: 403 Access Denied
+        caption: S3 answers 403 and CloudFront passes it on. Pages already cached keep working until their TTL runs out.
