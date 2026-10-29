@@ -1,0 +1,11 @@
+---
+// Test page for the focusable content tables (spec 039), injected as /fixtures/tables/ when
+// FIELD_GUIDE_FIXTURES=1 or in dev. Never part of a production build.
+// The Markdown goes through the real pipeline; no `headings` prop, so the page has no table of contents.
+import StarlightPage from '../../apps/site/node_modules/@astrojs/starlight/dist/components/StarlightPage.astro';
+import { Content } from './tables.md';
+---
+
+<StarlightPage frontmatter={{ title: 'Table fixtures', pagefind: false }}>
+  <Content />
+</StarlightPage>
