@@ -19,7 +19,7 @@ export type HastNode = HastRoot | HastElement | HastText | { type: string; [key:
 
 export const TABLE_FALLBACK_NAME = 'Table';
 
-/** What to set on each `table` element of `root`, in document order. Never mutates `root`. */
+/** What to set on one `table` element: a tab stop and/or an accessible name (absent when already set). */
 export interface TablePlan {
   table: HastElement;
   tabIndex?: 0;
@@ -57,7 +57,9 @@ export function planTableLabels(root: HastRoot): TablePlan[] {
 
   const visit = (node: HastNode): void => {
     if (!isElement(node)) {
-      if (node.type === 'root') (node as HastRoot).children.forEach(visit);
+      // Any node with children (root, mdxJsxFlowElement...) can wrap a table.
+      const { children } = node as { children?: unknown };
+      if (Array.isArray(children)) (children as HastNode[]).forEach(visit);
       return;
     }
     if (HEADINGS.has(node.tagName)) {
