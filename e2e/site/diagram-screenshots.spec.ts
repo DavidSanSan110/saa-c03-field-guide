@@ -16,6 +16,9 @@ const DIAGRAMS_DIR = join(REPO_ROOT, 'diagrams');
 const REGISTRY = [
   { id: 's3-sse-kms-upload', page: '/d1/1-3-data-security/' },
   { id: 'alb-asg-az-failure', page: '/d2/2-2-high-availability/' },
+  { id: 'sg-vs-nacl', page: '/d1/1-2-secure-workloads/' },
+  { id: 'vpc-nat-vs-gateway-endpoint', page: '/d1/1-2-secure-workloads/' },
+  { id: 'cloudfront-oac', page: '/d1/1-2-secure-workloads/' },
 ] as const;
 
 const THEMES = ['light', 'dark'] as const;
