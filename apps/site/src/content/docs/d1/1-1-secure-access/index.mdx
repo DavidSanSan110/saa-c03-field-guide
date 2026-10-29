@@ -52,6 +52,8 @@ SCP = service control policy, RCP = resource control policy, both from AWS Organ
 
 When no resource-based policy is involved, the effective permissions are the **intersection** of the identity-based policy and every limit that applies (boundary, SCP, session policy). A boundary that allows only S3 plus an identity policy that allows only `iam:CreateUser` gives **nothing**, because no action is in both.
 
+<FlowDiagram id="scp-permission-evaluation" />
+
 Conditions make statements precise. The ones worth recognising:
 
 | Condition key                             | Typical use                                                                                   |
