@@ -83,7 +83,7 @@ function figureOf(page: Page): Locator {
 }
 
 async function wideCanvasMaxHeight(page: Page): Promise<number> {
-  const canvas = page.locator('.dl-canvas[data-layout="wide"]');
+  const canvas = figureOf(page).locator('.dl-canvas[data-layout="wide"]');
   const raw = await canvas.evaluate((element) => getComputedStyle(element).maxHeight);
   expect(raw, 'the computed max-height resolves to pixels').toMatch(/^\d+(\.\d+)?px$/);
   return parseFloat(raw);
