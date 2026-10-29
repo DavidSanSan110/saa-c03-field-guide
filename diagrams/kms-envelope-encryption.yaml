@@ -1,0 +1,101 @@
+# Envelope encryption with a KMS key, done by the application itself (client side): encrypt, decrypt,
+# and a caller that the key policy doesn't allow.
+# Sources: https://docs.aws.amazon.com/kms/latest/developerguide/kms-cryptography.html#enveloping
+#          https://docs.aws.amazon.com/kms/latest/APIReference/API_Encrypt.html
+#          https://docs.aws.amazon.com/kms/latest/APIReference/API_GenerateDataKey.html
+#          https://docs.aws.amazon.com/kms/latest/APIReference/API_Decrypt.html
+#          https://docs.aws.amazon.com/kms/latest/developerguide/key-policies.html
+#          https://docs.aws.amazon.com/encryption-sdk/latest/developer-guide/introduction.html
+id: kms-envelope-encryption
+title: KMS envelope encryption
+description: How an application encrypts and decrypts its own data with a data key from KMS, and what happens when the key policy doesn't allow the caller.
+groups:
+  - { id: region, label: eu-west-1, kind: region }
+nodes:
+  - { id: app, icon: ec2, label: App, sub: AWS Encryption SDK, group: region }
+  - { id: kms, icon: key-management-service, label: KMS key, sub: Customer managed, group: region }
+  - {
+      id: bucket,
+      icon: simple-storage-service,
+      label: S3 bucket,
+      sub: Stores ciphertext,
+      group: region,
+    }
+edges:
+  - { id: key, from: app, to: kms }
+  - { id: store, from: app, to: bucket }
+scenarios:
+  - id: encrypt
+    label: Encrypt
+    steps:
+      - node: app
+        caption: The app must protect a 5 MB file. KMS Encrypt accepts at most 4 KB, so the app uses envelope encryption.
+        state: { app: highlighted }
+      - edge: key
+        packet: GenerateDataKey
+        caption: The app asks KMS for a data key under its KMS key. Its IAM role needs kms:GenerateDataKey on that key.
+        state: { app: normal }
+        metrics: { KMS requests: '+1' }
+      - edge: key
+        reverse: true
+        packet: Data key ×2
+        caption: KMS returns a new 256-bit data key twice, in plaintext and encrypted under the KMS key. KMS keeps no copy.
+      - node: app
+        caption: The app encrypts the file locally with the plaintext data key, then deletes that key from memory.
+        state: { app: highlighted }
+      - edge: store
+        packet: PutObject
+        caption: It stores the ciphertext with the encrypted data key in the same object. S3 only ever sees data it can't read.
+        state: { app: normal }
+      - node: kms
+        caption: The KMS key never left KMS. Only the small data key crossed the network, however large the file was.
+        state: { kms: highlighted }
+  - id: decrypt
+    label: Decrypt
+    steps:
+      - edge: store
+        packet: GetObject
+        caption: Later, the app reads the object back from S3.
+      - edge: store
+        reverse: true
+        packet: Ciphertext + key
+        caption: S3 returns the ciphertext and the encrypted data key stored with it. Neither is any use without KMS.
+      - edge: key
+        packet: Decrypt
+        caption: The app sends only the encrypted data key to KMS Decrypt. The key ID is inside it, so the app needn't name it.
+        metrics: { KMS requests: '+1' }
+      - node: kms
+        caption: KMS checks the key policy and the role's IAM policy, decrypts the data key, and CloudTrail logs the call.
+        state: { kms: highlighted }
+      - edge: key
+        reverse: true
+        packet: Plaintext data key
+        caption: KMS returns the plaintext data key over TLS.
+        state: { kms: normal }
+      - node: app
+        caption: The app decrypts the file locally with that key and deletes the plaintext key again.
+        state: { app: highlighted }
+  - id: denied
+    label: Key policy denies the caller
+    steps:
+      - edge: store
+        packet: GetObject
+        caption: The app now runs under a new IAM role. It may read the bucket, but the KMS key policy doesn't allow it.
+      - edge: store
+        reverse: true
+        packet: Ciphertext + key
+        caption: S3 returns the object. Permission to read the bucket is all that took.
+      - edge: key
+        packet: Decrypt
+        caption: The app sends the encrypted data key to KMS Decrypt with the new role's credentials.
+      - node: kms
+        caption: Nothing in the key policy allows this role, and an IAM policy alone can't grant access to a KMS key.
+        state: { kms: highlighted }
+      - edge: key
+        reverse: true
+        packet: AccessDeniedException
+        caption: KMS refuses, and CloudTrail logs the failed attempt. The app holds the data but can't read any of it.
+        state: { key: broken, kms: normal }
+      - node: bucket
+        caption: That is the point of a key policy. Whoever controls the key controls the data, wherever copies of it end up.
+        state: { bucket: highlighted }
