@@ -20,6 +20,8 @@ const REGISTRY = [
   { id: 'vpc-nat-vs-gateway-endpoint', page: '/d1/1-2-secure-workloads/' },
   { id: 'cloudfront-oac', page: '/d1/1-2-secure-workloads/' },
   { id: 'kms-envelope-encryption', page: '/d1/1-3-data-security/' },
+  { id: 'iam-cross-account-assume-role', page: '/d1/1-1-secure-access/' },
+  { id: 'scp-permission-evaluation', page: '/d1/1-1-secure-access/' },
 ] as const;
 
 const THEMES = ['light', 'dark'] as const;
