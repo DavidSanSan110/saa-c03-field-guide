@@ -44,8 +44,9 @@ locals {
   }
 
   # The caller's own side of the handshake: it may assume the reports reader, and it has an
-  # iam:CreateUser allow on purpose. The boundary denies CreateUser, and a deny always wins, so the
-  # effective permission is a deny. It has no S3 action: it cannot read the bucket.
+  # iam:CreateRole allow on purpose, for a role outside /lab/. The boundary denies role writes
+  # outside /lab/ and role changes without itself, and a deny always wins, so the effective
+  # permission is a deny. It has no S3 action: it cannot read the bucket.
   caller_policy = {
     Version = "2012-10-17"
     Statement = [
@@ -56,10 +57,10 @@ locals {
         Resource = local.target_role_arn
       },
       {
-        Sid      = "CreateUserDeniedByBoundary"
+        Sid      = "CreateRoleDeniedByBoundary"
         Effect   = "Allow"
-        Action   = "iam:CreateUser"
-        Resource = "arn:aws:iam::${local.account_id}:user/lab01-*"
+        Action   = "iam:CreateRole"
+        Resource = "arn:aws:iam::${local.account_id}:role/lab01-*"
       },
     ]
   }
@@ -87,7 +88,7 @@ resource "aws_iam_role" "caller" {
   #checkov:skip=CKV_AWS_61:The trust policy names this account's root on purpose, to show that trusting a root delegates the choice to the account's identity policies. The caller's inline policy decides who may assume it; the policy has no condition because none is needed within one account.
   name        = "fg-lab01-caller"
   path        = "/lab/"
-  description = "Lab 01: may assume the reports reader and nothing else; its CreateUser allow is cancelled by the permissions boundary."
+  description = "Lab 01: may assume the reports reader and nothing else; its CreateRole allow is cancelled by the permissions boundary."
 
   assume_role_policy   = jsonencode(local.caller_trust)
   permissions_boundary = local.boundary_arn
@@ -97,9 +98,6 @@ resource "aws_iam_role" "caller" {
 }
 
 resource "aws_iam_role_policy" "caller" {
-  #checkov:skip=CKV_AWS_289:iam:CreateUser is allowed on purpose, only on user/lab01-*, to show the permissions boundary cancelling it. fg-workload-boundary denies iam:CreateUser everywhere, so the user can never be created.
-  #checkov:skip=CKV_AWS_290:iam:CreateUser is a write action allowed on purpose, only on user/lab01-*; the permissions boundary denies it, so nothing can be written.
-  #checkov:skip=CKV_AWS_355:No statement uses a wildcard resource; the only wildcard is the lab01- prefix in the user ARN.
   name   = "assume-reports-reader"
   role   = aws_iam_role.caller.name
   policy = jsonencode(local.caller_policy)

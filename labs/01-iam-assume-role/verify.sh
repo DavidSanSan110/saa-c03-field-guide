@@ -9,9 +9,9 @@
 #     the external ID;
 #   - the reports bucket: Block Public Access is on;
 #   - the IAM policy simulator (SimulatePrincipalPolicy): the caller may assume the reports reader;
-#     iam:CreateUser is an explicit deny because of the permissions boundary, and an allow once the
-#     boundary is replaced by "allow everything" (so the deny comes from the boundary); the caller
-#     cannot list the bucket and the reports reader can list and read it;
+#     iam:CreateRole (outside /lab/) is an explicit deny because of the permissions boundary, and an
+#     allow once the boundary is replaced by "allow everything" (so the deny comes from the
+#     boundary); the caller cannot list the bucket and the reports reader can list and read it;
 #   - when trusted_account_id is set: Access Analyzer reports the reports reader as externally
 #     shared with that account;
 #   - live checks, only with VERIFY_ASSUME=1: really assume the roles, with and without the external
@@ -20,7 +20,7 @@
 # The simulator does not read trust policies or bucket policies, which is why the trust policies
 # are read statically (checks 3 to 5) and the external ID only gets a live test.
 #
-# It never calls iam:CreateUser (a broken boundary would create a user): the simulator answers
+# It never calls iam:CreateRole (a broken boundary would create a role): the simulator answers
 # instead. Without VERIFY_ASSUME=1 it only reads: `aws ... get-...`, `simulate-principal-policy`,
 # `accessanalyzer list-...`, `sts get-caller-identity` and `terraform output -raw`. It never prints
 # a bucket name, an ARN or an account ID, so its output is safe in a public CI log.
@@ -123,7 +123,7 @@ ACCOUNT=$OUT
 
 ROOT_ARN="arn:aws:iam::$ACCOUNT:root"
 BOUNDARY_ARN="arn:aws:iam::$ACCOUNT:policy/fg-workload-boundary"
-PROBE_ARN="arn:aws:iam::$ACCOUNT:user/lab01-verify-probe"
+PROBE_ARN="arn:aws:iam::$ACCOUNT:role/lab01-verify-probe"
 BUCKET_ARN="arn:aws:s3:::$BUCKET"
 
 # A boundary that allows everything: with it the simulator shows what the identity policy alone says.
@@ -330,10 +330,10 @@ check_target_trust
 check_target_principals
 check_bucket_private
 check_simulation caller-may-assume allowed "$CALLER" sts:AssumeRole "$TARGET"
-check_simulation boundary-denies-create-user explicitDeny "$CALLER" iam:CreateUser "$PROBE_ARN"
+check_simulation boundary-denies-create-role explicitDeny "$CALLER" iam:CreateRole "$PROBE_ARN"
 # Same call with the boundary replaced: the identity policy alone allows it, so the deny above is
 # the boundary's doing.
-check_simulation identity-allows-create-user allowed "$CALLER" iam:CreateUser "$PROBE_ARN" \
+check_simulation identity-allows-create-role allowed "$CALLER" iam:CreateRole "$PROBE_ARN" \
   --permissions-boundary-policy-input-list "$NOBOUNDARY"
 check_simulation caller-cannot-list-reports implicitDeny "$CALLER" s3:ListBucket "$BUCKET_ARN"
 check_simulation target-may-list-reports allowed "$TARGET" s3:ListBucket "$BUCKET_ARN"

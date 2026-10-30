@@ -68,7 +68,7 @@ In a stack that CI manages, dispatch `infra.yml` with the action `apply` instead
 ### What to do
 
 Remove the `AssumeReportsReader` statement from the caller's inline policy, so only the
-`iam:CreateUser` statement stays. Save this as `caller-without-assume.json` (delete it afterwards
+`iam:CreateRole` statement stays. Save this as `caller-without-assume.json` (delete it afterwards
 and never commit it):
 
 ```bash
@@ -78,10 +78,10 @@ cat > caller-without-assume.json <<EOF
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "CreateUserDeniedByBoundary",
+      "Sid": "CreateRoleDeniedByBoundary",
       "Effect": "Allow",
-      "Action": "iam:CreateUser",
-      "Resource": "arn:aws:iam::$ACCOUNT:user/lab01-*"
+      "Action": "iam:CreateRole",
+      "Resource": "arn:aws:iam::$ACCOUNT:role/lab01-*"
     }
   ]
 }
@@ -149,10 +149,12 @@ Nothing to put back: you changed nothing.
 
 ### What to do
 
-The caller's inline policy allows `iam:CreateUser` on `user/lab01-*`. Try it:
+The caller's inline policy allows `iam:CreateRole` on `role/lab01-*`, a role in the default path
+`/`, outside `/lab/`. Try it with a minimal trust policy for EC2:
 
 ```bash
-as_caller aws iam create-user --user-name lab01-demo
+as_caller aws iam create-role --role-name lab01-probe \
+  --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 ```
 
 ### What you see
@@ -164,11 +166,13 @@ the policy simulator: `explicitDeny` for the caller, and `allowed` once the boun
 
 Effective permissions are the **intersection** of the identity policy and the permissions boundary.
 A boundary caps; it never grants. An explicit deny in the boundary wins over any allow, so the
-caller's allow counts for nothing. The boundary here always denies creating IAM users, access keys and
-console passwords, which also stops a lab role from escalating its own privileges.
+caller's allow counts for nothing. The boundary here denies every role write outside `/lab/` and
+denies creating a role without the boundary itself, so a lab role cannot mint a new role with more
+power than its own. That is the classic use of a boundary: delegating role creation without
+privilege escalation.
 
 ### Put it back
 
-Nothing to put back: you changed nothing. If the user was ever created (so the boundary is broken),
-delete it with your admin session: `aws iam delete-user --user-name lab01-demo`. Then find out why
+Nothing to put back: you changed nothing. If the role was ever created (so the boundary is broken),
+delete it with your admin session: `aws iam delete-role --role-name lab01-probe`. Then find out why
 the boundary did not apply.

@@ -572,12 +572,16 @@ describe('AC-26: break-it.md', () => {
     }
   });
 
-  test.each(['ec2.amazonaws.com', 'AssumeReportsReader', 'create-user'])(
+  test.each(['ec2.amazonaws.com', 'AssumeReportsReader', 'create-role'])(
     'AC-26: it mentions %s',
     (needle) => {
       expect(breakIt()).toContain(needle);
     },
   );
+
+  test('AC-26: it does not mention create-user', () => {
+    expect(breakIt()).not.toContain('create-user');
+  });
 });
 
 // =================================================================================================
@@ -712,5 +716,109 @@ describe('AC-33: README links and the Observe copy step', () => {
   test('AC-33: Observe still says the list fails with AccessDenied', () => {
     const observe = need(sectionOf(readLabFile('README.md'), 2, 'Observe'), '## Observe');
     expect(observe).toContain('AccessDenied');
+  });
+});
+
+// =================================================================================================
+// Fix after the first apply: AC-34 (the demo action can't be shadowed by the Organization SCP)
+// =================================================================================================
+
+/** The `{ ... }` block that encloses `index`: the innermost one, found by walking backwards. */
+function enclosingBlock(text: string, index: number): string {
+  let depth = 0;
+  let open = -1;
+  for (let i = index - 1; i >= 0; i -= 1) {
+    const c = text.charAt(i);
+    if (c === '}') depth += 1;
+    if (c === '{') {
+      if (depth === 0) {
+        open = i;
+        break;
+      }
+      depth -= 1;
+    }
+  }
+  if (open === -1) throw new Error('no enclosing block');
+  return text.slice(open, closeBrace(text, open));
+}
+
+/** The quoted values of the `Action = ...` attribute of a statement (`NotAction` is not read). */
+function actionsOf(statement: string): string[] {
+  const match = /(?<![A-Za-z_])Action\s*=\s*(\[[^\]]*\]|"[^"]*")/.exec(statement);
+  if (!match) return [];
+  return [...(match[1] ?? '').matchAll(/"([^"]*)"/g)].map((quoted) => quoted[1] ?? '');
+}
+
+function repoText(...segments: string[]): string {
+  const path = join(REPO_ROOT, ...segments);
+  if (!existsSync(path)) throw new Error(`missing file: ${segments.join('/')}`);
+  return stripHclComments(readFileSync(path, 'utf8'));
+}
+
+/** The Action list of the statement of the caller policy that has the given Sid (roles.tf). */
+function callerStatementActions(sid: string): string[] {
+  const text = repoText(...LAB.split('/'), 'roles.tf');
+  const at = text.search(new RegExp(`\\bSid\\s*=\\s*"${sid}"`));
+  if (at === -1) throw new Error(`no statement with Sid "${sid}" in ${LAB}/roles.tf`);
+  const actions = actionsOf(enclosingBlock(text, at));
+  if (actions.length === 0) throw new Error(`statement "${sid}" has no Action`);
+  return actions;
+}
+
+/** An IAM action pattern (`iam:Create*`, `*`) as a case-insensitive regular expression. */
+function actionPattern(pattern: string): RegExp {
+  const escaped = pattern
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*/g, '.*')
+    .replace(/\?/g, '.');
+  return new RegExp(`^${escaped}$`, 'i');
+}
+
+describe('AC-34: the boundary demo action is not shadowed by the SCP', () => {
+  const SID = 'CreateRoleDeniedByBoundary';
+
+  test('AC-34: the demo statement allows iam:CreateRole in roles.tf', () => {
+    expect(callerStatementActions(SID)).toEqual(['iam:CreateRole']);
+  });
+
+  test('AC-34: no Deny statement of the Organization SCP names the demo action', () => {
+    const demo = callerStatementActions(SID);
+    const scp = repoText('bootstrap', 'management', 'scp.tf');
+    const denies = [...scp.matchAll(/\bEffect\s*=\s*"Deny"/g)].map((match) =>
+      enclosingBlock(scp, match.index),
+    );
+    // the SCP has several Deny statements; an empty result would mean the reader found nothing
+    expect(denies.length).toBeGreaterThanOrEqual(3);
+    const denied = denies.flatMap(actionsOf);
+    expect(denied.length).toBeGreaterThan(0);
+    for (const action of demo) {
+      const shadows = denied.filter((pattern) => actionPattern(pattern).test(action));
+      expect(shadows, `${action} is denied by the SCP through`).toEqual([]);
+    }
+  });
+
+  test('AC-34: deny_role_writes_outside_lab_path in the boundary lists the demo action', () => {
+    const demo = callerStatementActions(SID);
+    const boundary = repoText('bootstrap', 'workload', 'boundary.tf');
+    const bodies = blockBodies(boundary, /\bdeny_role_writes_outside_lab_path\s*=\s*\{/);
+    expect(bodies).toHaveLength(1);
+    const listed = actionsOf(bodies[0] ?? '');
+    expect(listed.length).toBeGreaterThan(0);
+    for (const action of demo) expect(listed, action).toContain(action);
+  });
+
+  test('AC-34: the lab files do not mention iam:CreateUser, create-user or user/lab01', () => {
+    const files = [
+      ...loadTerraformFiles().map((file) => ({ name: file.name, text: file.raw })),
+      ...['README.md', 'break-it.md', 'verify.sh'].map((name) => ({
+        name,
+        text: readLabFile(name),
+      })),
+    ];
+    expect(files.length).toBeGreaterThanOrEqual(4);
+    for (const needle of ['iam:CreateUser', 'create-user', 'user/lab01']) {
+      const found = files.filter((file) => file.text.includes(needle)).map((file) => file.name);
+      expect(found, `files containing ${needle}`).toEqual([]);
+    }
   });
 });
