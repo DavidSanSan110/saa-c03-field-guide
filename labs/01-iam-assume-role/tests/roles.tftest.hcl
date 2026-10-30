@@ -130,7 +130,7 @@ run "ac7_target_trust_policy_defaults" {
   }
 }
 
-# AC-10: the caller inline policy allows the assume call on the target and iam:CreateUser, nothing else
+# AC-10: the caller inline policy allows the assume call on the target and iam:CreateRole, nothing else
 run "ac10_caller_inline_policy" {
   command = plan
 
@@ -163,13 +163,13 @@ run "ac10_caller_inline_policy" {
         Resource = "arn:aws:iam::111111111111:role/lab/fg-lab01-reports-reader"
       }),
       jsonencode({
-        Sid      = "CreateUserDeniedByBoundary"
+        Sid      = "CreateRoleDeniedByBoundary"
         Effect   = "Allow"
-        Action   = "iam:CreateUser"
-        Resource = "arn:aws:iam::111111111111:user/lab01-*"
+        Action   = "iam:CreateRole"
+        Resource = "arn:aws:iam::111111111111:role/lab01-*"
       }),
     ])
-    error_message = "the statements must be exactly AssumeReportsReader (Allow sts:AssumeRole on the target role ARN) and CreateUserDeniedByBoundary (Allow iam:CreateUser on arn:aws:iam::<account_id>:user/lab01-*)"
+    error_message = "the statements must be exactly AssumeReportsReader (Allow sts:AssumeRole on the target role ARN) and CreateRoleDeniedByBoundary (Allow iam:CreateRole on arn:aws:iam::<account_id>:role/lab01-*)"
   }
 
   assert {

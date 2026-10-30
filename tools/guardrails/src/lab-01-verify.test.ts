@@ -45,7 +45,7 @@ const OTHER_ROOT = `arn:aws:iam::${OTHER}:root`;
 const CALLER = `arn:aws:iam::${ACCT}:role/lab/fg-lab01-caller`;
 const TARGET = `arn:aws:iam::${ACCT}:role/lab/fg-lab01-reports-reader`;
 const BOUNDARY = `arn:aws:iam::${ACCT}:policy/fg-workload-boundary`;
-const PROBE = `arn:aws:iam::${ACCT}:user/lab01-verify-probe`;
+const PROBE = `arn:aws:iam::${ACCT}:role/lab01-verify-probe`;
 const ANALYZER = `arn:aws:access-analyzer:eu-west-1:${ACCT}:analyzer/account-analyzer`;
 const NOBOUNDARY =
   '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"*","Resource":"*"}]}';
@@ -114,8 +114,8 @@ const ORDER = [
   'target-principals',
   'reports-bucket-private',
   'caller-may-assume',
-  'boundary-denies-create-user',
-  'identity-allows-create-user',
+  'boundary-denies-create-role',
+  'identity-allows-create-role',
   'caller-cannot-list-reports',
   'target-may-list-reports',
   'target-may-read-reports',
@@ -275,13 +275,13 @@ function awsCalls(world: World): AwsCall[] {
       pass: ok('allowed'),
     },
     {
-      key: 'boundary-denies-create-user',
-      argv: simulate(CALLER, 'iam:CreateUser', PROBE),
+      key: 'boundary-denies-create-role',
+      argv: simulate(CALLER, 'iam:CreateRole', PROBE),
       pass: ok('explicitDeny'),
     },
     {
-      key: 'identity-allows-create-user',
-      argv: simulate(CALLER, 'iam:CreateUser', PROBE, [
+      key: 'identity-allows-create-role',
+      argv: simulate(CALLER, 'iam:CreateRole', PROBE, [
         '--permissions-boundary-policy-input-list',
         NOBOUNDARY,
       ]),
@@ -1055,9 +1055,9 @@ const AC18_CASES: Case[] = [
   wrong('one False', 'reports-bucket-private', 'True\tTrue\tFalse\tTrue'),
   wrong('the first False', 'reports-bucket-private', 'False\tTrue\tTrue\tTrue'),
   wrong('an implicit deny', 'caller-may-assume', 'implicitDeny'),
-  wrong('an allowed decision', 'boundary-denies-create-user', 'allowed'),
-  wrong('an implicit deny', 'boundary-denies-create-user', 'implicitDeny'),
-  wrong('an explicit deny', 'identity-allows-create-user', 'explicitDeny'),
+  wrong('an allowed decision', 'boundary-denies-create-role', 'allowed'),
+  wrong('an implicit deny', 'boundary-denies-create-role', 'implicitDeny'),
+  wrong('an explicit deny', 'identity-allows-create-role', 'explicitDeny'),
   wrong('an allowed decision', 'caller-cannot-list-reports', 'allowed'),
   wrong('an implicit deny', 'target-may-list-reports', 'implicitDeny'),
   wrong('an implicit deny', 'target-may-read-reports', 'implicitDeny'),
@@ -1128,15 +1128,15 @@ describe('verify.sh: the arguments of every aws call', () => {
   });
 
   test.concurrent(
-    'AC-19: identity-allows-create-user passes NOBOUNDARY as one argument, byte for byte',
+    'AC-19: identity-allows-create-role passes NOBOUNDARY as one argument, byte for byte',
     async () => {
       const result = await runVerify(healthy(), { label: 'AC-19 noboundary' });
       const run = result.aws.find(
         (candidate) =>
-          candidate.argv.includes('iam:CreateUser') &&
+          candidate.argv.includes('iam:CreateRole') &&
           candidate.argv.includes('--permissions-boundary-policy-input-list'),
       );
-      expect(run, 'no CreateUser simulation with a boundary input').toBeDefined();
+      expect(run, 'no CreateRole simulation with a boundary input').toBeDefined();
       const argv = run?.argv ?? [];
       expect(argv[argv.indexOf('--permissions-boundary-policy-input-list') + 1]).toBe(NOBOUNDARY);
     },
