@@ -3,7 +3,7 @@
 ## What you build
 
 Task 1.1 of the exam guide, secure access to AWS resources, in one account and for $0. Read the
-[guide page for task 1.1](https://saa-c03.tech-leads.lol/d1/1-1-secure-access/) first. This lab
+[guide page for task 1.1](../../apps/site/src/content/docs/d1/1-1-secure-access/) first. This lab
 builds the setup of its `iam-cross-account-assume-role` diagram, plus a permissions boundary.
 
 - **A caller role** (`fg-lab01-caller`). It may assume the reports reader, and nothing else. It also
@@ -129,7 +129,7 @@ these steps, so the shell variables stay.
 
    ```bash
    read -r CK CS CT < <(aws sts assume-role --role-arn "$CALLER_ARN" --role-session-name lab01-caller \
-     --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+     --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text | tr -d '\r')
    as_caller() { env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE AWS_ACCESS_KEY_ID="$CK" \
      AWS_SECRET_ACCESS_KEY="$CS" AWS_SESSION_TOKEN="$CT" "$@"; }
    as_caller aws sts get-caller-identity
@@ -137,8 +137,10 @@ these steps, so the shell variables stay.
 
    The `Arn` ends in `assumed-role/fg-lab01-caller/lab01-caller`.
 
-3. Try to list and read the reports as the caller. Both are `AccessDenied`: the caller's policy has
-   no S3 action.
+3. Try to list and read the reports as the caller. Both are refused, because the caller's policy has
+   no S3 action. The list fails with `AccessDenied`. The copy fails with `403` (`Forbidden`): its
+   first call is a `HEAD` request, and a `HEAD` response has no error body, so the CLI can only show
+   the status.
 
    ```bash
    as_caller aws s3 ls "s3://$BUCKET"
@@ -155,7 +157,7 @@ these steps, so the shell variables stay.
      --external-id "$EXTERNAL_ID" --duration-seconds 7200
    read -r RK RS RT < <(as_caller aws sts assume-role --role-arn "$TARGET_ARN" \
      --role-session-name lab01-reader --external-id "$EXTERNAL_ID" \
-     --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text)
+     --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text | tr -d '\r')
    as_reader() { env -u AWS_PROFILE -u AWS_DEFAULT_PROFILE AWS_ACCESS_KEY_ID="$RK" \
      AWS_SECRET_ACCESS_KEY="$RS" AWS_SESSION_TOKEN="$RT" "$@"; }
    ```

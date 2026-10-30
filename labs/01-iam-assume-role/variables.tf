@@ -2,6 +2,7 @@ variable "external_id" {
   description = "External ID the reports reader role demands from every caller (the confused deputy defence). It is not a secret: it travels in the AssumeRole call and shows in the run log. 2 to 1224 characters from the set A-Z a-z 0-9 _ + = , . @ : / -."
   type        = string
   default     = "field-guide-lab-01"
+  nullable    = false
 
   validation {
     # STS accepts 2 to 1224 characters matching [\w+=,.@:\/-]*.

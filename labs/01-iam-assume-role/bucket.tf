@@ -71,6 +71,7 @@ resource "aws_s3_bucket_policy" "reports" {
   bucket = local.reports_bucket_name
   policy = jsonencode(local.reports_bucket_policy)
 
-  # S3 can abort a policy change that races the public access block.
-  depends_on = [aws_s3_bucket_public_access_block.reports]
+  # S3 can abort a policy change that races the public access block. The bucket is listed too, so
+  # the order does not rest on the other resource alone.
+  depends_on = [aws_s3_bucket.reports, aws_s3_bucket_public_access_block.reports]
 }

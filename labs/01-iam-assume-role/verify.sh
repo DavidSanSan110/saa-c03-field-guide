@@ -44,7 +44,10 @@
 # profile.
 #
 # Until the usage and tool checks are done, only shell builtins run (nothing to find on PATH).
+# set +x follows at once: xtrace (bash -x, or SHELLOPTS=xtrace in the environment) would print
+# account IDs, ARNs and the temporary keys of the live checks.
 set -euo pipefail
+set +x
 
 if [ "$#" -gt 0 ]; then
   printf '%s\n' 'usage: bash verify.sh (no arguments; run it from the stack directory)' >&2
