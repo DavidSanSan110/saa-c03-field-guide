@@ -33,7 +33,7 @@ that needs the key permission, and the CloudTrail trail of the key use.
 
 The role carries `fg-workload-boundary`, the permissions boundary from `bootstrap/workload`, and
 lives under the path `/lab/`. Neither that boundary nor the organization's service control policy
-names a `kms:` action or an S3 action on these buckets, so every deny in this lab comes from the
+names a `kms:` action or an S3 action on these buckets in `eu-west-1`, so every deny in this lab comes from the
 bucket policy, the client's policy or KMS.
 
 Terraform puts no object in the bucket: the CI role that plans this stack may not read objects, so a
@@ -213,7 +213,7 @@ Use one terminal for all of these steps, so the shell variables stay. The lab li
 
     ```bash
     aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=GenerateDataKey \
-      --max-results 20 --query 'Events[].CloudTrailEvent' --output text | tr -d '\r' | grep -o '"aws:s3:arn":"[^"]*"'
+      --max-items 20 --query 'Events[].CloudTrailEvent' --output text | tr -d '\r' | grep -o '"aws:s3:arn":"[^"]*"'
     ```
 
 11. Read the server access logs. Delivery is best effort and can take **a few hours**. When logs

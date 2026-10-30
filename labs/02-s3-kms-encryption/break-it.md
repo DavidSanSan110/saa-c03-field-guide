@@ -13,7 +13,8 @@ again if it expires.
 guardrail that keeps lab roles inside the path `/lab/` and away from IAM users and access keys.
 Nothing in this lab needs it changed.
 
-The second and the third break are drift: `terraform plan` shows it and `terraform apply` undoes it.
+The second break is drift: `terraform plan` shows it and `terraform apply` undoes it. The third is
+an edit to the code: undo the edit, then apply.
 
 ## Upload with SSE-S3
 
@@ -110,8 +111,6 @@ rm client-without-key.json
 terraform apply
 ```
 
-In a stack that CI manages, dispatch `infra.yml` with the action `apply` instead.
-
 ## Turn off the Bucket Key
 
 ### What to do
@@ -127,7 +126,7 @@ Wait a few minutes, then read the key use in CloudTrail, as in step 10 of Observ
 
 ```bash
 aws cloudtrail lookup-events --lookup-attributes AttributeKey=EventName,AttributeValue=GenerateDataKey \
-  --max-results 20 --query 'Events[].CloudTrailEvent' --output text | tr -d '\r' | grep -o '"aws:s3:arn":"[^"]*"'
+  --max-items 20 --query 'Events[].CloudTrailEvent' --output text | tr -d '\r' | grep -o '"aws:s3:arn":"[^"]*"'
 ```
 
 ### What you see
@@ -155,5 +154,3 @@ Set `bucket_key_enabled = true` again in `data_bucket.tf` and run:
 ```bash
 terraform apply
 ```
-
-In a stack that CI manages, dispatch `infra.yml` with the action `apply` instead.
