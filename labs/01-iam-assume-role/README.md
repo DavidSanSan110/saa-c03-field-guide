@@ -7,7 +7,7 @@ Task 1.1 of the exam guide, secure access to AWS resources, in one account and f
 builds the setup of its `iam-cross-account-assume-role` diagram, plus a permissions boundary.
 
 - **A caller role** (`fg-lab01-caller`). It may assume the reports reader, and nothing else. It also
-  has an allow for `iam:CreateUser`, which the permissions boundary cancels.
+  has an allow for `iam:CreateRole` outside the `/lab/` path, which the permissions boundary cancels.
 - **A reports reader role** (`fg-lab01-reports-reader`). Its trust policy names the **account root**
   and requires an **external ID**. It can list and read one private bucket.
 - **A reports bucket**, private, encrypted, with no ACLs and Block Public Access on. Only the reports
@@ -16,8 +16,9 @@ builds the setup of its `iam-cross-account-assume-role` diagram, plus a permissi
   would break the plan.
 
 Both roles carry `fg-workload-boundary`, the permissions boundary from `bootstrap/workload`, and live
-under the path `/lab/`. The boundary always denies creating IAM users, access keys and console
-passwords, so the caller's `iam:CreateUser` allow can never work.
+under the path `/lab/`. The boundary denies every role write outside that path, and denies creating
+a role without the boundary itself, so the caller's `iam:CreateRole` allow can never work. This is
+the classic use of a boundary: roles created by a delegated admin cannot escalate privileges.
 
 The diagram's accounts A and B are the **same account** here, built as if they were two. The trust
 policy names the account root, so the choice of who may assume the role moves to the identity
@@ -32,7 +33,7 @@ flowchart LR
   sts -.->|"3. temporary credentials"| caller
   reader -->|"4. s3:ListBucket, s3:GetObject"| bucket[("Reports bucket<br/>private S3")]
   caller -.->|"no S3 access: denied"| bucket
-  boundary{{"Permissions boundary<br/>fg-workload-boundary"}} -.->|"caps the caller: iam:CreateUser denied"| caller
+  boundary{{"Permissions boundary<br/>fg-workload-boundary"}} -.->|"caps the caller: iam:CreateRole denied"| caller
   boundary -.->|"caps the reader"| reader
 ```
 
@@ -178,17 +179,24 @@ these steps, so the shell variables stay.
    as_reader aws s3 cp "s3://$BUCKET/report.txt" -
    ```
 
-7. Ask the caller to create an IAM user. The caller's policy allows it, but the answer is
-   `AccessDenied` "with an explicit deny in a permissions boundary":
+7. Ask the caller to create an IAM role outside the `/lab/` path, with a minimal trust policy for
+   EC2 and no boundary. The caller's policy allows it, but the answer is `AccessDenied` "with an
+   explicit deny in a permissions boundary":
 
    ```bash
-   as_caller aws iam create-user --user-name lab01-demo
+   as_caller aws iam create-role --role-name lab01-probe \
+     --assume-role-policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
    ```
 
    The effective permission is what the identity policy **and** the boundary both allow, and an
-   explicit deny in either wins. A boundary caps; it never grants. If the user is ever created
+   explicit deny in either wins. A boundary caps; it never grants. If the role is ever created
    (the boundary is broken), delete it with your admin session:
-   `aws iam delete-user --user-name lab01-demo`.
+   `aws iam delete-role --role-name lab01-probe`.
+
+   In an account inside an AWS Organization, a service control policy (SCP) can also deny an action.
+   Then the error can name the SCP rather than the boundary, and a policy simulation shows a deny
+   even without the boundary. That is why the lab demonstrates the boundary with role creation
+   rather than user creation, which SCPs often deny.
 
 The caller's session lasts 1 hour. If a command says the token has expired, run step 2 and step 4
 again. Delete `report.txt` from the lab directory when you are done.
@@ -223,16 +231,17 @@ or bucket name, so the output is safe in a public log. It checks:
 - **trust policies:** the caller trusts the account root with no condition; the reports reader trusts
   the account root (and `trusted_account_id` when set) and requires the external ID;
 - **the bucket:** Block Public Access is on;
-- **the IAM policy simulator:** the caller may assume the reports reader; `iam:CreateUser` is an
-  explicit deny, and an allow when the boundary is swapped for "allow everything", so the deny is the
-  boundary's doing; the caller cannot list the bucket and the reports reader can list and read it;
+- **the IAM policy simulator:** the caller may assume the reports reader; `iam:CreateRole` outside
+  `/lab/` is an explicit deny, and an allow when the boundary is swapped for "allow everything", so
+  the deny is the boundary's doing; the caller cannot list the bucket and the reports reader can
+  list and read it;
 - **Access Analyzer:** the finding for the second account, only when `trusted_account_id` is set.
 
 The simulator does not read trust policies, so the external ID can only be tested for real. With
 `VERIFY_ASSUME=1 bash verify.sh` the script also assumes the caller with your identity, then the
 reports reader with and without the external ID, and lists the bucket as each. It needs
 `sts:AssumeRole`, which the read-only CI role does not have, so CI runs without it. The keys stay in
-the environment of each command and are never printed. It never calls `iam:CreateUser`.
+the environment of each command and are never printed. It never calls `iam:CreateRole`.
 
 Expect `verify: ok (12 passed, 7 skipped)`, or `verify: ok (18 passed, 1 skipped)` with
 `VERIFY_ASSUME=1` (the finding check is skipped without `trusted_account_id`).
@@ -246,7 +255,7 @@ Nothing here costs money while idle, but clean up when you finish.
 
 - **Local stack:** `terraform destroy` from the lab directory. `force_destroy` empties the bucket, so
   your `report.txt` does not block it. Then delete `backend_override.tf`, `terraform.tfstate*`,
-  `lab.tfplan`, `terraform.tfvars` and `report.txt`. If you created `lab01-demo`, delete that user
+  `lab.tfplan`, `terraform.tfvars` and `report.txt`. If you created `lab01-probe`, delete that role
   too. Destroy `bootstrap/workload` only if nothing else in the account uses it.
 - **CI stack:** dispatch `infra.yml` from `main` with the action `destroy`, the stack
   `labs/01-iam-assume-role` and the confirmation `destroy labs/01-iam-assume-role`. You approve it in
