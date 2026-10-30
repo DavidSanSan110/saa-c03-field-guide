@@ -213,3 +213,19 @@ run "ac14_trusted_account_id_empty_is_rejected" {
 
   expect_failures = [var.trusted_account_id]
 }
+
+# ---- Review round 1 ----------------------------------------------------------------------------------
+
+# AC-32: external_id is not nullable: null falls back to the default
+run "ac32_external_id_null_falls_back_to_the_default" {
+  command = plan
+
+  variables {
+    external_id = null
+  }
+
+  assert {
+    condition     = output.external_id == "field-guide-lab-01"
+    error_message = "external_id = null should fall back to the default (nullable = false), and the output should show it"
+  }
+}

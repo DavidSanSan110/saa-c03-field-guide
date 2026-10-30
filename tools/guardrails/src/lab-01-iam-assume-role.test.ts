@@ -612,3 +612,105 @@ describe('AC-27: no account ids, course section references or AdministratorAcces
     for (const file of files) checkText(file.name, file.raw);
   });
 });
+
+// =================================================================================================
+// Review round 1: AC-28 to AC-30 and AC-33 (regression tests)
+// =================================================================================================
+
+describe('AC-28: no managed policies on the role resources', () => {
+  test('AC-28: no top-level .tf file contains managed_policy_arns', () => {
+    const files = loadTerraformFiles();
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) expect(file.text, file.name).not.toMatch(/\bmanaged_policy_arns\b/);
+  });
+
+  test('AC-28: no top-level .tf file contains an inline_policy block', () => {
+    const files = loadTerraformFiles();
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) expect(file.text, file.name).not.toMatch(/\binline_policy\b/);
+  });
+});
+
+describe('AC-29: the bucket sub-resources are ordered after the bucket', () => {
+  test.each([
+    'aws_s3_bucket_public_access_block',
+    'aws_s3_bucket_ownership_controls',
+    'aws_s3_bucket_server_side_encryption_configuration',
+    'aws_s3_bucket_policy',
+  ])('AC-29: %s.reports depends on or references aws_s3_bucket.reports', (type) => {
+    expect(resourceBody(type, 'reports')).toMatch(/\baws_s3_bucket\.reports\b/);
+  });
+});
+
+/** The text inside every `<( ... )` of a markdown text (quotes and nested parentheses respected). */
+function processSubstitutions(text: string): string[] {
+  const found: string[] = [];
+  let from = 0;
+  for (;;) {
+    const start = text.indexOf('<(', from);
+    if (start === -1) return found;
+    let depth = 1;
+    let quote = '';
+    let i = start + 2;
+    while (i < text.length && depth > 0) {
+      const c = text.charAt(i);
+      if (quote !== '') {
+        if (c === quote) quote = '';
+      } else if (c === "'" || c === '"') {
+        quote = c;
+      } else if (c === '(') {
+        depth += 1;
+      } else if (c === ')') {
+        depth -= 1;
+      }
+      i += 1;
+    }
+    found.push(text.slice(start + 2, i - 1));
+    from = i;
+  }
+}
+
+describe('AC-30: aws output read through a process substitution has its CR removed', () => {
+  const awsSubstitutions = (name: string): string[] =>
+    processSubstitutions(readLabFile(name)).filter((inner) => /\baws\b/.test(inner));
+
+  test('AC-30: README.md has process substitutions that read aws output', () => {
+    expect(awsSubstitutions('README.md').length).toBeGreaterThan(0);
+  });
+
+  test.each(['README.md', 'break-it.md'])(
+    "AC-30: every aws process substitution of %s ends with | tr -d '\\r'",
+    (name) => {
+      for (const inner of awsSubstitutions(name)) {
+        expect(inner.trim(), inner.trim().slice(0, 60)).toMatch(/\|\s*tr\s+-d\s+'\\r'$/);
+      }
+    },
+  );
+});
+
+describe('AC-33: README links and the Observe copy step', () => {
+  const GUIDE_PATH = '../../apps/site/src/content/docs/d1/1-1-secure-access/';
+
+  test('AC-33: README links the guide page repo-relatively', () => {
+    expect(readLabFile('README.md')).toContain(`](${GUIDE_PATH}`);
+  });
+
+  test('AC-33: the repo-relative guide link resolves to a directory of the repo', () => {
+    expect(existsSync(pathIn(LAB, ...GUIDE_PATH.split('/')))).toBe(true);
+  });
+
+  test.each(['README.md', 'break-it.md'])('AC-33: %s does not name a site domain', (name) => {
+    expect(readLabFile(name)).not.toContain('tech-leads.lol');
+  });
+
+  test('AC-33: Observe says the copy as the caller fails with 403 (Forbidden)', () => {
+    const observe = need(sectionOf(readLabFile('README.md'), 2, 'Observe'), '## Observe');
+    expect(observe).toMatch(/\b403\b/);
+    expect(observe).toContain('Forbidden');
+  });
+
+  test('AC-33: Observe still says the list fails with AccessDenied', () => {
+    const observe = need(sectionOf(readLabFile('README.md'), 2, 'Observe'), '## Observe');
+    expect(observe).toContain('AccessDenied');
+  });
+});

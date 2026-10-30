@@ -1660,3 +1660,28 @@ describe('verify.sh: audit over every run of this file', () => {
     expect(found).toEqual([]);
   });
 });
+
+// =================================================================================================
+// Review round 1: AC-31 (no xtrace leak)
+// =================================================================================================
+
+describe('verify.sh: no xtrace leak', () => {
+  test('AC-31: set +x comes right after set -euo pipefail', () => {
+    const path = scriptPath();
+    expect(readFileSync(path, 'utf8')).toMatch(
+      /^set -euo pipefail[ \t]*(?:;[ \t]*|\n(?:[ \t]*\n)*)set \+x\b/m,
+    );
+  });
+
+  test.concurrent(
+    'AC-31: a live run with SHELLOPTS=xtrace exported still prints no ID, ARN or key',
+    async () => {
+      const result = await runVerify(healthy(), {
+        label: 'AC-31 xtrace',
+        extraEnv: { ...LIVE_ENV, ...ORIGINAL_ENV, SHELLOPTS: 'xtrace' },
+      });
+      expect(leaks(result.all)).toEqual([]);
+      expectRun(result, { live: true });
+    },
+  );
+});
