@@ -1,0 +1,15 @@
+# Every input of this lab. For a local run, copy this file to terraform.tfvars (git-ignored) and
+# change what you like. Both inputs are optional. Nothing secret belongs in here: the values are
+# plain text in the plan and in the run log.
+
+# The external ID the reports reader role demands. It is not a secret: it only stops a third party
+# from tricking a service of yours into assuming the role for them (the confused deputy problem).
+external_id = "field-guide-lab-01"
+
+# A second AWS account that may also assume the reports reader (the optional cross-account step in
+# the README). Leave it commented out to trust only this account.
+# trusted_account_id = "444455556666"
+
+# Do not set this one as a TF_VAR_TRUSTED_ACCOUNT_ID repository variable: infra.yml would print the
+# account ID in the plan log, and the logs of this repository are public. CI leaves it unset; the
+# cross-account step is for local runs only.
