@@ -41,8 +41,8 @@
 # and they write one small object (verify-probe.txt) to the data bucket. They also look up the AWS
 # managed key of S3 (`aws kms describe-key --key-id alias/aws/s3`, with your own identity), which is
 # the key the "another key" check sends: it exists once S3 has used it, and that call creates it at
-# no cost if it does not exist yet. With VERIFY_ASSUME=1 the
-# script assumes the client role with your current identity, then calls AWS "as" the client by
+# no cost if it does not exist yet. With VERIFY_ASSUME=1 the script assumes the client role with
+# your current identity, then calls AWS "as" the client by
 # putting its temporary keys in the environment of that one command (never in an argument, never
 # printed) and unsetting AWS_PROFILE, so the CLI cannot fall back to your own profile. The probe
 # object stays after the run (it is overwritten on the next one, and `terraform destroy` empties the

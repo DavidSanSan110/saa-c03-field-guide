@@ -16,8 +16,8 @@ that needs the key permission, and the CloudTrail trail of the key use.
   - `DenyInsecureTransport`: every request over plain HTTP is refused.
   - `DenyOtherEncryption`: an upload whose `x-amz-server-side-encryption` header asks for anything
     but `aws:kms` is refused. That covers SSE-S3 (`AES256`) and DSSE-KMS (`aws:kms:dsse`).
-  - `DenyOtherKmsKey`: an upload whose key-ID header names another key is refused. S3 accepts the
-    lab key itself by ARN, by alias or by bare key ID.
+  - `DenyOtherKmsKey`: an upload whose key-ID header names another key by its ARN is refused. S3
+    accepts the lab key itself by ARN, by alias or by bare key ID.
   - `DenyKmsWithoutKeyId`: `aws:kms` with no key-ID header is refused, because S3 would then use the
     AWS managed key `aws/s3` instead of the lab key.
 
@@ -193,8 +193,8 @@ Use one terminal for all of these steps, so the shell variables stay. The lab li
    ```
 
    Last, a key ARN that does not exist (the lab key's ARN with another key ID). It fails with
-   `KMS.NotFoundException`, not with the bucket policy's deny: the request never reaches the bucket
-   policy. That is why a check of `DenyOtherKmsKey` needs a key that exists:
+   `KMS.NotFoundException`: S3 answers with the KMS error, so you do not see the bucket policy's
+   deny. That is why a check of `DenyOtherKmsKey` needs a key that exists:
 
    ```bash
    as_client aws s3 cp probe.txt "s3://$DATA/no-such-key.txt" --sse aws:kms \
@@ -287,9 +287,9 @@ identity, uploads a small probe object (`verify-probe.txt`) with and without the
 SSE-S3, `aws:kms` without a key ID, another key and plain HTTP are each refused **by the bucket
 policy**, and downloads the object. The other key is the AWS managed key `aws/s3`, sent by ARN: the
 script looks it up first with your own identity (`aws kms describe-key --key-id alias/aws/s3`, which
-creates the key at no cost if S3 has not used it yet). It needs `sts:AssumeRole`, which the read-only
-CI role does not have, so CI runs without it. The keys stay in the environment of each command and
-are never printed.
+creates the key at no cost if S3 has not used it yet). The live checks need `sts:AssumeRole`, which
+the read-only CI role does not have, so CI runs without them. The keys stay in the environment of
+each command and are never printed.
 It never deletes an object: the probe stays until the next run overwrites it or `terraform destroy`
 empties the bucket.
 
