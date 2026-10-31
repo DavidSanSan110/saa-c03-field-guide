@@ -16,12 +16,15 @@ that needs the key permission, and the CloudTrail trail of the key use.
   - `DenyInsecureTransport`: every request over plain HTTP is refused.
   - `DenyOtherEncryption`: an upload whose `x-amz-server-side-encryption` header asks for anything
     but `aws:kms` is refused. That covers SSE-S3 (`AES256`) and DSSE-KMS (`aws:kms:dsse`).
-  - `DenyOtherKmsKey`: an upload whose key-ID header is not the lab key's ARN is refused.
+  - `DenyOtherKmsKey`: an upload whose key-ID header names another key is refused. S3 accepts the
+    lab key itself by ARN, by alias or by bare key ID.
   - `DenyKmsWithoutKeyId`: `aws:kms` with no key-ID header is refused, because S3 would then use the
     AWS managed key `aws/s3` instead of the lab key.
 
   An upload that sends **no** encryption header is allowed. It gets the bucket default: the lab key
-  and the Bucket Key.
+  and the Bucket Key. `DenyOtherEncryption` and `DenyOtherKmsKey` each pair a negated operator with a
+  `Null` condition, so they apply only to a request that sends their header (see
+  [Observe](#observe), step 9).
 
 - **A log bucket**, private and encrypted with SSE-S3. A server access log target cannot use a KMS
   key. It receives the **server access logs** of the data bucket under `s3-access/` through a bucket
@@ -166,14 +169,36 @@ Use one terminal for all of these steps, so the shell variables stay. The lab li
    as_client aws s3 cp probe.txt "s3://$DATA/no-key.txt" --sse aws:kms
    ```
 
-6. Upload naming the key in another form: the alias, or the bare key ID. Both are `AccessDenied`.
-   The condition compares the header **as it is sent**, and only the key ARN matches. Then upload
-   with the ARN (the `kms_key_arn` output). It works:
+6. Name a key in the `--sse-kms-key-id` header. First the lab key, in its three forms: the alias,
+   the bare key ID and the ARN (the `kms_key_arn` output). S3 accepts all three, and the response's
+   `SSEKMSKeyId` shows the key ARN whichever form you sent:
 
    ```bash
-   as_client aws s3 cp probe.txt "s3://$DATA/alias.txt" --sse aws:kms --sse-kms-key-id alias/fg-lab02-data
-   as_client aws s3 cp probe.txt "s3://$DATA/key-id.txt" --sse aws:kms --sse-kms-key-id "${KEY_ARN##*/}"
-   as_client aws s3 cp probe.txt "s3://$DATA/key-arn.txt" --sse aws:kms --sse-kms-key-id "$KEY_ARN"
+   for ID in alias/fg-lab02-data "${KEY_ARN##*/}" "$KEY_ARN"; do
+     as_client aws s3api put-object --bucket "$DATA" --key key-forms.txt --body probe.txt \
+       --server-side-encryption aws:kms --ssekms-key-id "$ID" \
+       --query '[ServerSideEncryption,SSEKMSKeyId,BucketKeyEnabled]' --output text
+   done
+   ```
+
+   Then another key that exists: the AWS managed key `aws/s3`, by ARN. It is `AccessDenied` "with an
+   explicit deny in a resource-based policy", from `DenyOtherKmsKey`. The key `aws/s3` exists only
+   after S3 has first used it; if it does not exist in your account yet,
+   `aws kms describe-key --key-id alias/aws/s3` creates it at no cost. Look it up with your admin
+   session, because the client role has no KMS permission except through S3:
+
+   ```bash
+   AWS_MANAGED_ARN=$(aws kms describe-key --key-id alias/aws/s3 --query KeyMetadata.Arn --output text | tr -d '\r')
+   as_client aws s3 cp probe.txt "s3://$DATA/aws-managed.txt" --sse aws:kms --sse-kms-key-id "$AWS_MANAGED_ARN"
+   ```
+
+   Last, a key ARN that does not exist (the lab key's ARN with another key ID). It fails with
+   `KMS.NotFoundException`, not with the bucket policy's deny: the request never reaches the bucket
+   policy. That is why a check of `DenyOtherKmsKey` needs a key that exists:
+
+   ```bash
+   as_client aws s3 cp probe.txt "s3://$DATA/no-such-key.txt" --sse aws:kms \
+     --sse-kms-key-id "${KEY_ARN%/*}/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
    ```
 
 7. A client can still turn the Bucket Key off for one request. No condition key exists for it, so the
@@ -201,10 +226,23 @@ Use one terminal for all of these steps, so the shell variables stay. The lab li
    upload to be encrypted. Since January 2023 S3 encrypts every new object anyway, and this bucket's
    default is SSE-KMS, so an upload with no header is already encrypted with the lab key. The
    "missing header" deny would add nothing except refusing plain `aws s3 cp` calls. What a bucket
-   policy can still add is the refusal of a **different** choice: the three other denies. The
-   `IfExists` operators make them apply only when the header is sent, which also keeps multipart
-   uploads working: only `CreateMultipartUpload` carries the headers, and `UploadPart` is authorized
-   as `s3:PutObject` without them.
+   policy can still add is the refusal of a **different** choice: the three other denies.
+
+   Two of them, `DenyOtherEncryption` and `DenyOtherKmsKey`, are written as "deny when the header is
+   **not** this value", with a negated operator (`StringNotEquals`, `ArnNotEquals`). They must apply
+   only to a request that sends the header, so each pairs the operator with `Null = false`, which is
+   true only when the header is present. Without that, they would refuse a plain upload (no header,
+   so the bucket default applies) and every `UploadPart` of a multipart upload: only
+   `CreateMultipartUpload` carries the headers, and `UploadPart` is authorized as `s3:PutObject`
+   without them. `DenyKmsWithoutKeyId` uses `Null = true` for the opposite reason: it looks for the
+   missing key-ID header.
+
+   The exam trap: a negated operator is still true when the condition key is missing, **with or
+   without** `IfExists`. AWS's IAM documentation says that in an `"Effect": "Deny"` statement with a
+   negated operator like `StringNotEqualsIfExists`, "the request is still denied even if the
+   condition key is not present". So `IfExists` does not turn a "not equal" deny into "only when the
+   header is sent". Seen on a real run: with `IfExists` operators and no `Null` condition, a plain
+   upload was refused. The `Null = false` condition is what limits the deny.
 
 10. Find the key use in CloudTrail. `GenerateDataKey` and `Decrypt` are management events, so they
     show in the Event history a few minutes after the request (S3 object calls are data events and
@@ -236,7 +274,8 @@ bucket name or key ID, so the output is safe in a public log. It checks, read-on
   policy for the account root with no condition;
 - **the key:** enabled, customer managed, symmetric, single-Region, rotating, with the alias;
 - **the data bucket:** default encryption with the lab key and the Bucket Key, SSE-C blocked, Block
-  Public Access, the four denies and the TLS condition in the bucket policy, and server access logging;
+  Public Access, the four denies and the TLS condition in the bucket policy (with the three `Null`
+  conditions and no `IfExists` operator), and server access logging;
 - **the log bucket:** Block Public Access, SSE-S3, a policy that lets S3 deliver the logs for the data
   bucket, and logs that expire after 7 days;
 - **the IAM policy simulator:** the client may upload, may use the key when S3 calls KMS for it, and
@@ -246,8 +285,11 @@ The simulator cannot read a bucket policy for a role, so the denies of the bucke
 tested for real. With `VERIFY_ASSUME=1 bash verify.sh` the script also assumes the client with your
 identity, uploads a small probe object (`verify-probe.txt`) with and without the lab key, checks that
 SSE-S3, `aws:kms` without a key ID, another key and plain HTTP are each refused **by the bucket
-policy**, and downloads the object. It needs `sts:AssumeRole`, which the read-only CI role does not
-have, so CI runs without it. The keys stay in the environment of each command and are never printed.
+policy**, and downloads the object. The other key is the AWS managed key `aws/s3`, sent by ARN: the
+script looks it up first with your own identity (`aws kms describe-key --key-id alias/aws/s3`, which
+creates the key at no cost if S3 has not used it yet). It needs `sts:AssumeRole`, which the read-only
+CI role does not have, so CI runs without it. The keys stay in the environment of each command and
+are never printed.
 It never deletes an object: the probe stays until the next run overwrites it or `terraform destroy`
 empties the bucket.
 
