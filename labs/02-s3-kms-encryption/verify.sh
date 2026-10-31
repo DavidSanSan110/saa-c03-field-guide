@@ -7,8 +7,9 @@
 #     for the account root with no condition;
 #   - the KMS key: enabled, customer managed, symmetric, single-Region, rotating, with its alias;
 #   - the data bucket: default encryption with the lab key and a Bucket Key, SSE-C blocked, Block
-#     Public Access on, the four denies and the TLS condition in the bucket policy, and server
-#     access logging to the log bucket;
+#     Public Access on, the four denies in the bucket policy (the two negated ones paired with
+#     Null = false, and no IfExists operator) and its TLS condition, and server access logging to the
+#     log bucket;
 #   - the log bucket: Block Public Access on, SSE-S3, a policy that lets S3 deliver the logs for the
 #     data bucket, and logs that expire after 7 days;
 #   - the IAM policy simulator (SimulatePrincipalPolicy): the client may upload to the bucket, may use
@@ -37,7 +38,10 @@
 # Exit codes: 0 every check passed (skipped ones do not count), 1 a check failed, 2 it could not run.
 #
 # Why the live checks are opt-in: they call sts:AssumeRole, which the read-only CI role is denied,
-# and they write one small object (verify-probe.txt) to the data bucket. With VERIFY_ASSUME=1 the
+# and they write one small object (verify-probe.txt) to the data bucket. They also look up the AWS
+# managed key of S3 (`aws kms describe-key --key-id alias/aws/s3`, with your own identity), which is
+# the key the "another key" check sends: it exists once S3 has used it, and that call creates it at
+# no cost if it does not exist yet. With VERIFY_ASSUME=1 the
 # script assumes the client role with your current identity, then calls AWS "as" the client by
 # putting its temporary keys in the environment of that one command (never in an argument, never
 # printed) and unsetting AWS_PROFILE, so the CLI cannot fall back to your own profile. The probe
@@ -129,8 +133,6 @@ BOUNDARY_ARN="arn:aws:iam::$ACCOUNT:policy/fg-workload-boundary"
 DATA_ARN="arn:aws:s3:::$DATA"
 OBJECT_KEY=verify-probe.txt
 PROBE_ARN="$DATA_ARN/$OBJECT_KEY"
-# A well-formed key ARN that names no key: the bucket policy compares text, it never looks the key up.
-ZERO_KEY="arn:aws:kms:eu-west-1:$ACCOUNT:key/00000000-0000-0000-0000-000000000000"
 VIA_S3_CONTEXT='ContextKeyName=kms:ViaService,ContextKeyValues=s3.eu-west-1.amazonaws.com,ContextKeyType=string'
 
 # ---- Results ----------------------------------------------------------------------------------------
@@ -222,6 +224,21 @@ has_sid() {
   [[ $OUT =~ $pattern ]]
 }
 
+# count_nulls: sets NULL_COUNT to the number of "Null" keys in the policy text in OUT, with any white
+# space between the key and its colon.
+count_nulls() {
+  local rest=$OUT pattern='"Null"[[:space:]]*:'
+  NULL_COUNT=0
+  while [[ $rest =~ $pattern ]]; do
+    NULL_COUNT=$((NULL_COUNT + 1))
+    rest=${rest#*"${BASH_REMATCH[0]}"}
+  done
+}
+
+# The data bucket policy has three Null conditions: DenyOtherEncryption and DenyOtherKmsKey each need
+# one to apply only when their header is sent (a negated operator is true when the key is missing,
+# IfExists or not), and DenyKmsWithoutKeyId uses one to find the missing key-ID header. An IfExists
+# operator would not do the job, and a missing Null would refuse plain uploads and multipart parts.
 check_data_policy() {
   local id=data-bucket-policy sid
   ask "$id" s3api get-bucket-policy --bucket "$DATA" --query Policy --output text || return 0
@@ -235,8 +252,15 @@ check_data_policy() {
     fail "$id" 'the bucket policy does not name the lab key'
   elif [[ $OUT != *aws:SecureTransport* ]]; then
     fail "$id" 'the bucket policy has no aws:SecureTransport condition'
+  elif [[ $OUT == *IfExists* ]]; then
+    fail "$id" 'the bucket policy uses an IfExists operator'
   else
-    pass "$id"
+    count_nulls
+    if [ "$NULL_COUNT" -ne 3 ]; then
+      fail "$id" 'the bucket policy denies uploads without the header'
+    else
+      pass "$id"
+    fi
   fi
 }
 
@@ -387,6 +411,10 @@ expect_upload() {
   fi
 }
 
+# What the lookup of the other key must answer: a KMS key ARN.
+KEY_ARN_PATTERN='^arn:aws[a-z-]*:kms:[a-z0-9-]+:[0-9]{12}:key/[0-9A-Za-z-]+$'
+OTHER_KEY=''
+
 LIVE_IDS=(assume-client default-upload named-key-upload sse-s3-upload-denied kms-without-key-denied
   other-key-denied http-denied download)
 
@@ -422,7 +450,7 @@ else
       --query "$PUT_QUERY" --output text
     expect_upload default-upload
 
-    # 20: the lab key by its ARN, the one form the bucket policy accepts.
+    # 20: the lab key by its ARN.
     as_client aws s3api put-object --bucket "$DATA" --key "$OBJECT_KEY" --body "$BODY_FILE" \
       --server-side-encryption aws:kms --ssekms-key-id "$KEY" --query "$PUT_QUERY" --output text
     expect_upload named-key-upload
@@ -437,10 +465,19 @@ else
       --server-side-encryption aws:kms
     expect_denied kms-without-key-denied 'an upload without a key ID was accepted'
 
-    # 23: another key ARN is refused by DenyOtherKmsKey.
-    as_client_denied aws s3api put-object --bucket "$DATA" --key "$OBJECT_KEY" --body "$BODY_FILE" \
-      --server-side-encryption aws:kms --ssekms-key-id "$ZERO_KEY"
-    expect_denied other-key-denied 'an upload with another KMS key was accepted'
+    # 23: another key is refused by DenyOtherKmsKey. It must be a key that exists: a key ARN that
+    # names no key gets KMS.NotFoundException, never the bucket policy's deny. The AWS managed key of
+    # S3 exists, or the lookup creates it at no cost. The lookup uses the current identity, not the
+    # client's, and its answer (an ARN) is never printed.
+    run aws kms describe-key --key-id alias/aws/s3 --query KeyMetadata.Arn --output text
+    if [ "$RC" -ne 0 ] || [[ ! $OUT =~ $KEY_ARN_PATTERN ]]; then
+      fail other-key-denied 'could not ask AWS'
+    else
+      OTHER_KEY=$OUT
+      as_client_denied aws s3api put-object --bucket "$DATA" --key "$OBJECT_KEY" --body "$BODY_FILE" \
+        --server-side-encryption aws:kms --ssekms-key-id "$OTHER_KEY"
+      expect_denied other-key-denied 'an upload with another KMS key was accepted'
+    fi
 
     # 24: plain HTTP is refused by DenyInsecureTransport.
     as_client_denied aws s3api get-object --bucket "$DATA" --key "$OBJECT_KEY" \
