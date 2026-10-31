@@ -16,8 +16,8 @@ that needs the key permission, and the CloudTrail trail of the key use.
   - `DenyInsecureTransport`: every request over plain HTTP is refused.
   - `DenyOtherEncryption`: an upload whose `x-amz-server-side-encryption` header asks for anything
     but `aws:kms` is refused. That covers SSE-S3 (`AES256`) and DSSE-KMS (`aws:kms:dsse`).
-  - `DenyOtherKmsKey`: an upload whose key-ID header names another key by its ARN is refused. S3
-    accepts the lab key itself by ARN, by alias or by bare key ID.
+  - `DenyOtherKmsKey`: an upload whose key-ID header names another key is refused, whether by ARN,
+    by alias or by bare key ID. S3 accepts the lab key itself in all three forms.
   - `DenyKmsWithoutKeyId`: `aws:kms` with no key-ID header is refused, because S3 would then use the
     AWS managed key `aws/s3` instead of the lab key.
 
