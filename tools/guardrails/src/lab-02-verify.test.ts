@@ -13,7 +13,7 @@ import { delimiter, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, test, vi } from 'vitest';
 
-// Spec 041 (issue #111), AC-16 to AC-24: labs/02-s3-kms-encryption/verify.sh.
+// Spec 041 (issue #111), AC-16 to AC-24 and the runtime parts of AC-30: labs/02-s3-kms-encryption/verify.sh.
 //
 // verify.sh is executed with bash and stub `terraform` and `aws` binaries on PATH (the approach of
 // lab-01-verify.test.ts). Every stub appends one tab separated line to calls.log. The aws stub also
@@ -51,7 +51,10 @@ const OTHER_ACCT = '777788889999';
 const KEY_ID = '1234abcd-12ab-34cd-56ef-1234567890ab';
 const KEY = `arn:aws:kms:eu-west-1:${ACCT}:key/${KEY_ID}`;
 const OTHER_KEY = `arn:aws:kms:eu-west-1:${ACCT}:key/abcdef01-ab12-cd34-ef56-0123456789ab`;
-const ZERO_KEY = `arn:aws:kms:eu-west-1:${ACCT}:key/00000000-0000-0000-0000-000000000000`;
+/** What `aws kms describe-key --key-id alias/aws/s3` answers: a key that exists, and is not the lab key. */
+const MANAGED_KEY_ID = 'fedcba98-fe76-ba54-fe32-ba9876543210';
+const MANAGED_KEY = `arn:aws:kms:eu-west-1:${ACCT}:key/${MANAGED_KEY_ID}`;
+const MANAGED_ALIAS = 'alias/aws/s3';
 const DATA = `field-guide-lab02-data-${ACCT}`;
 const LOGS = `field-guide-lab02-logs-${ACCT}`;
 const PREFIX = 's3-access/';
@@ -144,6 +147,11 @@ const ORDER = [
 const CHECK_IDS: string[] = ORDER.slice(0, 17);
 const LIVE_IDS: string[] = ORDER.slice(17);
 const AFTER_ASSUME_IDS = LIVE_IDS.slice(1);
+/** The aws calls of the live checks: the lookup of <other-key> comes right before other-key-denied. */
+const LOOKUP_ID = 'other-key-lookup';
+const LIVE_CALL_IDS: string[] = LIVE_IDS.flatMap((id) =>
+  id === 'other-key-denied' ? [LOOKUP_ID, id] : [id],
+);
 const DENIED_IDS = [
   'sse-s3-upload-denied',
   'kms-without-key-denied',
@@ -170,7 +178,8 @@ function dataPolicy(): string {
       {
         Action: 's3:PutObject',
         Condition: {
-          StringNotEqualsIfExists: { 's3:x-amz-server-side-encryption': 'aws:kms' },
+          Null: { 's3:x-amz-server-side-encryption': 'false' },
+          StringNotEquals: { 's3:x-amz-server-side-encryption': 'aws:kms' },
         },
         Effect: 'Deny',
         Principal: '*',
@@ -180,7 +189,8 @@ function dataPolicy(): string {
       {
         Action: 's3:PutObject',
         Condition: {
-          ArnNotEqualsIfExists: { 's3:x-amz-server-side-encryption-aws-kms-key-id': KEY },
+          ArnNotEquals: { 's3:x-amz-server-side-encryption-aws-kms-key-id': KEY },
+          Null: { 's3:x-amz-server-side-encryption-aws-kms-key-id': 'false' },
         },
         Effect: 'Deny',
         Principal: '*',
@@ -539,8 +549,26 @@ function checks(): Check[] {
       pass: bucketPolicyDenied(),
     },
     {
+      // Not a check of the tables' ids: the lookup of <other-key>, run with the current identity.
+      id: 'other-key-lookup',
+      argv: [
+        'kms',
+        'describe-key',
+        '--key-id',
+        MANAGED_ALIAS,
+        '--query',
+        'KeyMetadata.Arn',
+        '--output',
+        'text',
+      ],
+      pass: ok(MANAGED_KEY),
+    },
+    {
       id: 'other-key-denied',
-      argv: putObject(['--server-side-encryption', 'aws:kms', '--ssekms-key-id', ZERO_KEY], false),
+      argv: putObject(
+        ['--server-side-encryption', 'aws:kms', '--ssekms-key-id', MANAGED_KEY],
+        false,
+      ),
       pass: bucketPolicyDenied(),
     },
     {
@@ -1121,6 +1149,7 @@ function leaks(text: string): string[] {
     'field-guide-lab02',
     KEY_ID,
     '1234abcd',
+    MANAGED_KEY_ID,
     STUB_ERR,
     ...SESSION_VALUES,
   ]) {
@@ -1243,6 +1272,10 @@ const AC17_CASES: Case[] = [
   wrong('an allowed decision', 'client-key-only-via-s3', 'allowed'),
 ];
 
+/** The healthy data policy with one "Null" key renamed (2 left), and with an extra one (4). */
+const TWO_NULLS = dataPolicy().replace('"Null"', '"Nothing"');
+const FOUR_NULLS = dataPolicy().replace('"Version"', '"Null":{},"Version"');
+
 const POLICY_CASES: Case[] = [
   ...['DenyInsecureTransport', 'DenyOtherEncryption', 'DenyOtherKmsKey', 'DenyKmsWithoutKeyId'].map(
     (sid) =>
@@ -1258,6 +1291,18 @@ const POLICY_CASES: Case[] = [
     'data-bucket-policy',
     dataPolicyWith('aws:SecureTransport', 'aws:Other'),
   ),
+  wrong(
+    'StringNotEqualsIfExists',
+    'data-bucket-policy',
+    dataPolicyWith('"StringNotEquals"', '"StringNotEqualsIfExists"'),
+  ),
+  wrong(
+    'ArnNotEqualsIfExists',
+    'data-bucket-policy',
+    dataPolicyWith('"ArnNotEquals"', '"ArnNotEqualsIfExists"'),
+  ),
+  wrong('only 2 "Null" keys', 'data-bucket-policy', TWO_NULLS),
+  wrong('4 "Null" keys', 'data-bucket-policy', FOUR_NULLS),
   wrong(
     'no log delivery principal',
     'log-bucket-policy',
@@ -1372,6 +1417,68 @@ describe('verify.sh: wrong answers', () => {
     );
   });
 
+  test.concurrent.each([
+    {
+      name: 'StringNotEqualsIfExists',
+      text: dataPolicyWith('"StringNotEquals"', '"StringNotEqualsIfExists"'),
+    },
+    {
+      name: 'ArnNotEqualsIfExists',
+      text: dataPolicyWith('"ArnNotEquals"', '"ArnNotEqualsIfExists"'),
+    },
+    {
+      name: 'both IfExists operators and only 2 "Null" keys (IfExists is reported first)',
+      text: dataPolicyWith('"StringNotEquals"', '"StringNotEqualsIfExists"').replace(
+        '"Null"',
+        '"Nothing"',
+      ),
+    },
+  ])('AC-17: data-bucket-policy with $name says it uses an IfExists operator', async (policy) => {
+    const result = await runVerify(answering('data-bucket-policy', ok(policy.text)), {
+      label: `AC-17 policy ${policy.name}`,
+    });
+    expectRun(
+      result,
+      {},
+      {
+        'data-bucket-policy':
+          'FAIL: data-bucket-policy: the bucket policy uses an IfExists operator',
+      },
+    );
+  });
+
+  test.concurrent.each([
+    { name: 'only 2 "Null" keys', text: TWO_NULLS },
+    { name: '4 "Null" keys', text: FOUR_NULLS },
+    { name: 'no "Null" key', text: dataPolicy().replaceAll('"Null"', '"Nothing"') },
+  ])(
+    'AC-17: data-bucket-policy with $name says it denies uploads without the header',
+    async ({ name, text }) => {
+      const result = await runVerify(answering('data-bucket-policy', ok(text)), {
+        label: `AC-17 policy ${name}`,
+      });
+      expectRun(
+        result,
+        {},
+        {
+          'data-bucket-policy':
+            'FAIL: data-bucket-policy: the bucket policy denies uploads without the header',
+        },
+      );
+    },
+  );
+
+  test.concurrent.each([
+    { name: 'spaces before the colon of every "Null" key', from: '"Null":', to: '"Null"  :' },
+    { name: 'a line end before the colon of every "Null" key', from: '"Null":', to: '"Null"\n:' },
+  ])('AC-17: data-bucket-policy is ok with $name', async ({ name, from, to }) => {
+    const result = await runVerify(
+      answering('data-bucket-policy', ok(dataPolicy().replaceAll(from, to))),
+      { label: `AC-17 policy ${name}` },
+    );
+    expectRun(result);
+  });
+
   test.concurrent('AC-17: data-bucket-policy without aws:SecureTransport says so', async () => {
     const result = await runVerify(
       answering('data-bucket-policy', ok(dataPolicyWith('aws:SecureTransport', 'aws:Other'))),
@@ -1456,10 +1563,14 @@ describe('verify.sh: the arguments of every aws call', () => {
     },
   );
 
-  test.concurrent('AC-18: the live checks add their eight calls, in order', async () => {
-    const result = await runVerify(healthy(), { label: 'AC-18 live', extraEnv: LIVE_ENV });
-    expect(actualArgv(result)).toEqual(expectedArgv([...CHECK_IDS, ...LIVE_IDS]));
-  });
+  test.concurrent(
+    'AC-18: the live checks add their eight calls and the alias/aws/s3 lookup, in order',
+    async () => {
+      const result = await runVerify(healthy(), { label: 'AC-18 live', extraEnv: LIVE_ENV });
+      expect(LIVE_CALL_IDS).toHaveLength(9);
+      expect(actualArgv(result)).toEqual(expectedArgv([...CHECK_IDS, ...LIVE_CALL_IDS]));
+    },
+  );
 
   test.concurrent('AC-18: the --context-entries value is one argument, byte for byte', async () => {
     const result = await runVerify(healthy(), { label: 'AC-18 context' });
@@ -1785,6 +1896,178 @@ describe('verify.sh: live failures', () => {
     });
     expectRun(result, { live: true }, { download: true });
   });
+});
+
+// =================================================================================================
+// AC-30 (runtime parts): <other-key> is the AWS managed key of S3, which exists
+// =================================================================================================
+
+describe('verify.sh: the other key of other-key-denied is the AWS managed key of S3', () => {
+  const mentionsManagedAlias = (result: RunResult): string[] =>
+    result.aws.filter((run) => run.argv.includes(MANAGED_ALIAS)).map((run) => run.argv.join(' '));
+
+  /** The put-object calls that name a key other than the lab key. */
+  const otherKeyPuts = (result: RunResult): AwsRun[] =>
+    result.aws.filter((run) => {
+      const keyId = optionOf(run.argv, '--ssekms-key-id');
+      return isOp(run, 's3api', 'put-object') && keyId !== undefined && keyId !== KEY;
+    });
+
+  const indexOfCall = (result: RunResult, predicate: (run: AwsRun) => boolean): number =>
+    result.aws.findIndex(predicate);
+
+  test.concurrent.each([
+    { name: 'VERIFY_ASSUME unset', extraEnv: {} },
+    { name: 'VERIFY_ASSUME=0', extraEnv: { VERIFY_ASSUME: '0' } },
+    { name: 'VERIFY_ASSUME empty', extraEnv: { VERIFY_ASSUME: '' } },
+  ])('AC-30: with $name no argv contains alias/aws/s3', async ({ name, extraEnv }) => {
+    const result = await runVerify(healthy(), { label: `AC-30 no lookup ${name}`, extraEnv });
+    expectRun(result);
+    expect(mentionsManagedAlias(result)).toEqual([]);
+  });
+
+  test.concurrent(
+    'AC-30: with VERIFY_ASSUME=1 describe-key --key-id alias/aws/s3 runs once, with the original environment',
+    async () => {
+      const result = await runVerify(healthy(), {
+        label: 'AC-30 lookup env',
+        extraEnv: LIVE_ORIGINAL,
+      });
+      expectRun(result, { live: true });
+      const runs = runsOf(result, LOOKUP_ID);
+      expect(runs, 'no describe-key --key-id alias/aws/s3 call').toHaveLength(1);
+      const [run] = runs;
+      expect([run?.keyId, run?.secret, run?.token]).toEqual([
+        ORIGINAL_SESSION.id,
+        ORIGINAL_SESSION.secret,
+        ORIGINAL_SESSION.token,
+      ]);
+      expect([run?.profile, run?.defaultProfile]).toEqual(['set', 'set']);
+      expect(mentionsManagedAlias(result)).toHaveLength(1);
+    },
+  );
+
+  test.concurrent(
+    'AC-30: the lookup runs after kms-without-key-denied and before other-key-denied, which sends the ARN it answered',
+    async () => {
+      const result = await runVerify(healthy(), {
+        label: 'AC-30 lookup order',
+        extraEnv: LIVE_ORIGINAL,
+      });
+      const lookup = indexOfCall(result, (run) => run.argv.includes(MANAGED_ALIAS));
+      const before = indexOfCall(
+        result,
+        (run) =>
+          isOp(run, 's3api', 'put-object') &&
+          optionOf(run.argv, '--server-side-encryption') === 'aws:kms' &&
+          !run.argv.includes('--ssekms-key-id'),
+      );
+      const puts = otherKeyPuts(result);
+      expect(puts, 'no put-object with another KMS key').toHaveLength(1);
+      expect(optionOf(puts[0]?.argv ?? [], '--ssekms-key-id')).toBe(MANAGED_KEY);
+      const sent = indexOfCall(result, (run) => run === puts[0]);
+      expect(lookup, 'no lookup call').toBeGreaterThanOrEqual(0);
+      expect(before, 'no kms-without-key-denied call').toBeGreaterThanOrEqual(0);
+      expect(before).toBeLessThan(lookup);
+      expect(lookup).toBeLessThan(sent);
+    },
+  );
+
+  test.concurrent(
+    'AC-30: other-key-denied runs as the client, with the key ARN the lookup answered',
+    async () => {
+      const result = await runVerify(healthy(), {
+        label: 'AC-30 other-key client env',
+        extraEnv: LIVE_ORIGINAL,
+      });
+      const [put] = otherKeyPuts(result);
+      expect(put, 'no put-object with another KMS key').toBeDefined();
+      expect([put?.keyId, put?.secret, put?.token]).toEqual([
+        CLIENT_SESSION.id,
+        CLIENT_SESSION.secret,
+        CLIENT_SESSION.token,
+      ]);
+      expect([put?.profile, put?.defaultProfile]).toEqual(['unset', 'unset']);
+      expect(optionOf(put?.argv ?? [], '--ssekms-key-id')).toBe(MANAGED_KEY);
+    },
+  );
+
+  test.concurrent(
+    'AC-30: the lookup exiting non-zero fails other-key-denied, with no upload for it',
+    async () => {
+      const reply = failing(
+        254,
+        `An error occurred (AccessDenied) when calling DescribeKey ${STUB_ERR}`,
+      );
+      const result = await runVerify(answering(LOOKUP_ID, reply), {
+        label: 'AC-30 lookup exit 254',
+        extraEnv: LIVE_ORIGINAL,
+      });
+      expectRun(
+        result,
+        { live: true },
+        { 'other-key-denied': 'FAIL: other-key-denied: could not ask AWS' },
+      );
+      expect(otherKeyPuts(result)).toEqual([]);
+      expect(result.aws.filter((run) => isOp(run, 's3api', 'put-object'))).toHaveLength(4);
+    },
+  );
+
+  test.concurrent(
+    'AC-30: the lookup exiting 255 fails other-key-denied, with no upload for it',
+    async () => {
+      const reply = failing(255, `Unable to locate credentials ${STUB_ERR}`);
+      const result = await runVerify(answering(LOOKUP_ID, reply), {
+        label: 'AC-30 lookup exit 255',
+        extraEnv: LIVE_ORIGINAL,
+      });
+      expectRun(
+        result,
+        { live: true },
+        { 'other-key-denied': 'FAIL: other-key-denied: could not ask AWS' },
+      );
+      expect(otherKeyPuts(result)).toEqual([]);
+    },
+  );
+
+  test.concurrent.each([
+    { name: 'None', answer: 'None' },
+    { name: 'an empty answer', answer: '' },
+    { name: 'the alias instead of an ARN', answer: MANAGED_ALIAS },
+    { name: 'some text that is not an ARN', answer: 'not a key arn' },
+  ])(
+    'AC-30: the lookup answering $name fails other-key-denied, with no upload for it',
+    async ({ name, answer }) => {
+      const result = await runVerify(answering(LOOKUP_ID, ok(answer)), {
+        label: `AC-30 lookup answers ${name}`,
+        extraEnv: LIVE_ORIGINAL,
+      });
+      expectRun(
+        result,
+        { live: true },
+        { 'other-key-denied': 'FAIL: other-key-denied: could not ask AWS' },
+      );
+      expect(otherKeyPuts(result)).toEqual([]);
+    },
+  );
+
+  test.concurrent(
+    'AC-30: a failed lookup prints no ARN, key ID or stub stderr, and the checks after it still run',
+    async () => {
+      const reply = failing(254, `${MANAGED_KEY} ${KEY} ${ACCT} ${STUB_ERR}`);
+      const result = await runVerify(answering(LOOKUP_ID, reply), {
+        label: 'AC-30 lookup leak',
+        extraEnv: LIVE_ORIGINAL,
+      });
+      expect(runsOf(result, LOOKUP_ID), 'no describe-key --key-id alias/aws/s3 call').toHaveLength(
+        1,
+      );
+      expect(result.status).toBe(1);
+      expect(leaks(result.all)).toEqual([]);
+      expect(outLines(result.stdout)).toContain('ok: http-denied');
+      expect(outLines(result.stdout)).toContain('ok: download');
+    },
+  );
 });
 
 // =================================================================================================

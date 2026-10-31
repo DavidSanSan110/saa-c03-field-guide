@@ -547,6 +547,9 @@ const README_STRINGS = [
   'aws/s3',
   'x-amz-server-side-encryption',
   'alias/fg-lab02-data',
+  'KMS.NotFoundException',
+  'StringNotEquals',
+  'Null',
   'Bucket Key',
   'lookup-events',
   'GenerateDataKey',
@@ -692,11 +695,8 @@ describe('AC-27: aws output read through a process substitution has its CR remov
 const ALLOWED_NUMBERS = new Set(['111122223333']);
 const COURSE_SECTION = /[Ss]ection \d/;
 
-/** The key ID of the "other key" probe of verify.sh: its last group is twelve zeros, not an account ID. */
-const ZERO_KEY_ID = '00000000-0000-0000-0000-000000000000';
-
 function twelveDigitNumbers(text: string): string[] {
-  return (text.replaceAll(ZERO_KEY_ID, '').match(/(?<!\d)\d{12}(?!\d)/g) ?? []).filter(
+  return (text.match(/(?<!\d)\d{12}(?!\d)/g) ?? []).filter(
     (digits) => !ALLOWED_NUMBERS.has(digits),
   );
 }
@@ -937,6 +937,56 @@ describe('AC-29: no guardrail outside the lab shadows the demo', () => {
     expect(objectCalls.length, 'verify.sh has no live object call at all').toBeGreaterThan(0);
     for (const { line, index } of objectCalls) {
       expect(index, `object call before the VERIFY_ASSUME gate: ${line.trim()}`).toBeGreaterThan(
+        firstGate,
+      );
+    }
+  });
+});
+
+// =================================================================================================
+// AC-30 (text parts): IfExists never claimed to limit a deny to requests that send the header, and
+// verify.sh has no invented key ID (the live run showed S3 answers KMS.NotFoundException for it)
+// =================================================================================================
+
+/** The text on one line, lower case, so that a phrase wrapped over two lines is still found. */
+const flat = (text: string): string => text.replace(/\s+/g, ' ').toLowerCase();
+
+const WRONG_IFEXISTS_CLAIMS = [
+  'make them apply only when the header is sent',
+  'so an upload with no header still passes',
+];
+
+describe('AC-30: no wrong IfExists claim, no invented key ID', () => {
+  test('AC-30: data_bucket.tf, with its comments stripped, has no IfExists operator', () => {
+    expect(stripHclComments(readLabFile('data_bucket.tf'))).not.toContain('IfExists');
+  });
+
+  test.each(['README.md', 'break-it.md', 'data_bucket.tf'])(
+    'AC-30: %s does not claim that IfExists limits a deny to requests that send the header',
+    (name) => {
+      const text = flat(readLabFile(name));
+      for (const claim of WRONG_IFEXISTS_CLAIMS) {
+        expect(text, `${name}: "${claim}"`).not.toContain(claim);
+      }
+    },
+  );
+
+  test('AC-30: verify.sh contains no 00000000-0000 key ID', () => {
+    expect(readLabFile('verify.sh')).not.toContain('00000000-0000');
+  });
+
+  test('AC-30: verify.sh names alias/aws/s3 only after the VERIFY_ASSUME gate', () => {
+    const script = readLabFile('verify.sh')
+      .split(/\r?\n/)
+      .filter((line) => !/^\s*#/.test(line));
+    const firstGate = script.findIndex((line) => /\bVERIFY_ASSUME\b/.test(line));
+    const uses = script
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => line.includes('alias/aws/s3'));
+    expect(firstGate, 'verify.sh never reads VERIFY_ASSUME').toBeGreaterThanOrEqual(0);
+    expect(uses.length, 'verify.sh never looks up alias/aws/s3').toBeGreaterThan(0);
+    for (const { line, index } of uses) {
+      expect(index, `alias/aws/s3 before the VERIFY_ASSUME gate: ${line.trim()}`).toBeGreaterThan(
         firstGate,
       );
     }
