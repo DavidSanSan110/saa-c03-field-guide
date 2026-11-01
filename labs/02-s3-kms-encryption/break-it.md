@@ -6,8 +6,8 @@ changes a single piece of the lab so you see why it is there. Run them only in *
 Git Bash on Windows, from `labs/02-s3-kms-encryption/`.
 
 They use the shell variables and the `as_client` helper of [Observe](README.md#observe), steps 1 and
-2, and the `probe.txt` file of step 1. Set them up first. A client session lasts 1 hour: run step 2
-again if it expires.
+2, the `probe.txt` file of step 1 and the object step 3 uploads. Run those three steps first. A client
+session lasts 1 hour: run step 2 again if it expires.
 
 **Never remove or change the permissions boundary of the lab role.** `fg-workload-boundary` is the
 guardrail that keeps lab roles inside the path `/lab/` and away from IAM users and access keys.
