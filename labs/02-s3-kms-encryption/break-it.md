@@ -39,8 +39,10 @@ header that asks for something else is a choice, S3 honors it, and the bucket de
 override it. So default encryption does not force SSE-KMS, and the bucket policy does. This is the
 exam angle: **bucket policy versus default encryption**. To require a particular kind of encryption,
 deny the other kinds in the bucket policy, with a condition on `s3:x-amz-server-side-encryption`.
-The deny is `StringNotEqualsIfExists`, so an upload with no header still passes and gets the
-default. The classic form that also denies a missing header is redundant next to default encryption
+The deny pairs `StringNotEquals` with a `Null` condition (`Null = false`), so it applies only to an
+upload that sends the header. A negated operator is true when the key is missing, with or without
+`IfExists`, so `Null` is what lets an upload with no header through to get the default. The classic
+form that also denies a missing header is redundant next to default encryption
 ([Observe](README.md#observe), step 9).
 
 ### Put it back

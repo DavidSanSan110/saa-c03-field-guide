@@ -75,9 +75,14 @@ locals {
   # and the Bucket Key). The classic exam pattern, "deny when x-amz-server-side-encryption is
   # missing", would refuse that upload too and is redundant next to default encryption.
   #
-  # The IfExists operators make a deny apply only when the header is sent. A multipart upload sends
-  # its headers on CreateMultipartUpload only, and UploadPart is authorized as s3:PutObject without
-  # them, so a deny that fired on a missing header would break every multipart upload.
+  # DenyOtherEncryption and DenyOtherKmsKey must apply only when their header is sent, so each pairs
+  # a negated operator with Null = false. A negated operator (StringNotEquals, ArnNotEquals) is true
+  # when the condition key is missing, and the IfExists form of it is too: in a Deny, "the request is
+  # still denied even if the condition key is not present" (AWS IAM documentation; seen on a real
+  # run, where a plain upload was refused). Null = false is true only when the header is present.
+  # Without it, a plain upload (no header, so the bucket default applies) would be refused, and so
+  # would every UploadPart of a multipart upload: only CreateMultipartUpload carries the headers,
+  # and UploadPart is authorized as s3:PutObject without them.
   data_bucket_policy = {
     Version = "2012-10-17"
     Statement = [
@@ -100,19 +105,22 @@ locals {
         Action    = "s3:PutObject"
         Resource  = "${local.data_bucket_arn}/*"
         Condition = {
-          StringNotEqualsIfExists = { "s3:x-amz-server-side-encryption" = "aws:kms" }
+          StringNotEquals = { "s3:x-amz-server-side-encryption" = "aws:kms" }
+          Null            = { "s3:x-amz-server-side-encryption" = "false" }
         }
       },
       {
-        # A key-ID header that is not the lab key. The value is compared as it is sent, so only
-        # the key ARN passes: an alias or a bare key ID is refused too.
+        # A key-ID header that is not the lab key. S3 accepts the lab key by its alias or its bare
+        # key ID too, and its response shows the key ARN (seen on a real run). The AWS managed key
+        # aws/s3, sent by ARN, is refused here.
         Sid       = "DenyOtherKmsKey"
         Effect    = "Deny"
         Principal = "*"
         Action    = "s3:PutObject"
         Resource  = "${local.data_bucket_arn}/*"
         Condition = {
-          ArnNotEqualsIfExists = { "s3:x-amz-server-side-encryption-aws-kms-key-id" = aws_kms_key.data.arn }
+          ArnNotEquals = { "s3:x-amz-server-side-encryption-aws-kms-key-id" = aws_kms_key.data.arn }
+          Null         = { "s3:x-amz-server-side-encryption-aws-kms-key-id" = "false" }
         }
       },
       {

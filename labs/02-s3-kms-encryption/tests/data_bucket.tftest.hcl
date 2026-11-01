@@ -199,7 +199,9 @@ run "ac9_deny_insecure_transport" {
   }
 }
 
-# AC-9: DenyOtherEncryption refuses a header that asks for anything but aws:kms (and lets no header through to default encryption)
+# AC-9: DenyOtherEncryption refuses a header that asks for anything but aws:kms. A negated operator
+# (IfExists or not) is still true when the key is missing, so Null = false limits the deny to requests
+# that send the header; a request with no header reaches default encryption.
 run "ac9_deny_other_encryption" {
   command = plan
 
@@ -210,13 +212,21 @@ run "ac9_deny_other_encryption" {
       Principal = "*"
       Action    = "s3:PutObject"
       Resource  = "arn:aws:s3:::field-guide-lab02-data-111111111111/*"
-      Condition = { StringNotEqualsIfExists = { "s3:x-amz-server-side-encryption" = "aws:kms" } }
+      Condition = {
+        StringNotEquals = { "s3:x-amz-server-side-encryption" = "aws:kms" }
+        Null            = { "s3:x-amz-server-side-encryption" = "false" }
+      }
     })
-    error_message = "statement 2 must be exactly DenyOtherEncryption: Deny '*' s3:PutObject on <bucket ARN>/* with StringNotEqualsIfExists s3:x-amz-server-side-encryption = aws:kms"
+    error_message = "statement 2 must be exactly DenyOtherEncryption: Deny '*' s3:PutObject on <bucket ARN>/* with StringNotEquals s3:x-amz-server-side-encryption = aws:kms and Null s3:x-amz-server-side-encryption = false"
+  }
+
+  assert {
+    condition     = toset(keys(jsondecode(aws_s3_bucket_policy.data.policy).Statement[1].Condition)) == toset(["StringNotEquals", "Null"])
+    error_message = "statement 2 must have exactly the condition operators StringNotEquals and Null (no IfExists operator)"
   }
 }
 
-# AC-9: DenyOtherKmsKey refuses a key-ID header that is not the lab key ARN
+# AC-9: DenyOtherKmsKey refuses a key-ID header that is not the lab key ARN (only when the header is sent)
 run "ac9_deny_other_kms_key" {
   command = plan
 
@@ -227,9 +237,17 @@ run "ac9_deny_other_kms_key" {
       Principal = "*"
       Action    = "s3:PutObject"
       Resource  = "arn:aws:s3:::field-guide-lab02-data-111111111111/*"
-      Condition = { ArnNotEqualsIfExists = { "s3:x-amz-server-side-encryption-aws-kms-key-id" = "arn:aws:kms:eu-west-1:111111111111:key/11111111-2222-3333-4444-555555555555" } }
+      Condition = {
+        ArnNotEquals = { "s3:x-amz-server-side-encryption-aws-kms-key-id" = "arn:aws:kms:eu-west-1:111111111111:key/11111111-2222-3333-4444-555555555555" }
+        Null         = { "s3:x-amz-server-side-encryption-aws-kms-key-id" = "false" }
+      }
     })
-    error_message = "statement 3 must be exactly DenyOtherKmsKey: Deny '*' s3:PutObject on <bucket ARN>/* with ArnNotEqualsIfExists s3:x-amz-server-side-encryption-aws-kms-key-id = the key ARN"
+    error_message = "statement 3 must be exactly DenyOtherKmsKey: Deny '*' s3:PutObject on <bucket ARN>/* with ArnNotEquals s3:x-amz-server-side-encryption-aws-kms-key-id = the key ARN and Null s3:x-amz-server-side-encryption-aws-kms-key-id = false"
+  }
+
+  assert {
+    condition     = toset(keys(jsondecode(aws_s3_bucket_policy.data.policy).Statement[2].Condition)) == toset(["ArnNotEquals", "Null"])
+    error_message = "statement 3 must have exactly the condition operators ArnNotEquals and Null (no IfExists operator)"
   }
 }
 
