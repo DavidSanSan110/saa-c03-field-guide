@@ -27,6 +27,11 @@ override.tf.json
 *_override.tf.json
 .infracost/
 
+# Files the labs tell readers to create in their own folder (never commit)
+labs/*/probe.txt
+labs/*/client-without-key.json
+labs/*/heartbeat.txt
+
 # Secrets and keys (never; guardrails also block these)
 .env
 .env.*
