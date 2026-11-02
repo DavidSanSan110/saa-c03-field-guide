@@ -20,10 +20,11 @@ export type Deps = {
 };
 export type Finding = { lab: string; region: string; type: string; ageHours: number | null };
 
-/** A failed step; the message is the line to print, so it never holds anything from AWS or GitHub. */
-class Failure extends Error {}
+/** The line printed when anything but a JanitorError escapes a step; the caught error is never shown. */
+const UNEXPECTED = 'janitor: unexpected failure';
 
-const stepFailed = (step: string): Failure => new Failure(`janitor: ${step} failed`);
+/** A failed step; the message is the line to print, so it never holds anything from AWS or GitHub. */
+const stepFailed = (step: string): JanitorError => new JanitorError(`janitor: ${step} failed`);
 
 /** The labs that live on purpose: the website and the two bootstrap stacks. */
 const SKIPPED_LABS = ['00-site-hosting', 'bootstrap-management', 'bootstrap-workload'];
@@ -208,7 +209,7 @@ export async function scan(deps: Deps, maxAgeHours: number): Promise<Finding[]> 
   }
   // The website lab is always there, so an empty scan means the scan is broken, not all clear.
   if (total === 0) {
-    throw new Failure('janitor: the scan found nothing at all, not even the skipped labs');
+    throw new JanitorError('janitor: the scan found nothing at all, not even the skipped labs');
   }
 
   const findings: Finding[] = [];
@@ -233,6 +234,27 @@ export async function scan(deps: Deps, maxAgeHours: number): Promise<Finding[]> 
   return findings;
 }
 
+/** The issues in the `gh issue list` output. Strict: empty output and `null` are not an empty list. */
+function parseIssues(stdout: string): { number: number; title: string }[] {
+  let value: unknown;
+  try {
+    value = JSON.parse(stdout);
+  } catch {
+    throw stepFailed('issue update');
+  }
+  if (!Array.isArray(value)) throw stepFailed('issue update');
+  return value.map((entry: unknown) => {
+    if (
+      !isObject(entry) ||
+      typeof entry['number'] !== 'number' ||
+      typeof entry['title'] !== 'string'
+    ) {
+      throw stepFailed('issue update');
+    }
+    return { number: entry['number'], title: entry['title'] };
+  });
+}
+
 export async function syncIssue(
   deps: Deps,
   body: string | null,
@@ -254,10 +276,9 @@ export async function syncIssue(
   ]);
   if (listed.code !== 0) throw stepFailed('issue update');
   // The search is fuzzy, so the title is checked again; the lowest number is the oldest issue.
-  const numbers = parseList(listed.stdout, 'issue update')
-    .filter((entry) => isObject(entry) && entry['title'] === ISSUE_TITLE)
-    .map((entry) => (entry as Json)['number'])
-    .filter((number): number is number => typeof number === 'number');
+  const numbers = parseIssues(listed.stdout)
+    .filter((issue) => issue.title === ISSUE_TITLE)
+    .map((issue) => issue.number);
   const open = numbers.length === 0 ? undefined : String(Math.min(...numbers));
 
   if (body === null && open === undefined) return 'none';
@@ -278,8 +299,7 @@ export async function runJanitor(deps: Deps): Promise<number> {
   try {
     maxAgeHours = parseMaxAgeHours(deps.env['JANITOR_MAX_AGE_HOURS']);
   } catch (error) {
-    if (!(error instanceof JanitorError)) throw error;
-    deps.err(error.message);
+    deps.err(error instanceof JanitorError ? error.message : UNEXPECTED);
     return 2;
   }
 
@@ -293,8 +313,7 @@ export async function runJanitor(deps: Deps): Promise<number> {
     deps.out(`janitor: ${findings.length} resources in ${labs} labs, issue ${issue}`);
     return 0;
   } catch (error) {
-    if (!(error instanceof Failure)) throw error;
-    deps.err(error.message);
+    deps.err(error instanceof JanitorError ? error.message : UNEXPECTED);
     return 1;
   }
 }
