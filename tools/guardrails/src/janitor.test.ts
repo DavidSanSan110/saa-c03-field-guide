@@ -1512,3 +1512,201 @@ describe('AC-28: REGIONS follows the SCP', () => {
     expect([...REGIONS].sort()).toEqual([...allowed].sort());
   });
 });
+
+// ---- Review regressions (spec 043, AC-36 to AC-41) ---------------------------------------------
+
+/** A failure as the real tools fail: a non-zero code, with whatever stdout holds (often nothing). */
+const exitCode254 = (stdout: string): ExecResult => ({ code: 254, stdout });
+
+describe('AC-36: the exit code decides, whatever stdout holds', () => {
+  const open = json([{ number: 7, title: ISSUE_TITLE }]);
+
+  /** Scripts that must each end in the step's failure; `gh` is what may have been called. */
+  const failing = (stdout: string): [string, Script, string, Call[]][] => [
+    [
+      'tagging in the first Region',
+      {
+        tagging: { 'eu-west-1': exitCode254(stdout), 'us-east-1': listing(SITE) },
+        list: open,
+      },
+      'janitor: tagging scan failed',
+      [],
+    ],
+    [
+      'tagging in the second Region, with resources in the first',
+      {
+        tagging: { 'eu-west-1': listing(res(NAT_ARN, LAB3)), 'us-east-1': exitCode254(stdout) },
+        lookup: { [lookupKey('eu-west-1', NAT_ID)]: json([ago(72)]) },
+        list: open,
+      },
+      'janitor: tagging scan failed',
+      [],
+    ],
+    [
+      'a lookup',
+      oneNat(72, { lookup: { [lookupKey('eu-west-1', NAT_ID)]: exitCode254(stdout) }, list: open }),
+      'janitor: event lookup failed',
+      [],
+    ],
+    [
+      'gh issue list',
+      oneNat(72, { list: exitCode254(stdout) }),
+      'janitor: issue update failed',
+      [LIST_CALL],
+    ],
+  ];
+
+  const cases = ['', '[]'].flatMap((stdout) =>
+    failing(stdout).map(
+      ([label, script, message, gh]) =>
+        [
+          `${label} exiting 254 with stdout ${JSON.stringify(stdout)}`,
+          script,
+          message,
+          gh,
+        ] as const,
+    ),
+  );
+
+  test.each(cases)(
+    'AC-36: %s returns 1 with the step message and changes no issue',
+    async (_label, script, message, gh) => {
+      const w = world(script);
+      expect(await runJanitor(w.deps)).toBe(1);
+      expect(w.err).toEqual([message]);
+      expect(w.out).toEqual([]);
+      expect(ghCalls(w)).toEqual(gh);
+    },
+  );
+});
+
+describe('AC-37: a wrong shape from gh issue list fails', () => {
+  test.each([
+    ['null', raw('null')],
+    ['empty stdout', raw('')],
+    ['an entry whose number is not a number', json([{ number: '7', title: ISSUE_TITLE }])],
+    ['an entry whose title is not a string', json([{ number: 7, title: 5 }])],
+    ['a string entry', json(['text'])],
+  ])(
+    'AC-37: %s returns 1 with the message and makes no create, edit or close',
+    async (_label, list) => {
+      const w = world(oneNat(72, { list }));
+      expect(await runJanitor(w.deps)).toBe(1);
+      expect(w.err).toEqual(['janitor: issue update failed']);
+      expect(w.out).toEqual([]);
+      expect(ghCalls(w)).toEqual([LIST_CALL]);
+    },
+  );
+
+  test('AC-37: the same wrong shape with nothing to report makes no close call either', async () => {
+    const w = world(oneNat(2, { list: raw('null') }));
+    expect(await runJanitor(w.deps)).toBe(1);
+    expect(w.err).toEqual(['janitor: issue update failed']);
+    expect(ghCalls(w)).toEqual([LIST_CALL]);
+  });
+
+  test('AC-37: an empty list stays valid and the issue is created', async () => {
+    const w = world(oneNat(72, { list: json([]) }));
+    expect(await runJanitor(w.deps)).toBe(0);
+    expect(w.out).toEqual(['janitor: 1 resources in 1 labs, issue created']);
+  });
+});
+
+describe('AC-38: one bad time among good ones fails the lookup', () => {
+  test.each([
+    ['after a good one', (good: string) => [good, 'not a time']],
+    ['before a good one', (good: string) => ['not a time', good]],
+  ])('AC-38: a bad time %s returns 1 with the lookup message', async (_label, events) => {
+    const w = world(
+      oneNat(72, { lookup: { [lookupKey('eu-west-1', NAT_ID)]: json(events(ago(72))) } }),
+    );
+    expect(await runJanitor(w.deps)).toBe(1);
+    expect(w.err).toEqual(['janitor: event lookup failed']);
+    expect(w.out).toEqual([]);
+    expect(ghCalls(w)).toEqual([]);
+  });
+});
+
+describe('AC-40: runJanitor catches everything', () => {
+  const open = json([{ number: 7, title: ISSUE_TITLE }]);
+  const ghVerb = (verb: string) => (call: Call) => call.file === 'gh' && call.args[1] === verb;
+
+  /** A world whose exec rejects, with an error that holds ARNs, on the first call that matches. */
+  function rejecting(script: Script, matches: (call: Call) => boolean): World {
+    const w = world(script);
+    const inner = w.deps.exec;
+    w.deps.exec = (file, args, input) => {
+      const call: Call = { file, args: [...args], input };
+      if (!matches(call)) return inner(file, args, input);
+      w.calls.push(call);
+      return Promise.reject(new Error(`AccessDenied for ${ROLE_ARN} on ${NAT_ARN} in ${ACCOUNT}`));
+    };
+    return w;
+  }
+
+  const cases: [string, Script, (call: Call) => boolean][] = [
+    [
+      'tagging',
+      oneNat(72),
+      (call) => call.file === 'aws' && call.args[0] === 'resourcegroupstaggingapi',
+    ],
+    ['a lookup', oneNat(72), (call) => call.file === 'aws' && call.args[0] === 'cloudtrail'],
+    ['gh issue list', oneNat(72), ghVerb('list')],
+    ['gh issue create', oneNat(72), ghVerb('create')],
+    ['gh issue edit', oneNat(72, { list: open }), ghVerb('edit')],
+    ['gh issue close', oneNat(2, { list: open }), ghVerb('close')],
+  ];
+
+  test.each(cases)(
+    'AC-40: an exec that rejects in %s returns 1 and prints the generic message',
+    async (_label, script, matches) => {
+      const w = rejecting(script, matches);
+      await expect(runJanitor(w.deps)).resolves.toBe(1);
+      expect(w.err).toEqual(['janitor: unexpected failure']);
+      expect(w.out).toEqual([]);
+    },
+  );
+
+  test.each(cases)(
+    'AC-40: an exec that rejects in %s makes no later call',
+    async (_label, script, matches) => {
+      const w = rejecting(script, matches);
+      await runJanitor(w.deps);
+      const last = w.calls.at(-1);
+      expect(last !== undefined && matches(last)).toBe(true);
+    },
+  );
+
+  test('AC-40: a JanitorError from a step still prints that step message', async () => {
+    const w = world(oneNat(72, { lookup: { [lookupKey('eu-west-1', NAT_ID)]: exitCode254('') } }));
+    expect(await runJanitor(w.deps)).toBe(1);
+    expect(w.err).toEqual(['janitor: event lookup failed']);
+  });
+});
+
+describe('AC-41: the real CLI with no aws on PATH', () => {
+  test('AC-41: it exits 1, prints the tagging message and nothing to stdout', () => {
+    const cli = join(SRC, 'janitor-cli.ts');
+    if (!existsSync(cli)) throw new Error('missing file: tools/guardrails/src/janitor-cli.ts');
+    // An empty directory is the whole PATH, so `aws` cannot be found and no AWS call is made.
+    const guard = tempDir();
+    const env: NodeJS.ProcessEnv = {
+      PATH: guard,
+      JANITOR_MAX_AGE_HOURS: '12',
+      NODE_NO_WARNINGS: '1',
+    };
+    for (const name of ['SystemRoot', 'TEMP', 'TMP', 'HOME', 'USERPROFILE']) {
+      const value = process.env[name];
+      if (value !== undefined) env[name] = value;
+    }
+    const result = spawnSync(process.execPath, ['--experimental-strip-types', cli], {
+      cwd: guard,
+      encoding: 'utf8',
+      windowsHide: true,
+      env,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe('janitor: tagging scan failed\n');
+    expect(result.stdout).toBe('');
+  });
+});
