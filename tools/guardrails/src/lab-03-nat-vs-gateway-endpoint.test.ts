@@ -1190,3 +1190,234 @@ describe('AC-34: the 1.2 page links the lab', () => {
     expect(page().includes(url), `the page does not link ${url}`).toBe(true);
   });
 });
+
+// =================================================================================================
+// AC-32 (heartbeat.txt), AC-35 to AC-37, AC-40, AC-41: review regressions in the reader docs
+// =================================================================================================
+
+/** The text with every run of white space (also a line wrap and its indent) as one space. */
+const unwrap = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+/** The trimmed lines of the code blocks of a section, in order. */
+function sectionCodeLines(markdown: string, level: number, title: string): string[] {
+  const { headings, blocks } = scan(markdown);
+  const start = headings.find((heading) => heading.level === level && heading.text === title);
+  if (start === undefined) throw new Error(`missing: ${'#'.repeat(level)} ${title}`);
+  const end = headings.find((heading) => heading.line > start.line && heading.level <= level);
+  return blocks
+    .filter((block) => block.line > start.line && (end === undefined || block.line < end.line))
+    .flatMap((block) => block.body.split('\n').map((line) => line.trim()));
+}
+
+/** A step of the Observe list of README.md: its text and its code blocks. */
+function observeStep(markdown: string, number: number): { text: string; blocks: Block[] } {
+  const { headings, blocks, lines } = scan(markdown);
+  const observe = headings.find((heading) => heading.level === 2 && heading.text === 'Observe');
+  if (observe === undefined) throw new Error('missing: ## Observe');
+  const next = headings.find((heading) => heading.line > observe.line && heading.level <= 2);
+  const limit = next === undefined ? lines.length : next.line;
+  const isStep = (line: string | undefined, wanted?: number): boolean => {
+    const match = /^(\d+)\.\s/.exec(line ?? '');
+    return match !== null && (wanted === undefined || Number(match[1]) === wanted);
+  };
+  let start = -1;
+  for (let i = observe.line + 1; i < limit; i += 1) {
+    if (isStep(lines[i], number)) {
+      start = i;
+      break;
+    }
+  }
+  if (start === -1) throw new Error(`missing: Observe step ${number}`);
+  let end = limit;
+  for (let i = start + 1; i < limit; i += 1) {
+    if (isStep(lines[i])) {
+      end = i;
+      break;
+    }
+  }
+  return {
+    text: lines.slice(start, end).join('\n'),
+    blocks: blocks.filter((block) => block.line > start && block.line < end),
+  };
+}
+
+/** The first trimmed line of a block that is not blank. */
+const firstCodeLine = (block: Block): string | undefined =>
+  block.body
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line !== '');
+
+/** The lines before the first `cd /tmp` that touch one of the probe files (all of them when none). */
+function relativeWritesBeforeCd(codeLines: string[]): string[] {
+  const cd = codeLines.findIndex((line) => line === 'cd /tmp');
+  const before = cd === -1 ? codeLines : codeLines.slice(0, cd);
+  return before.filter((line) => /\b(got\.txt|big\.bin|big2\.bin)\b/.test(line));
+}
+
+/** A command with its backslash continuations joined on one line. */
+const joinContinuations = (text: string): string => text.replace(/\\\r?\n\s*/g, ' ');
+
+describe('AC-32: .gitignore ignores the heartbeat file', () => {
+  test('AC-32: .gitignore has the line labs/*/heartbeat.txt', () => {
+    const lines = readRepoFile('.gitignore')
+      .split(/\r?\n/)
+      .map((line) => line.trim());
+    expect(lines).toContain('labs/*/heartbeat.txt');
+  });
+});
+
+describe('AC-35: every relative write on the instance comes after cd /tmp', () => {
+  const readme = (): string => readLabFile('README.md');
+  const breakIt = (): string => readLabFile('break-it.md');
+  const SENTENCE = 'A session does not start in a folder you can write to, so go to /tmp first';
+
+  test('AC-35: README Observe step 6 has a code block whose first line is cd /tmp', () => {
+    const { blocks } = observeStep(readme(), 6);
+    expect(blocks.length, 'step 6 has no code block').toBeGreaterThan(0);
+    expect(firstCodeLine(blocks[0] as Block)).toBe('cd /tmp');
+  });
+
+  test('AC-35: README Observe step 6 says a session does not start in a folder you can write to', () => {
+    expect(unwrap(observeStep(readme(), 6).text)).toContain(SENTENCE);
+  });
+
+  test('AC-35: README Observe has no got.txt, big.bin or big2.bin line above its first cd /tmp', () => {
+    const codeLines = sectionCodeLines(readme(), 2, 'Observe');
+    expect(codeLines, 'Observe has no cd /tmp line').toContain('cd /tmp');
+    expect(relativeWritesBeforeCd(codeLines)).toEqual([]);
+  });
+
+  test('AC-35: break-it.md, the endpoint route section, has the code block with got.txt start with cd /tmp', () => {
+    const section = need(
+      sectionOf(breakIt(), 2, 'Remove the endpoint route'),
+      '## Remove the endpoint route',
+    );
+    const block = scan(section).blocks.find((candidate) => /got\.txt/.test(candidate.body));
+    expect(block, 'no code block with got.txt').toBeDefined();
+    expect(firstCodeLine(block as Block)).toBe('cd /tmp');
+  });
+
+  test('AC-35: break-it.md, the endpoint route section, has no got.txt, big.bin or big2.bin line above its first cd /tmp', () => {
+    const codeLines = sectionCodeLines(breakIt(), 2, 'Remove the endpoint route');
+    expect(codeLines, 'the section has no cd /tmp line').toContain('cd /tmp');
+    expect(relativeWritesBeforeCd(codeLines)).toEqual([]);
+  });
+});
+
+describe('AC-36: Destroy now names the Region and warns about an empty list', () => {
+  const section = (): string =>
+    need(sectionOf(readLabFile('README.md'), 2, 'Destroy now'), '## Destroy now');
+
+  test('AC-36: the aws ec2 describe-nat-gateways command has --region us-east-1', () => {
+    const commands = joinContinuations(
+      scan(section())
+        .blocks.map((block) => block.body)
+        .join('\n'),
+    )
+      .split('\n')
+      .filter((line) => /\baws ec2 describe-nat-gateways\b/.test(line));
+    expect(commands.length, 'no describe-nat-gateways command').toBeGreaterThan(0);
+    for (const command of commands) expect(command).toMatch(/--region us-east-1(\s|$)/);
+  });
+
+  test('AC-36: the section says an empty list right after the destroy means the wrong account', () => {
+    expect(unwrap(section())).toContain(
+      'An empty list right after the destroy means you asked the wrong account, not that it is gone',
+    );
+  });
+});
+
+describe('AC-37: the bucket names are echoed before the first session', () => {
+  const readme = (): string => readLabFile('README.md');
+  const START_SESSION = 'aws ssm start-session --target "$INSTANCE"';
+
+  test('AC-37: echo "$DATA" "$OTHER" is alone in a bash block', () => {
+    const block = scan(readme()).blocks.find(
+      (candidate) => candidate.lang === 'bash' && candidate.body.trim() === 'echo "$DATA" "$OTHER"',
+    );
+    expect(block, 'no bash block holding only echo "$DATA" "$OTHER"').toBeDefined();
+  });
+
+  test('AC-37: that block comes before the first aws ssm start-session line', () => {
+    const { blocks, lines } = scan(readme());
+    const echo = blocks.find(
+      (candidate) => candidate.lang === 'bash' && candidate.body.trim() === 'echo "$DATA" "$OTHER"',
+    );
+    const session = lines.findIndex((line) => line.includes(START_SESSION));
+    expect(echo, 'no bash block holding only echo "$DATA" "$OTHER"').toBeDefined();
+    expect(session, `README has no ${START_SESSION} line`).toBeGreaterThanOrEqual(0);
+    expect(echo?.line ?? Number.POSITIVE_INFINITY).toBeLessThan(session);
+  });
+
+  test('AC-37: the sentence about steps 5 to 8 comes before the first aws ssm start-session line', () => {
+    const text = unwrap(readme());
+    const sentence = 'Everything in steps 5 to 8 runs **on the instance**, in the session.';
+    const at = text.indexOf(sentence);
+    const session = text.indexOf(START_SESSION);
+    expect(at, `README does not say: ${sentence}`).toBeGreaterThanOrEqual(0);
+    expect(session, `README has no ${START_SESSION} line`).toBeGreaterThanOrEqual(0);
+    expect(at).toBeLessThan(session);
+  });
+});
+
+describe('AC-40: Observe step 10 also runs on macOS', () => {
+  const START_LINE =
+    "START=$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-20M +%Y-%m-%dT%H:%M:%SZ)";
+  const readme = (): string => readLabFile('README.md');
+
+  test('AC-40: README has the START= line that tries GNU date, then BSD date', () => {
+    const lines = scan(readme()).blocks.flatMap((block) =>
+      block.body.split('\n').map((line) => line.trim()),
+    );
+    expect(lines).toContain(START_LINE);
+  });
+
+  test('AC-40: the get-metric-statistics command passes --start-time "$START"', () => {
+    const commands = joinContinuations(
+      scan(readme())
+        .blocks.map((block) => block.body)
+        .join('\n'),
+    )
+      .split('\n')
+      .filter((line) => /\baws cloudwatch get-metric-statistics\b/.test(line));
+    expect(commands.length, 'no get-metric-statistics command').toBeGreaterThan(0);
+    for (const command of commands) expect(command).toContain('--start-time "$START"');
+  });
+
+  test('AC-40: the START= line comes before the get-metric-statistics command', () => {
+    const lines = scan(readme()).blocks.flatMap((block) =>
+      block.body.split('\n').map((line) => line.trim()),
+    );
+    const start = lines.indexOf(START_LINE);
+    const command = lines.findIndex((line) =>
+      /\baws cloudwatch get-metric-statistics\b/.test(line),
+    );
+    expect(start, 'no START= line').toBeGreaterThanOrEqual(0);
+    expect(command, 'no get-metric-statistics line').toBeGreaterThanOrEqual(0);
+    expect(start).toBeLessThan(command);
+  });
+});
+
+describe('AC-41: Remove the NAT route tells the reader to wait and where the variables are', () => {
+  const section = (): string =>
+    need(
+      sectionOf(readLabFile('break-it.md'), 2, 'Remove the NAT route'),
+      '## Remove the NAT route',
+    );
+
+  test('AC-41: the wait for the first round is said before the first heartbeat read', () => {
+    const text = unwrap(section());
+    const sentence =
+      'Wait about 30 seconds for the first round (until then the read answers NoSuchKey)';
+    const at = text.indexOf(sentence);
+    const read = text.search(/\baws s3api get-object\b[^\n]*heartbeat\.txt/);
+    expect(at, `the section does not say: ${sentence}`).toBeGreaterThanOrEqual(0);
+    expect(read, 'the section never reads heartbeat.txt').toBeGreaterThanOrEqual(0);
+    expect(at).toBeLessThan(read);
+  });
+
+  test('AC-41: the second terminal runs Observe, step 1, because $INSTANCE is empty there', () => {
+    expect(unwrap(section())).toContain('open a second terminal, run Observe, step 1, in it');
+  });
+});

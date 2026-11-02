@@ -2856,3 +2856,202 @@ describe('verify.sh: no xtrace leak', () => {
     },
   );
 });
+
+// =================================================================================================
+// AC-38, AC-39: review regressions in the policy checks
+// =================================================================================================
+
+type PrintStyle = { style: string; print: (policy: string) => string };
+
+const PRINT_STYLES: PrintStyle[] = [
+  { style: 'compact', print: (policy) => policy },
+  { style: 'with spaces around the colons', print: spaced },
+  { style: 'pretty printed', print: pretty },
+];
+
+const ENDPOINT_WILDCARDS = ['*', 'arn:aws:s3:::*'];
+const ARRAY_POSITIONS = ['first', 'middle', 'last'] as const;
+
+/** The healthy endpoint policy plus a second statement whose single Resource is `resource`. */
+const endpointPolicyWithSingle = (resource: string): string =>
+  endpointPolicyAllowingAll().replace('"Resource":"*"', `"Resource":"${resource}"`);
+
+/** An endpoint policy whose Resource array holds `resource` at the given place. */
+function endpointPolicyWithElement(resource: string, position: (typeof ARRAY_POSITIONS)[number]) {
+  const bucket = DATA_ARN;
+  const objects = `${DATA_ARN}/*`;
+  const list =
+    position === 'first'
+      ? [resource, bucket, objects]
+      : position === 'middle'
+        ? [bucket, resource, objects]
+        : [bucket, objects, resource];
+  return endpointPolicy(list);
+}
+
+describe('verify.sh: the endpoint policy allows no wildcard resource (review regression)', () => {
+  const cases = ENDPOINT_WILDCARDS.flatMap((resource) =>
+    PRINT_STYLES.flatMap(({ style, print }) => [
+      {
+        name: `"${resource}" as a single Resource, ${style}`,
+        text: print(endpointPolicyWithSingle(resource)),
+      },
+      ...ARRAY_POSITIONS.map((position) => ({
+        name: `"${resource}" as the ${position} element of the Resource array, ${style}`,
+        text: print(endpointPolicyWithElement(resource, position)),
+      })),
+    ]),
+  );
+
+  test.concurrent.each(cases)(
+    'AC-38: s3-endpoint-policy with $name says "the endpoint policy allows every resource"',
+    async ({ name, text }) => {
+      const result = await runVerify(answering('s3-endpoint-policy', ok(text)), {
+        label: `AC-38 ${name}`,
+      });
+      expectRun(
+        result,
+        {},
+        {
+          's3-endpoint-policy':
+            'FAIL: s3-endpoint-policy: the endpoint policy allows every resource',
+        },
+      );
+    },
+  );
+
+  const healthy = PRINT_STYLES.flatMap(({ style, print }) => [
+    { name: `the healthy policy, ${style}`, text: print(endpointPolicy()) },
+    {
+      name: `the object ARN with /* before the bucket ARN, ${style}`,
+      text: print(endpointPolicy([`${DATA_ARN}/*`, DATA_ARN])),
+    },
+  ]);
+
+  test.concurrent.each(healthy)(
+    'AC-38: s3-endpoint-policy is ok for $name (a /* suffix and "Principal":"*" are not a wildcard resource)',
+    async ({ name, text }) => {
+      const result = await runVerify(answering('s3-endpoint-policy', ok(text)), {
+        label: `AC-38 ok ${name}`,
+      });
+      expectRun(result);
+    },
+  );
+
+  test.concurrent(
+    'AC-38: s3-endpoint-policy is ok when "Principal":"*" comes after the Resource array',
+    async () => {
+      const policy = JSON.parse(endpointPolicy()) as {
+        Statement: Record<string, unknown>[];
+        Version: string;
+      };
+      const statement = policy.Statement[0] ?? {};
+      const reordered = JSON.stringify({
+        Statement: [
+          {
+            Resource: statement.Resource,
+            Principal: '*',
+            Action: statement.Action,
+            Effect: 'Allow',
+            Sid: statement.Sid,
+          },
+        ],
+        Version: policy.Version,
+      });
+      const result = await runVerify(answering('s3-endpoint-policy', ok(reordered)), {
+        label: 'AC-38 ok principal after resource',
+      });
+      expectRun(result);
+    },
+  );
+});
+
+describe('verify.sh: the data bucket policy needs the demo operator and effect (review regression)', () => {
+  /** The healthy data policy with `Effect` of the statement at `index` set to Allow. */
+  function dataPolicyAllowing(index: number): string {
+    const policy = JSON.parse(dataPolicy()) as { Statement: Record<string, unknown>[] };
+    const statement = policy.Statement[index];
+    if (statement === undefined) throw new Error(`no statement ${index}`);
+    statement.Effect = 'Allow';
+    return JSON.stringify(policy);
+  }
+
+  const NOT_EQUALS = 'FAIL: data-bucket-policy: the bucket policy deny is not StringNotEquals';
+  const HAS_ALLOW = 'FAIL: data-bucket-policy: the bucket policy has an Allow statement';
+
+  const wrongOperator = [
+    ...PRINT_STYLES.map(({ style, print }) => ({
+      name: `StringEquals instead of StringNotEquals, ${style}`,
+      text: print(dataPolicyWith('"StringNotEquals"', '"StringEquals"')),
+    })),
+    {
+      name: 'a line end around the colon and StringEquals',
+      text: lined(dataPolicyWith('"StringNotEquals"', '"StringEquals"')),
+    },
+  ];
+
+  test.concurrent.each(wrongOperator)(
+    'AC-39: data-bucket-policy with $name says "the bucket policy deny is not StringNotEquals"',
+    async ({ name, text }) => {
+      const result = await runVerify(answering('data-bucket-policy', ok(text)), {
+        label: `AC-39 operator ${name}`,
+      });
+      expectRun(result, {}, { 'data-bucket-policy': NOT_EQUALS });
+    },
+  );
+
+  const withAllow = [0, 1].flatMap((index) => [
+    ...PRINT_STYLES.map(({ style, print }) => ({
+      name: `"Effect":"Allow" on statement ${index + 1}, ${style}`,
+      text: print(dataPolicyAllowing(index)),
+    })),
+    {
+      name: `"Effect":"Allow" on statement ${index + 1}, with line ends around the colon`,
+      text: lined(dataPolicyAllowing(index)),
+    },
+  ]);
+
+  test.concurrent.each(withAllow)(
+    'AC-39: data-bucket-policy with $name says "the bucket policy has an Allow statement"',
+    async ({ name, text }) => {
+      const result = await runVerify(answering('data-bucket-policy', ok(text)), {
+        label: `AC-39 allow ${name}`,
+      });
+      expectRun(result, {}, { 'data-bucket-policy': HAS_ALLOW });
+    },
+  );
+
+  test.concurrent.each([
+    {
+      name: 'a Null key',
+      text: dataPolicyWith(
+        '"StringNotEquals":{',
+        '"Null":{"aws:SourceVpce":"true"},"StringNotEquals":{',
+      ),
+      reason: 'the bucket policy has a Null or IfExists condition',
+    },
+    {
+      name: 'another endpoint',
+      text: dataPolicyWith(VPCE, OTHER_VPCE),
+      reason: 'the bucket policy does not name the endpoint',
+    },
+  ])(
+    'AC-39: data-bucket-policy with $name keeps its earlier reason',
+    async ({ name, text, reason }) => {
+      const result = await runVerify(answering('data-bucket-policy', ok(text)), {
+        label: `AC-39 earlier ${name}`,
+      });
+      expectRun(result, {}, { 'data-bucket-policy': `FAIL: data-bucket-policy: ${reason}` });
+    },
+  );
+
+  test.concurrent.each(PRINT_STYLES)(
+    'AC-39: data-bucket-policy stays ok for the healthy policy, $style',
+    async ({ style, print }) => {
+      const result = await runVerify(answering('data-bucket-policy', ok(print(dataPolicy()))), {
+        label: `AC-39 healthy ${style}`,
+      });
+      expectRun(result);
+    },
+  );
+});
