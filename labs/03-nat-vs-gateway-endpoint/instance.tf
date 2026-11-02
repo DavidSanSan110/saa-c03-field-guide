@@ -117,9 +117,10 @@ resource "aws_instance" "private" {
     delete_on_termination = true
   }
 
-  # A burstable instance that runs out of credits stays slow instead of charging for surplus credits.
+  # T4g gets no launch credits, so standard mode would hold the first boot at the 5% baseline.
+  # Unlimited bills extra only if the average CPU stays above that baseline.
   credit_specification {
-    cpu_credits = "standard"
+    cpu_credits = "unlimited"
   }
 
   tags = {
