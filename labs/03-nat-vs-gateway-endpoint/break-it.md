@@ -29,10 +29,10 @@ aws ec2 modify-vpc-endpoint --vpc-endpoint-id "$ENDPOINT" --remove-route-table-i
 ```
 
 Look at the routes again (Observe, step 2): the prefix list route is gone, and `0.0.0.0/0` to the NAT
-gateway is the only way out. Then open a session (`aws ssm start-session --target "$INSTANCE"`) and,
-on the instance, go to /tmp and set the Region and the two bucket names as in Observe, step 6. Read
-the object under `endpoint-only/`, then the object in the other bucket, then send the 5 MB file
-again:
+gateway is the only way out. Print the two bucket names (`echo "$DATA" "$OTHER"`), because the
+session cannot see them. Then open a session (`aws ssm start-session --target "$INSTANCE"`) and, on
+the instance, go to /tmp and set the Region and the two bucket names as in Observe, step 6. Read the
+object under `endpoint-only/`, then the object in the other bucket, then send the 5 MB file again:
 
 ```bash
 cd /tmp
@@ -102,9 +102,9 @@ aws s3api get-object --bucket "$DATA" --key heartbeat.txt heartbeat.txt > /dev/n
 ```
 
 It shows a time and the public IP of the NAT gateway. Now open a second terminal, run Observe,
-step 1, in it (`$INSTANCE` is empty there until you do), open a session
-(`aws ssm start-session --target "$INSTANCE"`) and leave it open. Then remove the route from the
-first one:
+step 1, in it (`$INSTANCE` is empty there until you do; set `AWS_PROFILE` there too if you exported
+it in the first), open a session (`aws ssm start-session --target "$INSTANCE"`) and leave it open.
+Then remove the route from the first one:
 
 ```bash
 aws ec2 delete-route --route-table-id "$PRIVATE_RT" --destination-cidr-block 0.0.0.0/0
