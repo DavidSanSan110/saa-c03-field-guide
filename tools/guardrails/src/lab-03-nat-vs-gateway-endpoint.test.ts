@@ -1187,7 +1187,7 @@ describe('AC-34: the 1.2 page links the lab', () => {
   test('AC-34: it links the lab folder on GitHub', () => {
     const url =
       'https://github.com/DavidSanSan110/saa-c03-field-guide/tree/main/labs/03-nat-vs-gateway-endpoint';
-    expect(page().includes(url), `the page does not link ${url}`).toBe(true);
+    expect(page(), `the page does not link ${url}`).toContain(url);
   });
 });
 
