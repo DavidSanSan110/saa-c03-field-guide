@@ -96,3 +96,47 @@ describe('AC-39: runProgram always resolves', () => {
     });
   });
 });
+
+// ---- AC-42: runProgram prints nothing of its own -----------------------------------------------
+
+import { spawnSync } from 'node:child_process';
+
+describe('AC-42: runProgram keeps the job log free of the child output and the arguments', () => {
+  const EXEC_URL = new URL('./janitor-exec.ts', import.meta.url).href;
+
+  /** Runs `runProgram('aws', args)` in a plain Node process whose PATH is the stand-in folder only. */
+  function runInNode(args: string[]): { status: number | null; stdout: string; stderr: string } {
+    const source = [
+      `import { runProgram } from ${JSON.stringify(EXEC_URL)};`,
+      `await runProgram('aws', ${JSON.stringify(args)});`,
+    ].join('\n');
+    const env: NodeJS.ProcessEnv = { PATH: stubDir };
+    for (const name of ['SystemRoot', 'TEMP', 'TMP']) {
+      const value = process.env[name];
+      if (value !== undefined) env[name] = value;
+    }
+    const result = spawnSync(
+      process.execPath,
+      ['--experimental-strip-types', '--input-type=module', '-e', source],
+      { cwd: stubDir, encoding: 'utf8', windowsHide: true, env },
+    );
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  }
+
+  test.each([
+    ['fails', 'fail'],
+    ['succeeds', 'ok'],
+  ])('AC-42: a child that %s leaves its stderr out of both streams', (_label, mode) => {
+    const run = runInNode([script, mode, 'text']);
+    expect(run.status).toBe(0);
+    expect(run.stdout).not.toContain('STDERR-SECRET');
+    expect(run.stderr).not.toContain('STDERR-SECRET');
+  });
+
+  test('AC-42: an argument holding a NUL is not printed to either stream', () => {
+    const run = runInNode(['NUL-ARG-SECRET\0x']);
+    expect(run.status).toBe(0);
+    expect(run.stdout).not.toContain('NUL-ARG-SECRET');
+    expect(run.stderr).not.toContain('NUL-ARG-SECRET');
+  });
+});

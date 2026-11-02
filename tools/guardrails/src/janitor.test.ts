@@ -1710,3 +1710,25 @@ describe('AC-41: the real CLI with no aws on PATH', () => {
     expect(result.stdout).toBe('');
   });
 });
+
+// ---- AC-43: janitor-exec.ts follows the AC-27 code rules ---------------------------------------
+
+describe('AC-43: janitor-exec.ts runs under plain Node', () => {
+  test('AC-43: it imports only node: modules and ./ files with a .ts extension', () => {
+    const specifiers = specifiersOf(codeOf('janitor-exec.ts'));
+    expect(specifiers.length).toBeGreaterThan(0);
+    for (const specifier of specifiers) {
+      expect(specifier.startsWith('node:') || /^\.\/.+\.ts$/.test(specifier)).toBe(true);
+    }
+  });
+
+  test('AC-43: it holds no enum', () => {
+    expect(codeOf('janitor-exec.ts')).not.toMatch(/\benum\b/);
+  });
+
+  test('AC-43: it holds no parameter property', () => {
+    expect(codeOf('janitor-exec.ts')).not.toMatch(
+      /\bconstructor\s*\([^)]*\b(?:public|private|protected|readonly)\b/,
+    );
+  });
+});
