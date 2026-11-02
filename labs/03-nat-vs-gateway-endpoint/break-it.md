@@ -30,10 +30,12 @@ aws ec2 modify-vpc-endpoint --vpc-endpoint-id "$ENDPOINT" --remove-route-table-i
 
 Look at the routes again (Observe, step 2): the prefix list route is gone, and `0.0.0.0/0` to the NAT
 gateway is the only way out. Then open a session (`aws ssm start-session --target "$INSTANCE"`) and,
-on the instance, set the Region and the two bucket names as in Observe, step 6. Read the object under
-`endpoint-only/`, then the object in the other bucket, then send the 5 MB file again:
+on the instance, go to /tmp and set the Region and the two bucket names as in Observe, step 6. Read
+the object under `endpoint-only/`, then the object in the other bucket, then send the 5 MB file
+again:
 
 ```bash
+cd /tmp
 aws s3api get-object --bucket "$DATA" --key endpoint-only/probe.txt got.txt
 aws s3api get-object --bucket "$OTHER" --key probe.txt got.txt && cat got.txt
 aws s3 cp big.bin "s3://$DATA/big2.bin"
@@ -92,13 +94,15 @@ MSYS_NO_PATHCONV=1 aws ssm send-command --instance-ids "$INSTANCE" --document-na
   --parameters '{"commands":["'"$HEARTBEAT"'"]}' --query Command.CommandId --output text | tr -d '\r'
 ```
 
-Read the heartbeat, a few times:
+Wait about 30 seconds for the first round (until then the read answers NoSuchKey). Read the
+heartbeat, a few times:
 
 ```bash
 aws s3api get-object --bucket "$DATA" --key heartbeat.txt heartbeat.txt > /dev/null && cat heartbeat.txt
 ```
 
-It shows a time and the public IP of the NAT gateway. Now open a session in a second terminal
+It shows a time and the public IP of the NAT gateway. Now open a second terminal, run Observe,
+step 1, in it (`$INSTANCE` is empty there until you do), open a session
 (`aws ssm start-session --target "$INSTANCE"`) and leave it open. Then remove the route from the
 first one:
 

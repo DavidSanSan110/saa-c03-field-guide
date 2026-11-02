@@ -286,11 +286,12 @@ check_s3_endpoint() {
 }
 check_s3_endpoint
 
-# 8: the endpoint policy lets the data bucket through and nothing else. A Resource of "*" would let
-# every bucket through, with any white space around the colon.
+# 8: the endpoint policy lets the data bucket through and nothing else. A Resource of "*" or of
+# "arn:aws:s3:::*", alone or in an array, lets every bucket through, with any white space around the
+# colon.
 check_endpoint_policy() {
   local id=s3-endpoint-policy
-  local everything='"Resource"[[:space:]]*:[[:space:]]*"\*"'
+  local everything='"Resource"[[:space:]]*:[[:space:]]*(\[[^]]*)?"(arn:aws:s3:::)?\*"'
   ask "$id" ec2 describe-vpc-endpoints --vpc-endpoint-ids "$ENDPOINT" \
     --query 'VpcEndpoints[0].PolicyDocument' --output text || return 0
   if [[ $OUT != *"$DATA_ARN"* ]]; then
@@ -368,6 +369,8 @@ has_sid() {
 check_data_policy() {
   local id=data-bucket-policy sid
   local null_key='"Null"[[:space:]]*:'
+  local not_equals='"StringNotEquals"[[:space:]]*:'
+  local allow_effect='"Effect"[[:space:]]*:[[:space:]]*"Allow"'
   ask "$id" s3api get-bucket-policy --bucket "$DATA" --query Policy --output text || return 0
   for sid in DenyInsecureTransport DenyReadOutsideEndpoint; do
     if ! has_sid "$sid"; then
@@ -381,6 +384,10 @@ check_data_policy() {
     fail "$id" 'the bucket policy does not limit the deny to endpoint-only/'
   elif [[ $OUT =~ $null_key || $OUT == *IfExists* ]]; then
     fail "$id" 'the bucket policy has a Null or IfExists condition'
+  elif [[ ! $OUT =~ $not_equals ]]; then
+    fail "$id" 'the bucket policy deny is not StringNotEquals'
+  elif [[ $OUT =~ $allow_effect ]]; then
+    fail "$id" 'the bucket policy has an Allow statement'
   else
     pass "$id"
   fi

@@ -197,6 +197,13 @@ in `us-east-1`.
    echo "$PING"
    ```
 
+   Everything in steps 5 to 8 runs **on the instance**, in the session. The session cannot see the
+   variables of your terminal, so print the two bucket names now and keep them for step 6:
+
+   ```bash
+   echo "$DATA" "$OTHER"
+   ```
+
    Then open the session. This needs the Session Manager plugin on your machine:
 
    ```bash
@@ -206,9 +213,6 @@ in `us-east-1`.
    If the first command does not say `Online`, or the session says the target is not connected, the
    agent has not registered yet. Wait a minute and try again.
 
-   Everything in steps 5 to 8 runs **on the instance**, in the session. Copy the two bucket names from
-   your own terminal first (`echo "$DATA" "$OTHER"`).
-
 5. Ask the internet which address you come from. The answer is the public IP of the NAT gateway (the
    `nat_public_ip` output, in your terminal as `$NAT_IP`): the instance has no address of its own, so
    the NAT gateway swaps in its own on the way out:
@@ -217,11 +221,13 @@ in `us-east-1`.
    curl -s --max-time 10 https://checkip.amazonaws.com
    ```
 
-6. Set the names, then read the object under `endpoint-only/`. It works, and it can **only** work
-   through the endpoint: the bucket policy refuses this read from anywhere else, because the request
-   would not carry `aws:SourceVpce`. So S3 itself tells you the request came through the endpoint:
+6. A session does not start in a folder you can write to, so go to /tmp first. Then set the names
+   and read the object under `endpoint-only/`. It works, and it can **only** work through the
+   endpoint: the bucket policy refuses this read from anywhere else, because the request would not
+   carry `aws:SourceVpce`. So S3 itself tells you the request came through the endpoint:
 
    ```bash
+   cd /tmp
    export AWS_REGION=us-east-1
    DATA=<the data bucket name>
    OTHER=<the other bucket name>
@@ -261,12 +267,14 @@ in `us-east-1`.
 
 10. Read the evidence of the cost. `BytesOutToDestination` is what the NAT gateway sent out, in
     bytes per minute. It stays low: the agent's traffic goes through the NAT gateway, and your 5 MB
-    upload did not. Give CloudWatch a couple of minutes first:
+    upload did not. Give CloudWatch a couple of minutes first. The first `date` is for GNU (Linux,
+    Git Bash), the second one after `||` is for macOS:
 
     ```bash
+    START=$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -v-20M +%Y-%m-%dT%H:%M:%SZ)
     aws cloudwatch get-metric-statistics --namespace AWS/NATGateway --metric-name BytesOutToDestination \
       --dimensions "Name=NatGatewayId,Value=$NAT" --period 60 --statistics Sum \
-      --start-time "$(date -u -d '20 minutes ago' +%Y-%m-%dT%H:%M:%SZ)" \
+      --start-time "$START" \
       --end-time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       --query 'sort_by(Datapoints,&Timestamp)[].[Timestamp,Sum]' --output text
     ```
@@ -324,10 +332,13 @@ the same day.
   the NAT gateway, its address and the internet gateway, in that order. `force_destroy` empties both
   buckets, so your probe objects do not block it. If the destroy stops part way, run it again.
   Check that the NAT gateway is gone: its state shows `deleted` (for a while it is still listed),
-  and `available` means it still bills:
+  and `available` means it still bills. The Region is in the command because a new terminal has
+  lost it. An empty list right after the destroy means you asked the wrong account, not that it is
+  gone:
 
   ```bash
-  aws ec2 describe-nat-gateways --filter "Name=tag:project,Values=saa-c03-field-guide" \
+  aws ec2 describe-nat-gateways --region us-east-1 \
+    --filter "Name=tag:project,Values=saa-c03-field-guide" \
     --query 'NatGateways[].[NatGatewayId,State]' --output text
   ```
 
