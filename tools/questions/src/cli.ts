@@ -1,5 +1,5 @@
 // Questions CLI: argument parsing, file I/O, the fetch and exit codes only; the logic is in bank.ts,
-// dedupe.ts, sidecar.ts, brief.ts and verify.ts.
+// dedupe.ts, sidecar.ts, brief.ts, ai-draft.ts and verify.ts.
 import {
   copyFileSync,
   constants,
@@ -25,8 +25,9 @@ import {
   sidecarPath,
 } from './bank.ts';
 import type { BankResult, FileMap, Problem, PromoteMove } from './bank.ts';
+import { aiDraftSections, withAiDraft } from './ai-draft.ts';
 import { feedingSections, nextIds, notesStatus, parseSectionMap, renderBrief } from './brief.ts';
-import type { BriefInput } from './brief.ts';
+import type { BriefInput, SectionMap } from './brief.ts';
 import { findSimilar, roundScore, similarByDraft, withDedupe } from './dedupe.ts';
 import { withSidecarKey } from './sidecar.ts';
 import {
@@ -52,6 +53,8 @@ const USAGE = `Usage:
                                                  print the brief of the question writer for a task
                                                  (studied and AI-draft sections; --studied-only
                                                  leaves the AI-draft ones out)
+  questions ai-draft <id>... [--write] [--notes <dir>] [--map <file>]
+                                                 record in each draft's check file that AI-draft notes fed its brief
   questions blind [--pending] [<file>...]        print drafts without their key, for the verifier
   questions verdict <results.yaml> [--write] [--no-fetch]
                                                  compare the verifier's answers and quotes with the
@@ -68,7 +71,7 @@ const DEFAULT_NOTES = 'private/notes-import';
 const DEFAULT_COUNT = 10;
 const MAX_COUNT = 50;
 const FETCH_TIMEOUT_MS = 20_000;
-const COMMANDS = ['check', 'next-id', 'promote', 'dedupe', 'brief', 'blind', 'verdict'];
+const COMMANDS = ['check', 'next-id', 'promote', 'dedupe', 'brief', 'ai-draft', 'blind', 'verdict'];
 
 class UsageError extends Error {}
 
@@ -117,7 +120,10 @@ function parseArgs(argv: string[]): Options {
       else options.bank = folder;
     } else if (arg === '--dry-run' && command === 'promote') {
       options.dryRun = true;
-    } else if (arg === '--write' && (command === 'dedupe' || command === 'verdict')) {
+    } else if (
+      arg === '--write' &&
+      (command === 'dedupe' || command === 'verdict' || command === 'ai-draft')
+    ) {
       options.write = true;
     } else if (arg === '--no-fetch' && command === 'verdict') {
       options.noFetch = true;
@@ -127,7 +133,10 @@ function parseArgs(argv: string[]): Options {
       options.studiedOnly = true;
     } else if (arg === '--count' && command === 'brief') {
       options.count = parseCount(rest[++i]);
-    } else if ((arg === '--notes' || arg === '--map') && command === 'brief') {
+    } else if (
+      (arg === '--notes' || arg === '--map') &&
+      (command === 'brief' || command === 'ai-draft')
+    ) {
       const value = rest[++i];
       if (value === undefined || value.startsWith('--')) throw new UsageError();
       if (arg === '--notes') options.notes = value;
@@ -142,10 +151,11 @@ function parseArgs(argv: string[]): Options {
   }
   const expected = ['next-id', 'brief', 'verdict'].includes(command as string)
     ? 1
-    : ['promote', 'blind'].includes(command as string)
+    : ['promote', 'blind', 'ai-draft'].includes(command as string)
       ? undefined
       : 0;
   if (expected !== undefined && options.positionals.length !== expected) throw new UsageError();
+  if (command === 'ai-draft' && options.positionals.length === 0) throw new UsageError();
   if (command === 'brief' && !isTaskId(options.positionals[0])) throw new UsageError();
   if (command === 'blind' && !options.pending && options.positionals.length === 0) {
     throw new UsageError();
@@ -259,9 +269,7 @@ function runDedupe(options: Options): number {
           withDedupe(draftFiles[target], options.threshold, similar.get(path) ?? []),
         );
       } catch (error) {
-        bad.push(
-          `${under(options.drafts, target)}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        bad.push(sidecarProblem(options, target, error));
       }
     }
   }
@@ -288,6 +296,11 @@ function runDedupe(options: Options): number {
     return 1;
   }
   return pairs.length > 0 ? 1 : 0;
+}
+
+/** The problem line of an existing sidecar that `withSidecarKey` refused. */
+function sidecarProblem(options: Options, target: string, error: unknown): string {
+  return `${under(options.drafts, target)}: ${error instanceof Error ? error.message : String(error)}`;
 }
 
 /**
@@ -367,12 +380,13 @@ function readTextIfFile(path: string): string | undefined {
   }
 }
 
-/**
- * The notes of the studied and AI-draft sections that feed the task, in feed order (AI-draft ones
- * left out with `--studied-only`), or undefined (with the reason on stderr) when the map or the
- * notes folder cannot be used.
- */
-function readFeedingNotes(options: Options, task: TaskId): BriefInput['notes'] | undefined {
+/** The text of `notes.md` in a section folder; undefined when there is none. */
+function readSectionNotes(options: Options, folder: string): string | undefined {
+  return readTextIfFile(under(under(options.notes, folder), 'notes.md'));
+}
+
+/** The section map, or undefined (with the reason on stderr) when it or the notes folder is unusable. */
+function readSectionMap(options: Options): SectionMap | undefined {
   if (!existsSync(options.notes)) {
     console.error(`no notes folder at ${options.notes}`);
     return undefined;
@@ -386,11 +400,21 @@ function readFeedingNotes(options: Options, task: TaskId): BriefInput['notes'] |
   const { map, problems } = parseSectionMap(mapText);
   if (map === undefined) {
     for (const problem of problems) console.error(`${mapFile}: ${problem}`);
-    return undefined;
   }
+  return map;
+}
+
+/**
+ * The notes of the studied and AI-draft sections that feed the task, in feed order (AI-draft ones
+ * left out with `--studied-only`), or undefined (with the reason on stderr) when the map or the
+ * notes folder cannot be used.
+ */
+function readFeedingNotes(options: Options, task: TaskId): BriefInput['notes'] | undefined {
+  const map = readSectionMap(options);
+  if (map === undefined) return undefined;
   const included: BriefInput['notes'] = [];
   for (const folder of feedingSections(map, task)) {
-    const text = readTextIfFile(under(under(options.notes, folder), 'notes.md'));
+    const text = readSectionNotes(options, folder);
     if (text === undefined) {
       console.error(`skipped ${folder}: no notes.md`);
       continue;
@@ -452,6 +476,60 @@ function runBrief(options: Options): number {
     ...existingOf(rejected, 'rejected', task),
   ];
   process.stdout.write(renderBrief({ task, ids, draftsDir: options.drafts, existing, notes }));
+  return 0;
+}
+
+function runAiDraft(options: Options): number {
+  const { draftFiles, drafts, problems } = readFolders(options);
+  if (problems.length > 0) {
+    for (const problem of problems) console.error(problem);
+    return 1;
+  }
+  const map = readSectionMap(options);
+  if (map === undefined) return 1;
+
+  // Check every id and every existing sidecar before writing any (all or nothing).
+  const marked: { id: string; path: string; sections: string[] }[] = [];
+  const sidecars = new Map<string, string>();
+  const bad: string[] = [];
+  for (const id of new Set(options.positionals)) {
+    const draft = drafts.entries.find((entry) => entry.question.id === id);
+    if (draft === undefined) {
+      bad.push(`${id}: no draft has this id`);
+      continue;
+    }
+    const { task } = draft.question;
+    const sections = aiDraftSections(map, task, (folder) => readSectionNotes(options, folder));
+    if (sections.length === 0) {
+      bad.push(`${id}: no AI-draft notes feed task ${task}`);
+      continue;
+    }
+    const target = sidecarPath(draft.path);
+    try {
+      sidecars.set(target, withAiDraft(draftFiles[target], sections));
+      marked.push({ id, path: draft.path, sections });
+    } catch (error) {
+      bad.push(sidecarProblem(options, target, error));
+    }
+  }
+  if (bad.length > 0) {
+    for (const line of bad) console.error(line);
+    return 1;
+  }
+
+  for (const { id, path, sections } of marked) {
+    console.log(`${id} ${under(options.drafts, path)}: AI-draft notes from ${sections.join(', ')}`);
+  }
+  if (!options.write) {
+    console.log(`to mark: ${String(marked.length)} (add --write to record it)`);
+    return 0;
+  }
+  const failure = writeSidecars(sidecars, options.drafts);
+  if (failure !== undefined) {
+    console.error(`questions: ${failure}; no sidecar was changed`);
+    return 1;
+  }
+  console.log(`marked: ${String(marked.length)}`);
   return 0;
 }
 
@@ -588,9 +666,7 @@ async function runVerdict(options: Options): Promise<number> {
       try {
         sidecars.set(target, withSidecarKey(draftFiles[target], 'verification', verification));
       } catch (error) {
-        bad.push(
-          `${under(options.drafts, target)}: ${error instanceof Error ? error.message : String(error)}`,
-        );
+        bad.push(sidecarProblem(options, target, error));
       }
     }
   }
@@ -728,6 +804,7 @@ export async function main(argv: string[]): Promise<number> {
     if (options.command === 'dedupe') return runDedupe(options);
     if (options.command === 'next-id') return runNextId(options);
     if (options.command === 'brief') return runBrief(options);
+    if (options.command === 'ai-draft') return runAiDraft(options);
     if (options.command === 'blind') return runBlind(options);
     if (options.command === 'verdict') return await runVerdict(options);
     return runPromote(options);

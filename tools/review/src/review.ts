@@ -34,6 +34,20 @@ export function verificationState(q: Question, sidecar: unknown): VerificationSt
   return digest === questionDigest(q) ? 'verified' : 'changed';
 }
 
+/**
+ * The AI-draft marker of a check file (spec 044): null when there is no `ai_draft` key, the folder
+ * names when `ai_draft.sections` is a list of strings, else an empty list (marked, no names).
+ */
+export function aiDraftOf(sidecar: unknown): string[] | null {
+  if (!isMapping(sidecar) || !('ai_draft' in sidecar)) return null;
+  const marker = sidecar['ai_draft'];
+  const sections = isMapping(marker) ? marker['sections'] : undefined;
+  if (Array.isArray(sections) && sections.every((folder) => typeof folder === 'string')) {
+    return sections;
+  }
+  return [];
+}
+
 /** The drafts still to review (sorted by id), the reviewed ones waiting for promote, the problems. */
 export function buildQueue(files: FileMap): {
   items: BankEntry[];

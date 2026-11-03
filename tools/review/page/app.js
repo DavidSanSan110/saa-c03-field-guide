@@ -165,6 +165,21 @@ function fact(text) {
   return h('li', null, text);
 }
 
+function aiDraftSection(data) {
+  if (data.aiDraft === null || data.aiDraft === undefined) return null;
+  const names = data.aiDraft.length > 0 ? `: ${data.aiDraft.join(', ')}` : '';
+  return h(
+    'section',
+    { class: 'panel ai-draft' },
+    h('h2', null, 'AI-draft notes'),
+    h(
+      'p',
+      null,
+      `Written from AI-draft notes that the owner has not studied yet${names}. Check every fact against the references.`,
+    ),
+  );
+}
+
 function verificationSection(data) {
   const v = data.verification;
   const details = [];
@@ -318,6 +333,7 @@ function revealScreen(screen) {
       ...data.options.map((option) => optionRow(option, picked.has(option.key))),
     ),
     data.cue ? h('p', { class: 'cue' }, h('strong', null, 'Cue: '), data.cue) : null,
+    aiDraftSection(data),
     verificationSection(data),
     dedupeSection(data),
     h(
