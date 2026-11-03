@@ -34,6 +34,15 @@ export function verificationState(q: Question, sidecar: unknown): VerificationSt
   return digest === questionDigest(q) ? 'verified' : 'changed';
 }
 
+/**
+ * The AI-draft marker of a check file (spec 044): null when there is no `ai_draft` key, the folder
+ * names when `ai_draft.sections` is a list of strings, else an empty list (marked, no names).
+ */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- interface stub of spec 044
+export function aiDraftOf(_sidecar: unknown): string[] | null {
+  throw new Error('not implemented');
+}
+
 /** The drafts still to review (sorted by id), the reviewed ones waiting for promote, the problems. */
 export function buildQueue(files: FileMap): {
   items: BankEntry[];
