@@ -283,16 +283,24 @@ const INSTANCE_TIMEOUT = `Connect timeout on endpoint URL: "https://s3.us-east-1
 
 // ---- The aws calls of the spec tables -------------------------------------------------------------
 
-const describeRouteTable = (table: string, query: string): string[] => [
-  'ec2',
-  'describe-route-tables',
-  '--route-table-ids',
-  table,
-  '--query',
-  query,
-  '--output',
-  'text',
-];
+/** `describe-route-tables` answers {"RouteTables": [{"Routes": [...]}]}: a query starts at the table. */
+const ROUTE_QUERY_ROOT = 'RouteTables[0].Routes';
+
+const describeRouteTable = (table: string, query: string): string[] => {
+  if (!query.startsWith(ROUTE_QUERY_ROOT)) {
+    throw new Error(`a describe-route-tables query must start with ${ROUTE_QUERY_ROOT}: ${query}`);
+  }
+  return [
+    'ec2',
+    'describe-route-tables',
+    '--route-table-ids',
+    table,
+    '--query',
+    query,
+    '--output',
+    'text',
+  ];
+};
 
 const describeEndpoint = (query: string): string[] => [
   'ec2',
@@ -465,7 +473,10 @@ function calls(): Call[] {
     call(
       'public-route',
       'public-route',
-      describeRouteTable(PUB_RT, "Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,State]"),
+      describeRouteTable(
+        PUB_RT,
+        "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,State]",
+      ),
       ok(`${IGW}\tactive`),
     ),
     call(
@@ -473,21 +484,24 @@ function calls(): Call[] {
       'private-nat-route',
       describeRouteTable(
         PRIV_RT,
-        "Routes[?DestinationCidrBlock=='0.0.0.0/0'].[NatGatewayId,State]",
+        "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].[NatGatewayId,State]",
       ),
       ok(`${NAT}\tactive`),
     ),
     call(
       'private-no-igw',
       'private-no-igw',
-      describeRouteTable(PRIV_RT, 'Routes[].GatewayId'),
+      describeRouteTable(PRIV_RT, 'RouteTables[0].Routes[].GatewayId'),
       ok(`local\tNone\t${VPCE}`),
     ),
     call('private-endpoint-prefix-list', 'private-endpoint-route', PREFIX_LISTS, ok(PL)),
     call(
       'private-endpoint-route',
       'private-endpoint-route',
-      describeRouteTable(PRIV_RT, `Routes[?GatewayId=='${VPCE}'].[DestinationPrefixListId,State]`),
+      describeRouteTable(
+        PRIV_RT,
+        `RouteTables[0].Routes[?GatewayId=='${VPCE}'].[DestinationPrefixListId,State]`,
+      ),
       ok(`${PL}\tactive`),
     ),
     call(
@@ -909,6 +923,12 @@ done
 if [ -n "$bodyfile" ] && [ -f "$bodyfile" ]; then
   n=$(( $(wc -l < "$FAKE_LOG_DIR/calls.log") ))
   cat "$bodyfile" > "$FAKE_LOG_DIR/body-$n"
+fi
+if [ "$1 $2" = "ec2 describe-route-tables" ]; then
+  case "$v0" in
+    'RouteTables[0].Routes'*) ;;
+    *) echo None; exit 0;;
+  esac
 fi
 key="$1 $2${SIGNATURE_OPTIONS.map(([, name], index) => `|${name}=$v${index}`).join('')}"`;
 
@@ -1812,10 +1832,10 @@ describe('verify.sh: the arguments of every aws call', () => {
       return argv[argv.indexOf('--query') + 1];
     };
     expect(queryOf('public-route')).toBe(
-      "Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,State]",
+      "RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0'].[GatewayId,State]",
     );
     expect(queryOf('private-endpoint-route')).toBe(
-      `Routes[?GatewayId=='${VPCE}'].[DestinationPrefixListId,State]`,
+      `RouteTables[0].Routes[?GatewayId=='${VPCE}'].[DestinationPrefixListId,State]`,
     );
     expect(queryOf('instance-no-inbound')).toBe(
       'SecurityGroupRules[?IsEgress==`false`].SecurityGroupRuleId',
@@ -3052,6 +3072,125 @@ describe('verify.sh: the data bucket policy needs the demo operator and effect (
         label: `AC-39 healthy ${style}`,
       });
       expectRun(result);
+    },
+  );
+});
+
+// =================================================================================================
+// AC-42: describe-route-tables answers {"RouteTables": [{"Routes": [...]}]}
+// =================================================================================================
+
+describe('verify.sh: the route checks read RouteTables[0].Routes', () => {
+  const NO_ROUTES = 'FAIL: private-no-igw: expected the routes of the private route table';
+  const HAS_IGW =
+    'FAIL: private-no-igw: the private route table has a route to an internet gateway';
+
+  test.concurrent(
+    'AC-42: every describe-route-tables call of a healthy run queries RouteTables[0].Routes',
+    async () => {
+      const result = await runVerify(healthy(), { label: 'AC-42 route queries' });
+      const queries = opRuns(result, 'ec2', 'describe-route-tables').map((run) => {
+        const at = run.argv.indexOf('--query');
+        return run.argv[at + 1] ?? '';
+      });
+      expect(queries).toHaveLength(4);
+      for (const query of queries) expect(query.startsWith(ROUTE_QUERY_ROOT), query).toBe(true);
+    },
+  );
+
+  test.concurrent('AC-42: a healthy stack still passes the four route checks', async () => {
+    const result = await runVerify(healthy(), { label: 'AC-42 healthy routes' });
+    expectRun(result);
+    expect(result.status).toBe(0);
+  });
+
+  test.concurrent.each([
+    { name: 'None', answer: 'None' },
+    { name: 'an empty answer', answer: '' },
+  ])('AC-42: private-no-igw fails when AWS answers $name', async ({ name, answer }) => {
+    const result = await runVerify(answering('private-no-igw', ok(answer)), {
+      label: `AC-42 private-no-igw ${name}`,
+    });
+    expectRun(result, {}, { 'private-no-igw': NO_ROUTES });
+  });
+
+  test.concurrent(
+    'AC-42: private-no-igw passes on the local route, None and the endpoint',
+    async () => {
+      const result = await runVerify(answering('private-no-igw', ok(`local\tNone\t${VPCE}`)), {
+        label: 'AC-42 private-no-igw local',
+      });
+      expectRun(result);
+    },
+  );
+
+  test.concurrent(
+    'AC-42: private-no-igw fails with its own message when an igw- is present',
+    async () => {
+      const result = await runVerify(answering('private-no-igw', ok(`local\t${IGW}\t${VPCE}`)), {
+        label: 'AC-42 private-no-igw igw',
+      });
+      expectRun(result, {}, { 'private-no-igw': HAS_IGW });
+    },
+  );
+
+  test.concurrent(
+    'AC-42: private-no-igw fails with the igw message when an igw- is present without local',
+    async () => {
+      const result = await runVerify(answering('private-no-igw', ok(`None\t${IGW}`)), {
+        label: 'AC-42 private-no-igw igw without local',
+      });
+      expectRun(result, {}, { 'private-no-igw': HAS_IGW });
+    },
+  );
+});
+
+describe('lab 03 files: every describe-route-tables query starts with RouteTables[0].Routes', () => {
+  /** The logical lines of a shell or Markdown file: a backslash at the line end joins the next line. */
+  const logicalLines = (text: string): string[] => text.replace(/\\\r?\n\s*/g, ' ').split(/\r?\n/);
+
+  /** NAME="value" and NAME='value' assignments, so that `$NAME` in a query can be expanded. */
+  function assignments(text: string): Map<string, string> {
+    const found = new Map<string, string>();
+    for (const line of logicalLines(text)) {
+      const match = /^\s*([A-Za-z_][A-Za-z0-9_]*)=(["'])(.*)\2\s*$/.exec(line);
+      if (match?.[1] !== undefined && match[3] !== undefined) found.set(match[1], match[3]);
+    }
+    return found;
+  }
+
+  /** The --query argument of every describe-route-tables call, variables expanded. */
+  function routeQueries(file: string): string[] {
+    const text = readFileSync(repoPath(...LAB, file), 'utf8');
+    const variables = assignments(text);
+    const expand = (query: string): string =>
+      query.replace(
+        /\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/g,
+        (whole, name: string) => variables.get(name) ?? whole,
+      );
+    const queries: string[] = [];
+    for (const line of logicalLines(text)) {
+      if (!line.includes('describe-route-tables')) continue;
+      const after = line.slice(line.indexOf('describe-route-tables'));
+      for (const match of after.matchAll(/--query\s+("[^"]*"|'[^']*'|\S+)/g)) {
+        const raw = match[1] ?? '';
+        const unquoted = /^["'].*["']$/.test(raw) ? raw.slice(1, -1) : raw;
+        queries.push(expand(unquoted));
+      }
+    }
+    return queries;
+  }
+
+  test.each([
+    { file: 'verify.sh', atLeast: 3 },
+    { file: 'README.md', atLeast: 2 },
+    { file: 'break-it.md', atLeast: 0 },
+  ])(
+    'AC-42: every describe-route-tables --query in $file starts with RouteTables[0].Routes',
+    ({ file, atLeast }) => {
+      const queries = routeQueries(file);
+      expect(queries.length, `queries found in ${file}`).toBeGreaterThanOrEqual(atLeast);
+      for (const query of queries) expect(query.startsWith(ROUTE_QUERY_ROOT), query).toBe(true);
     },
   );
 });
