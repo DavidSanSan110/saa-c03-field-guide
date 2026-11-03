@@ -160,7 +160,7 @@ in `us-east-1`.
 
    ```bash
    aws ec2 describe-route-tables --route-table-ids "$PRIVATE_RT" \
-     --query 'Routes[].[DestinationCidrBlock,DestinationPrefixListId,GatewayId,NatGatewayId,State]' \
+     --query 'RouteTables[0].Routes[].[DestinationCidrBlock,DestinationPrefixListId,GatewayId,NatGatewayId,State]' \
      --output table
    ```
 
@@ -170,7 +170,7 @@ in `us-east-1`.
 
    ```bash
    read -r PREFIX_LIST ROUTE_STATE < <(aws ec2 describe-route-tables --route-table-ids "$PRIVATE_RT" \
-     --query "Routes[?GatewayId=='$ENDPOINT'].[DestinationPrefixListId,State]" --output text | tr -d '\r')
+     --query "RouteTables[0].Routes[?GatewayId=='$ENDPOINT'].[DestinationPrefixListId,State]" --output text | tr -d '\r')
    echo "$ROUTE_STATE"
    aws ec2 get-managed-prefix-list-entries --prefix-list-id "$PREFIX_LIST" \
      --query 'length(Entries)' --output text

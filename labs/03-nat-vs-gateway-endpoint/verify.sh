@@ -211,7 +211,8 @@ check_equal() {
 
 # ---- Read-only checks -------------------------------------------------------------------------------
 
-ROUTE_ALL="Routes[?DestinationCidrBlock=='0.0.0.0/0']"
+# describe-route-tables answers {"RouteTables": [{"Routes": [...]}]}: every query starts at the table.
+ROUTE_ALL="RouteTables[0].Routes[?DestinationCidrBlock=='0.0.0.0/0']"
 BPA_QUERY='PublicAccessBlockConfiguration.[BlockPublicAcls,IgnorePublicAcls,BlockPublicPolicy,RestrictPublicBuckets]'
 BPA_ALL_TRUE="True${TAB}True${TAB}True${TAB}True"
 BPA_REASON='expected the four Block Public Access settings, all True'
@@ -242,9 +243,12 @@ check_equal private-nat-route "${NAT}${TAB}active" \
 check_private_no_igw() {
   local id=private-no-igw
   ask "$id" ec2 describe-route-tables --route-table-ids "$PRIVATE_RT" \
-    --query 'Routes[].GatewayId' --output text || return 0
+    --query 'RouteTables[0].Routes[].GatewayId' --output text || return 0
+  # The VPC's own route (local) is always there: an answer without it (None, empty) read no routes.
   if [[ $OUT == *igw-* ]]; then
     fail "$id" 'the private route table has a route to an internet gateway'
+  elif [[ $OUT != *local* ]]; then
+    fail "$id" 'expected the routes of the private route table'
   else
     pass "$id"
   fi
@@ -264,7 +268,7 @@ check_endpoint_route() {
   check_equal "$id" "${prefix_list}${TAB}active" \
     'expected the S3 prefix list to go to the endpoint, active' \
     ec2 describe-route-tables --route-table-ids "$PRIVATE_RT" \
-    --query "Routes[?GatewayId=='$ENDPOINT'].[DestinationPrefixListId,State]" --output text
+    --query "RouteTables[0].Routes[?GatewayId=='$ENDPOINT'].[DestinationPrefixListId,State]" --output text
 }
 check_endpoint_route
 
