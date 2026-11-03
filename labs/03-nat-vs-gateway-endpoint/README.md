@@ -160,7 +160,7 @@ in `us-east-1`.
 
    ```bash
    aws ec2 describe-route-tables --route-table-ids "$PRIVATE_RT" \
-     --query 'Routes[].[DestinationCidrBlock,DestinationPrefixListId,GatewayId,NatGatewayId,State]' \
+     --query 'RouteTables[0].Routes[].[DestinationCidrBlock,DestinationPrefixListId,GatewayId,NatGatewayId,State]' \
      --output table
    ```
 
@@ -170,7 +170,7 @@ in `us-east-1`.
 
    ```bash
    read -r PREFIX_LIST ROUTE_STATE < <(aws ec2 describe-route-tables --route-table-ids "$PRIVATE_RT" \
-     --query "Routes[?GatewayId=='$ENDPOINT'].[DestinationPrefixListId,State]" --output text | tr -d '\r')
+     --query "RouteTables[0].Routes[?GatewayId=='$ENDPOINT'].[DestinationPrefixListId,State]" --output text | tr -d '\r')
    echo "$ROUTE_STATE"
    aws ec2 get-managed-prefix-list-entries --prefix-list-id "$PREFIX_LIST" \
      --query 'length(Entries)' --output text
@@ -245,6 +245,10 @@ in `us-east-1`.
    Always read with `aws s3api get-object` here, not with `aws s3 cp`. The `cp` command starts with a
    HEAD request, and an error answer to a HEAD request has no body, so all you get is
    `403 Forbidden` with no reason. `get-object` sends a GET, and the error body says why.
+
+   The same endpoint policy also refuses the instance's package manager. The Amazon Linux 2023
+   repositories are S3 buckets (`al2023-repos-<Region>-…`), so `dnf makecache` gets `403` for them
+   and skips them. An endpoint policy that limits the buckets must allow those repository buckets too.
 
 8. Send a 5 MB file to the data bucket. It goes through the endpoint, so the NAT gateway does not
    carry it. Then leave the session. You will look at the NAT gateway's bytes in step 10:
