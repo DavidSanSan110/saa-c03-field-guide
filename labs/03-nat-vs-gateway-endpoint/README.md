@@ -246,6 +246,10 @@ in `us-east-1`.
    HEAD request, and an error answer to a HEAD request has no body, so all you get is
    `403 Forbidden` with no reason. `get-object` sends a GET, and the error body says why.
 
+   The same endpoint policy also refuses the instance's package manager. The Amazon Linux 2023
+   repositories are S3 buckets (`al2023-repos-<Region>-…`), so `dnf makecache` gets `403` for them
+   and skips them. An endpoint policy that limits the buckets must allow those repository buckets too.
+
 8. Send a 5 MB file to the data bucket. It goes through the endpoint, so the NAT gateway does not
    carry it. Then leave the session. You will look at the NAT gateway's bytes in step 10:
 
