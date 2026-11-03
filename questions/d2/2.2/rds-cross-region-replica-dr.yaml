@@ -1,0 +1,33 @@
+id: 'd2-2.2-0015'
+domain: 2
+task: '2.2'
+services:
+  - 'rds'
+difficulty: medium
+type: single
+stem: 'A software company runs its order database on Amazon RDS for MySQL, using a Multi-AZ deployment in one Region. A new requirement says the database must be recoverable in a second Region if the primary Region fails, with data that is at most a few seconds to minutes behind and recovery within minutes. The team does not want to migrate to a different database engine or run its own replication tooling. Which solution is the MOST suitable?'
+options:
+  - key: A
+    text: 'Create a cross-Region read replica in the second Region and promote it to a standalone primary instance during a Regional failure.'
+    correct: true
+    why: 'RDS cross-Region read replicas replicate continuously and asynchronously, so the replica holds almost current data. Promoting it takes a few minutes and makes it a writable instance, using the same engine and no extra tooling.'
+  - key: B
+    text: 'Keep the Multi-AZ deployment and add a third Availability Zone to the instance.'
+    correct: false
+    why: 'Multi-AZ protects against failure of the instance or one Availability Zone, but its standby is in the same Region, so it does not help when the whole Region fails.'
+  - key: C
+    text: 'Use AWS Backup to copy a daily backup to the second Region and restore it after a Regional failure.'
+    correct: false
+    why: 'A daily copy can leave the recovery point up to a day behind, and a restore from backup takes longer than promoting a ready replica. It does not meet the few-seconds-to-minutes data requirement.'
+  - key: D
+    text: 'Write a script on an EC2 instance that exports the database every hour with mysqldump and imports it into a database in the second Region.'
+    correct: false
+    why: 'Hourly exports mean up to an hour of data loss, and the team would have to build and run its own tooling, which they want to avoid.'
+cue: 'second Region, data a few seconds behind, same engine, no custom tooling, recover within minutes'
+references:
+  - 'https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

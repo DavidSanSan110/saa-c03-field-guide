@@ -1,0 +1,35 @@
+id: 'd2-2.2-0011'
+domain: 2
+task: '2.2'
+services:
+  - 'ec2'
+  - 'route53'
+  - 'aurora'
+difficulty: medium
+type: single
+stem: 'A payments company runs its web application in one Region. Its disaster recovery plan for a full Regional outage requires that a second Region can begin serving customer requests immediately after failover, even if at reduced capacity, and then scale up to full production load. The company wants to avoid paying for a full-size duplicate of production and does not need both Regions to serve users during normal operation. Which disaster recovery strategy meets these requirements?'
+options:
+  - key: A
+    text: 'Backup and restore: copy backups to the second Region and redeploy the infrastructure from templates after a disaster.'
+    correct: false
+    why: 'Nothing is running in the second Region, so it cannot serve any request until the whole environment has been redeployed and the data restored. That is the slowest recovery.'
+  - key: B
+    text: 'Pilot light: replicate the data and keep only the core data stores running, with application servers switched off until failover.'
+    correct: false
+    why: 'A pilot light environment cannot process requests until extra steps are taken, such as turning on servers and deploying non-core infrastructure. The requirement is to serve traffic immediately.'
+  - key: C
+    text: 'Warm standby: run a scaled-down but fully functional copy of the workload in the second Region and scale it up at failover.'
+    correct: true
+    why: 'A warm standby is always on and can handle traffic at reduced capacity right away. At failover only a scale-up is needed, and it costs less than a full duplicate.'
+  - key: D
+    text: 'Multi-site active/active: run the full workload in both Regions and send users to both all the time.'
+    correct: false
+    why: 'It gives near-zero recovery time, but it is the most complex and costly option and runs a full-size copy. The company wants to avoid that cost and does not need traffic in both Regions.'
+cue: 'serve requests immediately at reduced capacity, then scale up, without a full-size duplicate'
+references:
+  - 'https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

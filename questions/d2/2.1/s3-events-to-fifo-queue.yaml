@@ -1,0 +1,35 @@
+id: 'd2-2.1-0020'
+domain: 2
+task: '2.1'
+services:
+  - 's3'
+  - 'eventbridge'
+  - 'sqs'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A logistics company receives manifest files in an Amazon S3 bucket. A downstream billing service reads work from an Amazon SQS FIFO queue and expects it to be the only entry point. The company wants a message in that FIFO queue every time a new manifest object is created, without running any custom code or polling the bucket. What should a solutions architect set up to do this with the least ongoing operational work?'
+options:
+  - key: A
+    text: 'Add an S3 event notification for object-created events that names the FIFO queue as its destination.'
+    correct: false
+    why: 'Amazon SQS FIFO queues are not supported as a destination for S3 event notifications, so this configuration is not accepted.'
+  - key: B
+    text: 'Add an S3 event notification that invokes an AWS Lambda function, and have the function call SendMessage on the FIFO queue.'
+    correct: false
+    why: 'It can work, but it adds a function to write, permission and maintain. The requirement is to avoid custom code.'
+  - key: C
+    text: 'Turn on Amazon EventBridge notifications for the bucket and create a rule that matches the Object Created event and targets the FIFO queue.'
+    correct: true
+    why: 'S3 can send events to EventBridge, and the S3 documentation says that EventBridge is the way to send a notification for an S3 event to an SQS FIFO queue. It needs no custom code.'
+  - key: D
+    text: 'Create a scheduled EventBridge rule that starts a function every minute to list the bucket and send new keys to the FIFO queue.'
+    correct: false
+    why: 'This is polling rather than an event-driven design. It also needs custom code and delays delivery up to the schedule interval.'
+cue: 'S3 object created, SQS FIFO queue as target, no custom code'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/EventNotifications.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

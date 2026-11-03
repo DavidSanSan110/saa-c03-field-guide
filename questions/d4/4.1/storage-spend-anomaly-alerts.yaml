@@ -1,0 +1,34 @@
+id: 'd4-4.1-0006'
+domain: 4
+task: '4.1'
+services:
+  - 'cost-anomaly-detection'
+  - 's3'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: "A software company's Amazon S3 spend grows steadily and also follows a weekly pattern, so no single monthly amount is a good limit. Last month a faulty job wrote huge amounts of debug data into a bucket for two weeks, and the finance team only noticed it on the invoice. The company wants to be told within about a day when spend departs from its normal pattern, with the likely cause shown by service, account, Region or usage type, and wants to avoid maintaining thresholds or writing code. Which solution meets these requirements?"
+options:
+  - key: A
+    text: 'Create an AWS Budgets cost budget for Amazon S3 with a fixed monthly amount and an alert at 80 percent of that amount.'
+    correct: false
+    why: 'A fixed amount cannot learn growth or weekly seasonality, and it only alerts when the amount is approached, which in this case would be late in the month. It also does not rank root causes by dimension.'
+  - key: B
+    text: 'Create an Amazon CloudWatch alarm on the BucketSizeBytes metric of every bucket with a static threshold and send the alarm to an Amazon SNS topic.'
+    correct: false
+    why: 'Static per-bucket thresholds must be set and maintained by hand, and bucket size is not the same as cost, so other S3 charges such as requests or transfer would be missed.'
+  - key: C
+    text: 'Create an AWS Cost Anomaly Detection monitor and an alert subscription that delivers to email or an Amazon SNS topic.'
+    correct: true
+    why: 'Cost Anomaly Detection uses machine learning that accounts for seasonality and natural growth, runs about three times a day on Cost Explorer data, and shows root causes by service, account, Region or usage type. Alerts go to email or SNS without code.'
+  - key: D
+    text: 'Ask the finance team to open AWS Cost Explorer every morning, group the S3 cost by usage type and compare it with the previous week.'
+    correct: false
+    why: 'It can find the problem but is a manual routine that people forget, so it does not meet the requirement to be told automatically.'
+cue: 'spend varies with seasonality and growth, no fixed threshold, notified within a day, root cause by service/account/Region/usage type: Cost Anomaly Detection.'
+references:
+  - 'https://docs.aws.amazon.com/cost-management/latest/userguide/manage-ad.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

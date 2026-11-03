@@ -1,0 +1,35 @@
+id: 'd3-3.2-0006'
+domain: 3
+task: '3.2'
+services:
+  - 'fsx'
+  - 's3'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A genomics lab keeps its reference datasets and results in Amazon S3. Once a week it runs a 10-hour analysis on a large compute cluster that needs a high-throughput parallel file system. The input files must appear as files in a directory, results must end up back in S3 automatically, and the file system is deleted after each run. The lab wants the lowest cost for this temporary processing and accepts that the data on the file system is not replicated. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create an Amazon FSx for Lustre Scratch 2 file system, link it to the S3 bucket with a data repository association that has automatic export, and delete it after the run.'
+    correct: true
+    why: 'Scratch file systems are designed for temporary storage and short-term processing, and are cost-optimized. Scratch 2 is needed here: data repository associations are not available on Scratch 1. A data repository association maps an S3 prefix to a directory and, with automatic export, writes new and changed files back to S3.'
+  - key: B
+    text: 'Create an Amazon FSx for Lustre persistent file system and link it to the bucket, keeping it running between weekly runs.'
+    correct: false
+    why: 'Persistent file systems are for longer-term storage and for workloads sensitive to availability, with replicated data. The lab needs only temporary storage and accepts no replication, so this costs more than necessary.'
+  - key: C
+    text: 'Copy the datasets to an Amazon EBS volume attached to each cluster node before the run and copy the results back to S3 afterwards.'
+    correct: false
+    why: 'EBS volumes are attached to a single instance and are not a shared parallel file system. The team would also have to script the copying in both directions.'
+  - key: D
+    text: 'Create an FSx for Lustre scratch file system without a data repository association and copy data with a script before and after each run.'
+    correct: false
+    why: 'A scratch file system is the right deployment type, but without a data repository association the S3 objects do not appear as files, and results are not exported automatically. This adds the custom data movement the lab wants to avoid.'
+cue: 'temporary high-performance file system, S3 linked, automatic export, lowest cost'
+references:
+  - 'https://docs.aws.amazon.com/fsx/latest/LustreGuide/using-fsx-lustre.html'
+  - 'https://docs.aws.amazon.com/fsx/latest/LustreGuide/create-dra-linked-data-repo.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

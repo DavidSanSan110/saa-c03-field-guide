@@ -1,0 +1,35 @@
+id: 'd4-4.3-0003'
+domain: 4
+task: '4.3'
+services:
+  - 'instance-scheduler'
+  - 'rds'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A company has 25 Amazon RDS for PostgreSQL development databases, all Single-AZ and none with read replicas. Developers use them only from 08:00 to 19:00 on weekdays, but they run all week. The company wants to cut the cost of these databases while keeping their data, endpoints and configuration unchanged, and wants one central, tag-based way to manage the on and off times, with the least custom code. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Buy one-year Reserved DB Instances for all 25 databases.'
+    correct: false
+    why: 'Reservations lower the hourly rate but the databases still run, and are billed, during nights and weekends. Stopping them when unused saves far more for a workload that only needs about 50 of 168 hours.'
+  - key: B
+    text: 'Deploy Instance Scheduler on AWS, define a weekday schedule, and tag the databases with the schedule name.'
+    correct: true
+    why: 'The solution uses resource tags and AWS Lambda to start and stop EC2 and RDS instances on a schedule, across accounts and Regions. A stopped RDS instance keeps its endpoint, parameter groups and data, and is not charged for DB instance hours. Daily stops stay well inside the seven-day limit.'
+  - key: C
+    text: 'Ask each team to take a snapshot, delete its database every evening, and restore it from the snapshot every morning.'
+    correct: false
+    why: 'This is manual, slow and error-prone, and the restored instances get new endpoints unless renamed. Stop and start keeps the endpoint and configuration.'
+  - key: D
+    text: 'Migrate the databases to Aurora PostgreSQL provisioned clusters and tag them for savings.'
+    correct: false
+    why: 'A migration adds effort and risk and does not stop compute charges by itself; provisioned Aurora instances bill while they run.'
+cue: 'dev databases used only in working hours, keep endpoint and data, central tag-based on/off times, little custom code: Instance Scheduler on AWS.'
+references:
+  - 'https://docs.aws.amazon.com/solutions/latest/instance-scheduler-on-aws/solution-overview.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_StopInstance.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

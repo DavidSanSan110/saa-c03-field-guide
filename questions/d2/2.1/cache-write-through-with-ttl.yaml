@@ -1,0 +1,33 @@
+id: 'd2-2.1-0019'
+domain: 2
+task: '2.1'
+services:
+  - 'elasticache'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A travel company caches customer profiles in Amazon ElastiCache in front of its relational database. The application currently adds a profile to the cache only after a cache miss. Customers who update their profile keep seeing old values for a while, and each cache node replacement causes a burst of slow reads. The company wants cached profiles to be current right after an update, wants the application to keep working when a node is replaced with an empty one, and wants to avoid filling the cache with profiles that are never read. Which caching approach should the developers adopt?'
+options:
+  - key: A
+    text: 'Keep the current approach (load into the cache only on a miss) and never set an expiry on the keys.'
+    correct: false
+    why: 'Loading only on a miss never refreshes the cache when the database changes, so profiles stay stale. Without an expiry, stale values can remain indefinitely.'
+  - key: B
+    text: 'Switch to write-through only: write each profile to the cache and the database on every update, and never load on a miss.'
+    correct: false
+    why: 'Write-through keeps data current, but a new empty node has missing data until each profile is written again, and the cache fills with data that is never read.'
+  - key: C
+    text: 'Combine write-through (update the cache when the database is written) with load-on-miss, and set a TTL on every cached profile.'
+    correct: true
+    why: 'Write-through keeps the cache current after updates. Load-on-miss (lazy loading) fills in data missing after a node replacement. The TTL expires unread entries and limits wasted space.'
+  - key: D
+    text: 'Keep load-on-miss only and set a long TTL, such as 24 hours, on each cached profile.'
+    correct: false
+    why: 'A TTL limits how stale data can get but does not guarantee freshness. Profiles can still be outdated for up to the TTL after an update, so the freshness requirement fails.'
+cue: 'current right after an update, empty replacement node, no never-read data'
+references:
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Strategies.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

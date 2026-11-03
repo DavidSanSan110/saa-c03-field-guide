@@ -1,0 +1,35 @@
+id: 'd2-2.2-0012'
+domain: 2
+task: '2.2'
+services:
+  - 'elastic-disaster-recovery'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A manufacturer runs an ERP application and its self-managed database on physical and virtual servers in its own data center. It wants to use an AWS Region as the disaster recovery site. The company wants continuous replication of the servers with little ongoing compute cost, the ability to launch recovery instances within minutes from the latest state or an earlier point in time, non-disruptive recovery drills, and a way to return to the data center after the outage. Which approach gives the company all of this with the LEAST ongoing operational work?'
+options:
+  - key: A
+    text: 'Install the AWS Elastic Disaster Recovery agent on the source servers and replicate them into a staging area in the recovery Region.'
+    correct: true
+    why: 'Elastic Disaster Recovery replicates at block level into a low-cost staging area with minimal compute. It launches recovery instances within minutes, supports drills and point-in-time recovery, and can replicate back to the source site for failback.'
+  - key: B
+    text: 'Keep a full-size duplicate of every server running on EC2 in the recovery Region and synchronize the databases with custom scripts.'
+    correct: false
+    why: 'It would meet the recovery goal, but it pays for full compute all the time and adds custom scripting, which goes against the low ongoing cost and low effort requirements.'
+  - key: C
+    text: 'Take nightly image backups of the servers, upload them to Amazon S3 in the recovery Region and rebuild the servers by hand after a disaster.'
+    correct: false
+    why: 'Nightly backups mean up to a day of data loss and a manual rebuild takes far longer than minutes. There is no continuous replication, drill capability or failback.'
+  - key: D
+    text: 'Run an AWS DMS task that continuously replicates the database to Amazon RDS in the recovery Region.'
+    correct: false
+    why: 'DMS replicates database data only, not the application servers, and it is not a recovery tool that launches whole servers or supports failback to the data center.'
+cue: 'continuous replication, low-cost staging, recovery instances in minutes, drills and failback from a data center'
+references:
+  - 'https://docs.aws.amazon.com/drs/latest/userguide/what-is-drs.html'
+  - 'https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

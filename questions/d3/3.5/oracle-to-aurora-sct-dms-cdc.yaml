@@ -1,0 +1,36 @@
+id: 'd3-3.5-0010'
+domain: 3
+task: '3.5'
+services:
+  - 'dms'
+  - 'aurora'
+difficulty: medium
+type: single
+stem: 'A retailer runs an Oracle database in its data center that backs a busy order system. It wants to move to Amazon Aurora PostgreSQL. The schema contains tables, indexes and stored procedures written for Oracle. The business can accept only a few minutes of downtime during the final cutover. Which approach meets these requirements?'
+options:
+  - key: A
+    text: 'Use AWS DMS alone with a full-load-only task, because it converts all Oracle objects automatically.'
+    correct: false
+    why: 'DMS moves data but is not the tool for converting a schema and code to a different engine, and a full-load-only task does not capture changes made while the migration runs, so downtime would be long.'
+  - key: B
+    text: 'Convert the schema and code to PostgreSQL with the AWS Schema Conversion Tool, then run an AWS DMS task with full load plus change data capture and cut over when the target is in sync.'
+    correct: true
+    why: 'This is a heterogeneous migration. SCT converts the schema and code, and DMS loads the existing data and keeps applying source changes through CDC while the source stays in use, so only a short cutover is needed.'
+  - key: C
+    text: 'Export the Oracle database with a native dump, import the dump into Aurora PostgreSQL and point the application at it.'
+    correct: false
+    why: 'An Oracle dump cannot be imported into PostgreSQL, and the source would be offline or out of date for the whole transfer.'
+  - key: D
+    text: 'Use AWS DMS with a CDC-only task and create the target tables by hand from the existing data.'
+    correct: false
+    why: 'A CDC-only task migrates only ongoing changes and assumes the target already holds the data. The existing data would be missing, and the schema and procedures would still have to be converted.'
+cue: 'Oracle to Aurora PostgreSQL, different engine, procedures, few minutes of downtime'
+references:
+  - 'https://docs.aws.amazon.com/SchemaConversionTool/latest/userguide/CHAP_Welcome.html'
+  - 'https://docs.aws.amazon.com/dms/latest/userguide/CHAP_Task.CDC.html'
+  - 'https://docs.aws.amazon.com/whitepapers/latest/aws-overview/migration-services.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

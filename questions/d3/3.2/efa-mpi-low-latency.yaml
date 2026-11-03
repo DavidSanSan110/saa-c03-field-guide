@@ -1,0 +1,33 @@
+id: 'd3-3.2-0005'
+domain: 3
+task: '3.2'
+services:
+  - 'ec2'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: "A weather-modelling company runs a tightly coupled simulation with Open MPI on a cluster of Amazon EC2 instances. The ranks exchange small messages constantly, and the job is limited by inter-node latency and the overhead of the operating system's network stack. The instance type already supports every networking option. The team wants the largest improvement in node-to-node communication. Which approach should the team use?"
+options:
+  - key: A
+    text: 'Attach an Elastic Fabric Adapter to each node, keep all nodes in one Availability Zone, and run the MPI job over Libfabric.'
+    correct: true
+    why: 'EFA provides OS-bypass: the MPI library talks to the EFA device through Libfabric instead of the kernel TCP/IP stack, giving lower and more consistent latency. EFA supports Open MPI 4.1 and later, and EFA traffic cannot cross Availability Zones.'
+  - key: B
+    text: 'Attach an Elastic Fabric Adapter to each node and spread the nodes across three Availability Zones for resilience.'
+    correct: false
+    why: "EFA traffic can't cross Availability Zones or VPCs, so nodes in different zones cannot use the EFA path between them."
+  - key: C
+    text: 'Attach several additional ENA network interfaces to each node and run MPI over TCP across them.'
+    correct: false
+    why: "ENA interfaces provide traditional IP networking, so the traffic still goes through the operating system's TCP/IP stack. They do not remove the kernel overhead that EFA bypasses."
+  - key: D
+    text: 'Keep the ENA interface and move to a larger instance size to get a higher baseline network bandwidth.'
+    correct: false
+    why: 'Bandwidth does not remove the OS network-stack overhead. EFA is available at no additional cost on supported instances, so the cheaper and more direct fix for latency is EFA.'
+cue: 'tightly coupled MPI, OS network stack overhead, lowest inter-node latency'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

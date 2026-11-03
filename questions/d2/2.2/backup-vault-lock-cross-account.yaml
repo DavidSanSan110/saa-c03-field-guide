@@ -1,0 +1,42 @@
+id: 'd2-2.2-0013'
+domain: 2
+task: '2.2'
+services:
+  - 'backup'
+difficulty: hard
+type: multiple
+stem: 'A healthcare company backs up its Amazon RDS and Amazon EBS resources with AWS Backup in a production account that belongs to an AWS Organizations organization. A new security policy says backups must survive a compromise of the production account, including the actions of an administrator or the root user, and must not be deletable before their retention period ends. Which combination of actions meets these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Enable AWS Backup Vault Lock in compliance mode on the destination vault, with minimum and maximum retention periods, and let the grace time expire.'
+    correct: true
+    why: 'After the grace time ends, a compliance mode lock cannot be changed or deleted by any user, the root user or AWS, and recovery points cannot be deleted before their lifecycle completes.'
+  - key: B
+    text: 'Add a copy rule to the backup plan that copies recovery points to a vault in a separate account of the same organization.'
+    correct: true
+    why: 'A cross-account copy keeps a second set of backups outside the production account, so compromise of that account does not reach them. The accounts must be in the same organization, and the copy can be restored by copying back.'
+  - key: C
+    text: 'Lock the production vault in governance mode.'
+    correct: false
+    why: 'A governance mode lock can be removed by users with sufficient IAM permissions, so a compromised administrator could remove it. It does not meet the requirement.'
+  - key: D
+    text: 'Add a copy rule that copies recovery points to a second vault in the same production account but in another Region.'
+    correct: false
+    why: 'It helps with a Regional failure, but the copies still sit in the production account, so an attacker with control of the account can still reach them.'
+  - key: E
+    text: 'Attach an IAM policy to the production account that denies the backup:DeleteRecoveryPoint action.'
+    correct: false
+    why: 'An IAM policy in the same account can be changed or removed by an administrator, so it does not give protection that survives a compromise of that account.'
+  - key: F
+    text: 'Shorten the backup retention to seven days so that less data is exposed at any time.'
+    correct: false
+    why: 'Retention length does not protect existing backups from deletion, and the policy requires them to be kept until their retention ends.'
+cue: 'survive compromise of the account, even root, not deletable before retention ends'
+references:
+  - 'https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html'
+  - 'https://docs.aws.amazon.com/aws-backup/latest/devguide/create-cross-account-backup.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
