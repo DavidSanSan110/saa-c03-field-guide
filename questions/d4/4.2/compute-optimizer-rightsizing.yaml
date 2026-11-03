@@ -1,0 +1,35 @@
+id: 'd4-4.2-0004'
+domain: 4
+task: '4.2'
+services:
+  - 'compute-optimizer'
+  - 'ec2'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A logistics company runs about 120 Amazon EC2 instances that were sized by guesswork at launch two years ago. Many are probably too large. The company wants data-driven suggestions for smaller instance types that account for CPU, network, disk and memory use, with the least effort and without buying any commitment yet. Which approach should a solutions architect take?'
+options:
+  - key: A
+    text: 'Purchase a Compute Savings Plan that covers the current hourly EC2 spend, and review usage again at renewal.'
+    correct: false
+    why: "A commitment sized to today's spend locks in the cost of oversized instances. Rightsizing should come first, and the company does not want a commitment yet."
+  - key: B
+    text: 'Opt in to AWS Compute Optimizer and install the Amazon CloudWatch agent on the instances so memory utilization is collected, then act on the over-provisioned findings.'
+    correct: true
+    why: 'Compute Optimizer analyzes CloudWatch utilization data (14 days by default) and recommends smaller sizes for over-provisioned instances. CPU, network and disk metrics are analyzed by default, but memory is only analyzed when the CloudWatch agent publishes it.'
+  - key: C
+    text: 'Enable detailed monitoring on all instances and have engineers study the CPU graphs in CloudWatch for each instance.'
+    correct: false
+    why: 'This is manual work for 120 instances and ignores memory, so engineers could choose a size with too little memory. Compute Optimizer produces the recommendations automatically.'
+  - key: D
+    text: 'Replace all the instances with Spot Instances of the same size.'
+    correct: false
+    why: 'Spot lowers the hourly price but does not remove the oversizing, and interruptions may break workloads that were not designed for them. The requirement is to find better-fitting sizes.'
+cue: 'oversized instances, data-driven rightsizing across CPU, network, disk and memory, no commitment yet: opt in to Compute Optimizer and add the CloudWatch agent for memory.'
+references:
+  - 'https://docs.aws.amazon.com/compute-optimizer/latest/ug/what-is-compute-optimizer.html'
+  - 'https://docs.aws.amazon.com/compute-optimizer/latest/ug/ec2-metrics-analyzed.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

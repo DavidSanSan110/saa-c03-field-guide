@@ -1,0 +1,33 @@
+id: 'd4-4.1-0005'
+domain: 4
+task: '4.1'
+services:
+  - 'backup'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A publishing company protects a shared Amazon EFS file system with an AWS Backup plan that creates a daily backup. Policy says each backup must be kept for exactly one year, and restores of anything older than a month are very rare and may be slow. The backup storage bill keeps growing. The company wants to cut backup storage cost with the least operational effort and no custom code. Which change to the backup plan meets these requirements?'
+options:
+  - key: A
+    text: 'Keep the one-year retention and add a rule that copies every recovery point to a second backup vault in the same Region, using the lower-cost tier of that vault.'
+    correct: false
+    why: 'A second vault does not have a cheaper tier of its own; the extra copies would add storage cost instead of lowering it. Cost is lowered by changing the storage tier of recovery points, not by duplicating them.'
+  - key: B
+    text: 'Enable the lifecycle setting that moves recovery points to cold storage 30 days after creation, and set the total retention to 365 days.'
+    correct: true
+    why: 'AWS Backup supports moving EFS backups from warm to cold storage, which costs less per GB. Retention must be at least 90 days longer than the transition time; 30 + 90 = 120 days is less than 365, so the combination is valid and meets the one-year rule.'
+  - key: C
+    text: 'Enable the lifecycle setting that moves recovery points to cold storage 300 days after creation, and set the total retention to 365 days.'
+    correct: false
+    why: 'Backups moved to cold storage must stay there at least 90 days, so total retention has to be at least 390 days. This setting is rejected, and even a valid late transition would leave most of the year in the expensive warm tier.'
+  - key: D
+    text: 'Write a scheduled script that exports the EFS backups to an S3 bucket and applies an S3 Lifecycle rule that moves them to an archive storage class.'
+    correct: false
+    why: 'This can lower storage cost but needs custom code, schedules and restore tooling, which the company wants to avoid. AWS Backup already offers a built-in cold tier for EFS backups.'
+cue: 'AWS Backup, EFS, daily backups kept one year, rare slow restores after a month, cut cost without custom code: transition to cold storage with retention at least 90 days longer than the transition.'
+references:
+  - 'https://docs.aws.amazon.com/aws-backup/latest/devguide/plan-options-and-configuration.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

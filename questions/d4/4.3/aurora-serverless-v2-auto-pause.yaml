@@ -1,0 +1,33 @@
+id: 'd4-4.3-0004'
+domain: 4
+task: '4.3'
+services:
+  - 'aurora'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A company runs an Amazon Aurora MySQL-compatible cluster for an internal reporting tool. Nobody uses it for long, irregular periods: sometimes for several days, with no pattern that a fixed schedule could capture. When someone does connect, a delay of 30 seconds or more for the first connection is acceptable. The cluster has no RDS Proxy and does not use binlog replication. The company wants to pay as little as possible for database compute without writing scheduling code. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Use Aurora Serverless v2 for the instances with a minimum capacity of 0 ACUs and an auto-pause idle interval that suits the usage.'
+    correct: true
+    why: 'With a minimum of 0 ACUs, Aurora Serverless v2 instances pause after the configured idle time and the instance charge drops to zero; storage is still billed. A new connection resumes the instance automatically, typically in about 15 seconds, longer after a long pause.'
+  - key: B
+    text: 'Use Aurora Serverless v2 with a minimum capacity of 0.5 ACUs and a high maximum capacity.'
+    correct: false
+    why: 'A non-zero minimum means the instances never pause, so the company keeps paying for at least 0.5 ACUs all the time.'
+  - key: C
+    text: 'Keep a provisioned writer instance and buy a Reserved Instance for it.'
+    correct: false
+    why: 'A reservation lowers the price of an instance that is always on, but the cluster is idle for long stretches and a provisioned instance cannot pause itself.'
+  - key: D
+    text: 'Write a Lambda function that stops the cluster every evening and starts it every morning with an Amazon EventBridge schedule.'
+    correct: false
+    why: 'Usage has no fixed pattern, so the schedule would either leave the cluster running while idle or stop it while someone needs it. It also needs the custom code the company wants to avoid.'
+cue: 'long irregular idle periods, brief connection delay acceptable, lowest compute cost, no scheduling code: Aurora Serverless v2 with minimum capacity 0 ACUs (auto-pause).'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-serverless-v2-auto-pause.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,34 @@
+id: 'd2-2.1-0021'
+domain: 2
+task: '2.1'
+services:
+  - 'sqs'
+  - 'lambda'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'An AWS Lambda function reads invoice messages from an Amazon SQS standard queue through an event source mapping with a batch size of 10. Occasionally one message in a batch is malformed and makes the function throw an error, so the whole batch becomes visible again and the other nine invoices, which were already processed, are handled again. The team wants to keep batching and stop reprocessing the messages that succeeded. What should a solutions architect recommend?'
+options:
+  - key: A
+    text: 'Enable partial batch responses (ReportBatchItemFailures) on the event source mapping and have the function return the IDs of only the failed messages.'
+    correct: true
+    why: 'With ReportBatchItemFailures, the function returns a batchItemFailures list and only those messages become visible again. The successfully processed messages are deleted from the queue.'
+  - key: B
+    text: 'Configure a dead-letter queue on the Lambda function itself so that the failed batch is moved out of the way.'
+    correct: false
+    why: 'A function-level dead-letter queue applies to asynchronous invocations. With an SQS event source, the dead-letter queue must be configured on the SQS queue itself, and it would still not stop the good messages from being retried in the same batch.'
+  - key: C
+    text: 'Increase the visibility timeout of the queue so that the failed batch stays hidden for longer.'
+    correct: false
+    why: 'A longer timeout only delays when the entire batch reappears. The messages that succeeded are still returned to the queue and processed again.'
+  - key: D
+    text: 'Have the function catch the exception and return a normal success response so that Lambda deletes the whole batch.'
+    correct: false
+    why: 'Returning success tells Lambda the whole batch is processed, so the malformed message is deleted too and the invoice is silently lost.'
+cue: 'one bad message in a batch, others reprocessed, keep batching'
+references:
+  - 'https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

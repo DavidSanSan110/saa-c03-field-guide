@@ -1,0 +1,35 @@
+id: 'd3-3.5-0012'
+domain: 3
+task: '3.5'
+services:
+  - 'datasync'
+  - 's3'
+difficulty: medium
+type: single
+stem: 'A media company stores 60 TB of production footage on an on-premises NFS file server. It wants to copy the footage to Amazon S3, and then keep copying new and changed files every night until it retires the file server in about three months. The data must be verified when it arrives. The company has a 10 Gbps internet link that is mostly idle at night, and wants the least amount of scripting and infrastructure to manage. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Deploy an AWS DataSync agent on premises, create a task from the NFS location to an S3 location and run it on a nightly schedule.'
+    correct: true
+    why: "DataSync transfers data over the network from NFS to S3, handles encryption and integrity validation, and can run on a schedule for recurring copies. It needs no scripts or servers of the company's own."
+  - key: B
+    text: 'Order AWS Snowball Edge devices, copy the footage to them and ship them to AWS.'
+    correct: false
+    why: 'A device shipment is a one-time offline transfer. It does not handle the nightly copies of new and changed files, and the idle 10 Gbps link already makes an online transfer practical.'
+  - key: C
+    text: 'Order an AWS Direct Connect connection and copy the files with a script that runs aws s3 cp every night.'
+    correct: false
+    why: 'Direct Connect only provides a network link, which takes weeks to provision and is not needed here, and the company would still have to write and maintain the copy and verification scripts.'
+  - key: D
+    text: 'Set up a Site-to-Site VPN and run rsync from a fleet of EC2 instances that mount the file server.'
+    correct: false
+    why: 'A VPN is not a transfer tool, and rsync on EC2 means building and managing infrastructure and scripts, contrary to the requirement of least effort.'
+cue: 'NFS to S3, recurring nightly copies, verify data, idle internet link, least scripting'
+references:
+  - 'https://docs.aws.amazon.com/datasync/latest/userguide/what-is-datasync.html'
+  - 'https://docs.aws.amazon.com/whitepapers/latest/aws-overview/migration-services.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

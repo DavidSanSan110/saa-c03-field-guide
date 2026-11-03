@@ -1,0 +1,36 @@
+id: 'd4-4.2-0005'
+domain: 4
+task: '4.2'
+services:
+  - 'batch'
+  - 'ec2'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A bioinformatics company runs a few thousand containerized analysis jobs every night in AWS Batch. Each job takes 10 to 40 minutes, can be rerun from the start without side effects, and the whole batch only has to finish by morning. The compute environment currently uses On-Demand Amazon EC2 instances. The company wants to lower compute cost as much as possible while keeping the jobs completing reliably. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Keep the On-Demand compute environment and buy a three-year EC2 Instance Savings Plan for the instance family it uses today.'
+    correct: false
+    why: 'The jobs run only part of the night, so a commitment pays for hours that are not used, and it is a larger lock-in for a workload that tolerates interruption. Spot capacity is cheaper for this kind of job.'
+  - key: B
+    text: 'Create a managed compute environment that uses Spot Instances with the SPOT_PRICE_CAPACITY_OPTIMIZED allocation strategy and many instance types, and set a retry strategy on the job definition.'
+    correct: true
+    why: 'Jobs that are safe to rerun suit Spot. The price and capacity optimized strategy picks pools that are least likely to be interrupted at the lowest price, and a retry strategy (1 to 10 attempts) reruns jobs whose instance was terminated.'
+  - key: C
+    text: 'Create a managed compute environment that uses Spot Instances of one instance type only, and leave the job retry strategy at its default.'
+    correct: false
+    why: 'The default is a single attempt, so a job on a reclaimed instance fails instead of being rerun. A single instance type also shrinks the Spot pools Batch can choose from, raising the chance of interruption and capacity shortages.'
+  - key: D
+    text: 'Switch the compute environment to the BEST_FIT_PROGRESSIVE allocation strategy with On-Demand instances.'
+    correct: false
+    why: 'This strategy only changes how On-Demand instance types are chosen. The jobs still pay On-Demand prices, so the large Spot saving is missed.'
+cue: 'idempotent, rerunnable jobs, no tight deadline, lowest compute cost in AWS Batch: Spot compute environment, price-and-capacity-optimized strategy, diversified types, retries.'
+references:
+  - 'https://docs.aws.amazon.com/batch/latest/userguide/allocation-strategies.html'
+  - 'https://docs.aws.amazon.com/batch/latest/userguide/job_retries.html'
+  - 'https://docs.aws.amazon.com/batch/latest/userguide/managed_compute_environments.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

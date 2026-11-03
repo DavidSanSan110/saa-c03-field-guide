@@ -1,0 +1,33 @@
+id: 'd2-2.2-0014'
+domain: 2
+task: '2.2'
+services:
+  - 'aurora'
+difficulty: hard
+type: single
+stem: 'A bank runs an Amazon Aurora PostgreSQL global database with the primary cluster in one Region and a healthy secondary cluster in another. A regulation requires the bank to run its production database from the secondary Region for several weeks each year to prove its DR procedures work. The move must lose no committed transactions, and the original topology must be kept so the bank can move back afterwards. Both Regions are healthy. Which action should the solutions architect take?'
+options:
+  - key: A
+    text: 'Run a failover of the global database with data loss allowed, targeting the secondary cluster.'
+    correct: false
+    why: 'A failover is for unplanned outages and does not wait for the secondary to catch up, so asynchronous replication lag can mean lost transactions. Here both Regions are healthy and no data may be lost.'
+  - key: B
+    text: 'Run a switchover of the global database, choosing the secondary cluster as the new primary.'
+    correct: true
+    why: 'A switchover is for controlled scenarios in which all clusters are healthy. Aurora first synchronizes the secondary with the primary, so RPO is 0, and the replication topology stays the same so the bank can switch back later.'
+  - key: C
+    text: 'Detach the secondary cluster from the global database so that it becomes a standalone cluster, then point the application at it.'
+    correct: false
+    why: 'Detaching stops replication immediately and promotes the cluster without synchronizing, so writes not yet replicated are lost. It also breaks the global topology that must be kept.'
+  - key: D
+    text: 'Take a snapshot of the primary cluster, copy it to the secondary Region and restore it as a new cluster.'
+    correct: false
+    why: 'Writes made after the snapshot are lost, so it cannot guarantee zero data loss, and it creates a separate cluster instead of keeping the global database.'
+cue: 'both Regions healthy, planned regional rotation, no data loss, keep topology'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database-disaster-recovery.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

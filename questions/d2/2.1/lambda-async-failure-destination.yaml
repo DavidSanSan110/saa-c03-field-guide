@@ -1,0 +1,34 @@
+id: 'd2-2.1-0018'
+domain: 2
+task: '2.1'
+services:
+  - 'lambda'
+  - 'sqs'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: "An insurance company runs a claims-enrichment AWS Lambda function that other services invoke asynchronously. When the function keeps failing, Lambda eventually discards the event and the team loses it. The operations team wants every discarded event to be kept in a queue for later reprocessing, and each saved record must also include the details of the function's error response, not only the original payload, so engineers can diagnose the failure without searching logs. Which configuration meets these requirements with the least effort?"
+options:
+  - key: A
+    text: 'Configure an Amazon SQS standard queue as a dead-letter queue on the Lambda function.'
+    correct: false
+    why: 'A dead-letter queue keeps the discarded events, but Lambda sends only the content of the event to it, without details about the response. The error details requirement is missed.'
+  - key: B
+    text: 'Configure an on-failure destination on the function that points to an Amazon SQS standard queue.'
+    correct: true
+    why: 'An on-failure destination receives a JSON invocation record when the event fails all processing attempts or exceeds its maximum age. The record contains the request payload and response details such as the function error, and SQS standard queues are a supported destination.'
+  - key: C
+    text: 'Configure an on-failure destination that points to an Amazon SQS FIFO queue so that failed events stay in order.'
+    correct: false
+    why: 'A FIFO queue is not a supported destination for asynchronous invocation records. Lambda would fail to deliver the record and emit a DestinationDeliveryFailures metric.'
+  - key: D
+    text: "Set the function's reserved concurrency to zero so that failed events are held until the bug is fixed."
+    correct: false
+    why: 'Setting reserved concurrency to zero stops the function from processing and sends new events straight to the configured dead-letter queue or destination without retries. It does not capture events that fail while the function runs, and it takes the function offline.'
+cue: 'asynchronous invocation, discarded events kept for reprocessing, error response details included'
+references:
+  - 'https://docs.aws.amazon.com/lambda/latest/dg/invocation-async-retain-records.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

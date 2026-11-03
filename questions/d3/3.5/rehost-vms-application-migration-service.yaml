@@ -1,0 +1,35 @@
+id: 'd3-3.5-0011'
+domain: 3
+task: '3.5'
+services:
+  - 'application-migration-service'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A logistics company has 80 virtual and physical servers in a colocation facility running a mix of Windows Server and Linux applications. It must move them to Amazon EC2 in the next quarter without changing the applications, and each application can be down for only a few minutes during cutover. The team wants to test the migrated servers before switching over and to avoid building the migration process by hand. Which solution is the MOST suitable?'
+options:
+  - key: A
+    text: 'Use AWS Application Migration Service: install the replication agent on each source server, replicate continuously to a staging area, launch test instances, then launch cutover instances.'
+    correct: true
+    why: 'Application Migration Service (now named AWS Transform MGN in the docs) rehosts servers by continuous block-level replication and converts them to run natively on EC2. It supports non-disruptive test launches and cutover windows measured in minutes, with the same process for many kinds of servers.'
+  - key: B
+    text: 'Use AWS DMS to replicate each server to EC2.'
+    correct: false
+    why: 'DMS migrates databases, not whole servers with their operating systems and applications.'
+  - key: C
+    text: 'Copy the application files to Amazon S3 with AWS DataSync and rebuild each server manually on EC2 from the files.'
+    correct: false
+    why: 'DataSync moves file and object data but does not replicate or convert servers. Rebuilding 80 servers by hand is slow, error-prone, and means long downtime.'
+  - key: D
+    text: 'Rewrite each application as a set of AWS Lambda functions and deploy them to the cloud.'
+    correct: false
+    why: 'It would be a refactor, not a lift-and-shift. The requirement is to move the servers without changing the applications within a quarter.'
+cue: 'lift-and-shift, no application changes, continuous replication, test before cutover, minutes of downtime'
+references:
+  - 'https://docs.aws.amazon.com/mgn/latest/ug/what-is-application-migration-service.html'
+  - 'https://docs.aws.amazon.com/mgn/latest/ug/Replication-Related-FAQ.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
