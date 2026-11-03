@@ -1,12 +1,13 @@
 // The AI-draft marker of a draft's check file (spec 044): which AI-draft notes fed its brief. No file
 // system access: tools/questions/src/cli.ts does the I/O.
-/* eslint-disable @typescript-eslint/no-unused-vars -- interface stub of spec 044, to be replaced */
 import type { TaskId } from '@field-guide/schema';
+import { feedingSections, notesStatus } from './brief.ts';
 import type { SectionMap } from './brief.ts';
+import { withSidecarKey } from './sidecar.ts';
 
 /** `existing` (or nothing) with the top-level key `ai_draft` set to `{ sections }`. */
-export function withAiDraft(_existing: string | undefined, _sections: string[]): string {
-  throw new Error('not implemented');
+export function withAiDraft(existing: string | undefined, sections: string[]): string {
+  return withSidecarKey(existing, 'ai_draft', { sections });
 }
 
 /**
@@ -14,9 +15,12 @@ export function withAiDraft(_existing: string | undefined, _sections: string[]):
  * in that order.
  */
 export function aiDraftSections(
-  _map: SectionMap,
-  _task: TaskId,
-  _readNotes: (folder: string) => string | undefined,
+  map: SectionMap,
+  task: TaskId,
+  readNotes: (folder: string) => string | undefined,
 ): string[] {
-  throw new Error('not implemented');
+  return feedingSections(map, task).filter((folder) => {
+    const text = readNotes(folder);
+    return text !== undefined && notesStatus(text) === 'ai-draft';
+  });
 }

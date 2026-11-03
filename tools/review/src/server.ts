@@ -23,7 +23,14 @@ import type { BankEntry, FileMap } from '@field-guide/questions/bank';
 import { formatIssues, getTask, questionSchema } from '@field-guide/schema';
 import type { Question } from '@field-guide/schema';
 import { parse } from 'yaml';
-import { approvedText, buildQueue, checkEdit, isCorrect, verificationState } from './review.ts';
+import {
+  aiDraftOf,
+  approvedText,
+  buildQueue,
+  checkEdit,
+  isCorrect,
+  verificationState,
+} from './review.ts';
 import type { VerificationState } from './review.ts';
 
 export interface ReviewServer {
@@ -271,6 +278,7 @@ export function startServer(opts: {
       state,
       verification: sidecar.value?.['verification'] ?? null,
       dedupe: sidecar.value?.['dedupe'] ?? null,
+      aiDraft: aiDraftOf(sidecar.value),
       sidecarError: sidecar.error ?? null,
       etag: found.etag,
     };
