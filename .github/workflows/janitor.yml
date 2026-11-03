@@ -1,0 +1,61 @@
+# Once a day, finds lab resources older than a limit (12 hours unless told otherwise) and keeps one
+# GitHub issue up to date, so a forgotten NAT gateway does not burn the credits.
+# The job only reads: it writes nothing to AWS. It logs in as the fg-tf-plan role, but the inline
+# session policy below, not the role, limits the session to two read actions.
+# Spec 043. It must not set `environment:`, which would change the OIDC subject the role trusts.
+name: Lab janitor
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+    inputs:
+      max_age_hours:
+        description: Report resources older than this many hours (whole number, 1 to 2160; empty means 12)
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: lab-janitor
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    name: scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      issues: write
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+
+      - name: Log in to AWS
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.TF_PLAN_ROLE_ARN }}
+          aws-region: us-east-1
+          mask-aws-account-id: true
+          inline-session-policy: >-
+            {"Statement": [{"Action": ["tag:GetResources", "cloudtrail:LookupEvents"],
+            "Effect": "Allow", "Resource": "*"}], "Version": "2012-10-17"}
+
+      - name: Scan for forgotten lab resources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          JANITOR_MAX_AGE_HOURS: ${{ inputs.max_age_hours }}
+          AWS_RETRY_MODE: adaptive
+          AWS_MAX_ATTEMPTS: '10'
+        run: node --experimental-strip-types "$GITHUB_WORKSPACE/tools/guardrails/src/janitor-cli.ts"
