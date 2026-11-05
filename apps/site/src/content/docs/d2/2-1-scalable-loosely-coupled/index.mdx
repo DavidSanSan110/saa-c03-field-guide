@@ -1,0 +1,235 @@
+---
+title: 'Task 2.1: Design scalable and loosely coupled architectures'
+description: 'Horizontal scaling and stateless tiers, Auto Scaling policies, SQS queues and dead-letter queues, SNS fan-out and EventBridge, Kinesis and Firehose, Lambda, API Gateway and Step Functions, and caching, with exam cues and common traps.'
+---
+
+import FlowDiagram from '../../../../components/FlowDiagram.astro';
+
+A system scales well when each part can grow on its own, and it is **loosely coupled** when one part can slow down, fail or change without dragging the others with it. Most answers in this task come down to three moves: keep the compute tier stateless so you can add copies of it, put a queue, topic or stream between components instead of a direct call, and let a managed service (Lambda, API Gateway, DynamoDB) do the scaling for you.
+
+Part of [Domain 2: Design Resilient Architectures](/d2/).
+
+## Scaling the compute tier
+
+**Vertical scaling** means a bigger instance: more CPU and memory, usually with a restart, and with a ceiling. It suits things that don't spread across machines easily, such as a database primary. **Horizontal scaling** means more instances of the same thing behind a load balancer, and it is what the cloud is good at. Horizontal scaling only works if any instance can serve any request, so the tier must be **stateless**.
+
+| Where the session lives        | Survives an instance failure | Notes                                                                                  |
+| ------------------------------ | ---------------------------- | -------------------------------------------------------------------------------------- |
+| On the instance (memory, disk) | No                           | Breaks as soon as the load balancer sends the user elsewhere                           |
+| ALB sticky sessions            | No                           | A cookie pins the user to one target; load becomes uneven and the session dies with it |
+| In a cookie on the client      | Yes                          | Every request carries it; size limits, and it must be signed so it can't be tampered   |
+| ElastiCache or DynamoDB        | Yes                          | The usual answer: the client keeps only a session ID, every instance reads the store   |
+
+**Auto Scaling groups** keep the number of instances between a minimum and a maximum, replace unhealthy ones and register new ones with the load balancer's target group. The group itself is free; you pay for the instances.
+
+| Policy             | How it decides                                                                              | Use it when                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| Target tracking    | Keeps one metric near a target, such as average CPU at 50 % or requests per target at 1,000 | The default choice: simplest, and it scales in and out by itself |
+| Step scaling       | CloudWatch alarms with steps: add 1 instance above 70 % CPU, add 3 above 90 %               | You need different reactions to different sizes of breach        |
+| Simple scaling     | One alarm, one adjustment, then a cooldown                                                  | Legacy; step or target tracking is almost always better          |
+| Scheduled action   | Changes min, max or desired capacity at set times                                           | Load you know in advance: business hours, a planned event        |
+| Predictive scaling | Forecasts load from past daily and weekly patterns and launches capacity ahead of it        | Regular cycles where instances take a while to become ready      |
+
+- Good metrics to scale on: average CPU, `ALBRequestCountPerTarget`, network in/out, or a custom metric such as the queue backlog per instance (see the next section).
+- New instances need time before their metrics count. Target tracking and step scaling use an **instance warm-up**; simple scaling waits for a **cooldown** (300 seconds by default). A pre-baked AMI shortens both, because instances start serving sooner than with a long user data script.
+- **Elastic Beanstalk** packages this pattern (load balancer, Auto Scaling group, deployments) for a web app; its **worker** environment reads jobs from an SQS queue.
+
+## Queues: Amazon SQS
+
+A queue sits between a producer and a consumer. The producer sends a message and moves on; consumers **poll** the queue, process the message and then **delete** it. If the consumers fall behind, messages wait instead of being lost, and the two sides scale separately.
+
+|            | Standard queue                                       | FIFO queue                                                                                                                                                          |
+| ---------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Throughput | Nearly unlimited                                     | 300 API calls per second per action, 3,000 messages per second with batching; high throughput mode raises it (up to 70,000 calls per second in the largest Regions) |
+| Delivery   | At least once: a message can occasionally come twice | Exactly-once processing, with a deduplication ID and a 5-minute deduplication window                                                                                |
+| Order      | Best effort                                          | Strict, within each **message group ID**                                                                                                                            |
+| Name       | Any                                                  | Must end in `.fifo`                                                                                                                                                 |
+
+The settings that come up most:
+
+| Setting            | What it does                                                                                   | Default and range                   |
+| ------------------ | ---------------------------------------------------------------------------------------------- | ----------------------------------- |
+| Visibility timeout | After a consumer receives a message, it is hidden from others for this long; then it reappears | 30 seconds; 0 seconds to 12 hours   |
+| Message retention  | How long an unprocessed message is kept                                                        | 4 days; 1 minute to 14 days         |
+| Receive wait time  | **Long polling**: a receive call waits for messages instead of returning empty at once         | 0 (short polling); up to 20 seconds |
+| Delivery delay     | **Delay queue**: new messages stay hidden for a while before consumers can see them            | 0; up to 15 minutes                 |
+| Redrive policy     | When a message's receive count exceeds `maxReceiveCount`, it moves to a **dead-letter queue**  | Off                                 |
+| Message size       | Largest message body; bigger payloads go to S3 with a pointer in the message                   | Up to 1 MiB                         |
+
+<FlowDiagram id="sqs-lambda-dlq" />
+
+- **Visibility timeout** must be longer than the processing time, or a second consumer picks the message up while the first is still working on it. A consumer that needs more time calls `ChangeMessageVisibility`. With Lambda as the consumer, AWS recommends a visibility timeout of at least six times the function timeout, and Lambda refuses to create the event source mapping if the function timeout is longer than the visibility timeout.
+- A **dead-letter queue** keeps poison messages from being retried forever and blocking capacity. It is a normal queue of the same type (FIFO for a FIFO queue). Alarm on its queue depth, fix the cause, then **redrive** the messages back to the source queue.
+- **Lambda as a consumer:** an event source mapping polls the queue and invokes the function with a batch. If the function fails, the whole batch returns to the queue unless the function reports which messages failed (`ReportBatchItemFailures`).
+- **Scaling consumers on a queue:** an Auto Scaling group of workers can track **backlog per instance** (messages in the queue ÷ instances in service, built with metric math in a target tracking policy) against how many messages one instance can handle in the time you accept. Scaling on the queue length alone doesn't account for how many workers already exist.
+- **Buffering writes:** when bursts of writes overwhelm a database, the web tier sends them to a queue and a separate worker tier writes them at a steady pace. This works when the user doesn't need the write confirmed instantly.
+- Access is controlled with IAM and with a **queue policy** (a resource-based policy), which is what lets SNS, S3 or another account send to the queue. Encryption at rest is SSE-SQS or SSE-KMS.
+
+## Pub/sub and events: SNS and EventBridge
+
+A queue delivers each message to one consumer. When one event must reach **many** receivers, publish it to an **SNS topic** and let each receiver subscribe. SNS pushes to its subscribers (SQS, Lambda, HTTP/S endpoints, email, SMS, mobile push, Firehose) and does not keep messages for later.
+
+<FlowDiagram id="sns-sqs-fan-out" />
+
+- **Fan-out:** publish once to SNS and subscribe one SQS queue per consumer. Each consumer gets its own durable copy, works at its own pace, and a new consumer is one more subscription with no change to the publisher. Each queue's access policy must allow the topic to send to it, and queues in other accounts or Regions work too.
+- **Filter policies** on a subscription deliver only the messages it cares about, matching message attributes or the message body. A subscription without a filter policy receives everything.
+- **SNS FIFO topics** keep order and remove duplicates, and deliver to SQS queues, for ordered fan-out.
+- **S3 event notifications** go to SNS, SQS (standard queues only), Lambda or EventBridge. Two notification configurations can't overlap on the same event type and prefix, so sending one upload to several consumers is a job for SNS fan-out or EventBridge.
+- **DynamoDB Streams** records every change to a table's items. A Lambda event source mapping on the stream reacts to new or changed items, with no polling and no change to the code that writes them.
+
+**Amazon EventBridge** is an event bus: AWS services, your own applications and SaaS partners put events on it, and **rules** with event patterns route matching events to targets (Lambda, SQS, SNS, Step Functions, Kinesis and many more).
+
+|           | SNS                                        | EventBridge                                                                      |
+| --------- | ------------------------------------------ | -------------------------------------------------------------------------------- |
+| Model     | Topic with subscribers                     | Event bus with rules                                                             |
+| Filtering | Filter policy per subscription             | Event patterns on any field of the event                                         |
+| Sources   | Your publishers and many AWS services      | AWS service events (including API calls recorded by CloudTrail), apps, SaaS      |
+| Extras    | Mobile push, SMS, email; very high fan-out | Archive and replay, schema registry, Pipes (source → filter → target), Scheduler |
+
+- "React when someone calls an API" (a security group change, a table deletion) is CloudTrail → EventBridge rule → SNS or Lambda.
+- A scheduled job without a server is **EventBridge Scheduler** invoking a Lambda function. Scheduled rules still work, but Scheduler is the recommended replacement.
+
+## Streams: Kinesis Data Streams and Data Firehose
+
+A stream is for many small records arriving continuously (clicks, IoT readings, logs) that several consumers read, often in real time and sometimes more than once.
+
+|                     | Kinesis Data Streams                                                                     | Amazon Data Firehose                                                         |
+| ------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Job                 | Store a stream so your consumers can read it                                             | Deliver a stream to a destination, with no consumer code                     |
+| Latency             | Real time (milliseconds)                                                                 | Near real time: it buffers by size and time before each delivery             |
+| Keeps data          | 24 hours by default, up to 365 days; consumers can **replay**                            | Nothing to read back: it only retries a failed delivery, for up to 24 hours  |
+| Capacity            | Provisioned shards (each takes 1 MB/s of writes and serves 2 MB/s of reads) or on-demand | Fully managed and automatic                                                  |
+| Consumers / targets | Your apps (KCL), Lambda, Firehose, Managed Service for Apache Flink                      | S3, Redshift, OpenSearch, HTTP endpoints, partners such as Splunk or Datadog |
+| Transformation      | In your consumers                                                                        | Optional Lambda transform; format conversion to Parquet or ORC               |
+
+- Records with the same **partition key** go to the same shard and stay in order, so the key is usually the user, device or order ID.
+- **Enhanced fan-out** gives each registered consumer its own 2 MB/s per shard, instead of all consumers sharing the shard's read capacity.
+- A common pipeline is Data Streams for real-time consumers plus Firehose reading the same stream to land everything in S3.
+
+## Choosing a messaging service
+
+|                | SQS                         | SNS                                           | EventBridge                  | Kinesis Data Streams                           | Amazon MQ                                                     |
+| -------------- | --------------------------- | --------------------------------------------- | ---------------------------- | ---------------------------------------------- | ------------------------------------------------------------- |
+| Pattern        | Queue (point to point)      | Pub/sub                                       | Event bus with routing rules | Stream                                         | Traditional message broker                                    |
+| Delivery       | Consumers pull              | Pushed to subscribers                         | Pushed to rule targets       | Consumers pull (or push with enhanced fan-out) | Queues and topics                                             |
+| After delivery | Deleted by the consumer     | Not kept (FIFO topics can archive and replay) | Not kept (unless archived)   | Kept until retention ends                      | Broker-dependent                                              |
+| Scaling        | Automatic                   | Automatic                                     | Automatic                    | Shards or on-demand                            | Broker instance size                                          |
+| Typical use    | Decouple tiers, buffer work | Fan-out, notifications                        | React to AWS and app events  | Real-time analytics, replay                    | Move an app that already speaks AMQP, MQTT, STOMP or OpenWire |
+
+**Amazon MQ** is managed Apache ActiveMQ or RabbitMQ. Choose it when an existing application uses those open protocols and you don't want to rewrite it for SQS and SNS. It runs on broker instances, so it doesn't scale like SQS. For high availability, ActiveMQ runs an active/standby pair across two Availability Zones, and RabbitMQ a three-node cluster across Availability Zones.
+
+## Serverless building blocks
+
+**AWS Lambda** runs code on demand and scales with the number of requests. You pay per request and per GB-second of compute.
+
+| Limit or setting  | Value                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------- |
+| Timeout           | Up to 15 minutes; longer jobs belong on ECS, Fargate, Batch or EC2                        |
+| Memory            | 128 MB to 10,240 MB; CPU grows with memory                                                |
+| Temporary storage | `/tmp`, 512 MB to 10,240 MB                                                               |
+| Package           | 50 MB zipped upload, 250 MB unzipped with layers; container images up to 10 GB            |
+| Concurrency       | 1,000 concurrent executions per Region by default, shared by all functions; can be raised |
+
+| Concurrency control     | What it does                                                                                   | Cost                                                                   |
+| ----------------------- | ---------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Reserved concurrency    | Sets aside a number of executions for one function and caps it there; protects others from it  | No charge                                                              |
+| Provisioned concurrency | Keeps execution environments initialised, so requests skip the cold start                      | Charged                                                                |
+| SnapStart               | Restores from a snapshot of an initialised environment to cut cold starts (Java, Python, .NET) | Free for Java; Python and .NET pay for the snapshot cache and restores |
+
+- When a function is out of concurrency, a synchronous call is **throttled** with a 429 error; an asynchronous call is retried. Asynchronous invocations that keep failing can go to a dead-letter queue or an **on-failure destination**.
+- A function in a VPC gets network interfaces in your subnets, so it can reach RDS or ElastiCache, but it has no internet access unless its subnets route through a NAT gateway. Many functions opening database connections at once is an **RDS Proxy** question.
+
+**Amazon API Gateway** is the managed front door for an API: authentication (IAM, Cognito, Lambda authorizers), throttling, usage plans with API keys, request validation, caching and stages.
+
+| Endpoint type  | Who it is for                                                                       |
+| -------------- | ----------------------------------------------------------------------------------- |
+| Edge-optimized | Clients around the world; requests enter through CloudFront edge locations          |
+| Regional       | Clients in the same Region, or when you put your own CloudFront in front            |
+| Private        | Only from inside your VPCs, through an interface VPC endpoint and a resource policy |
+
+- By default an account gets 10,000 requests per second per Region with bursts of 5,000; requests over the limit get 429. Usage plans set per-client limits.
+- Response **caching** is a REST API feature, with a 300-second default TTL. HTTP APIs are cheaper and faster but have fewer features.
+- A request payload can be at most 10 MB. Large uploads go straight to S3 with a **presigned URL**, and an S3 event notification starts the processing.
+- API Gateway can call some AWS services directly, without a Lambda function in between, for example to put records on a Kinesis stream or send to an SQS queue.
+
+**AWS Step Functions** coordinates the steps of a workflow (Lambda functions, ECS tasks, AWS service calls, waits for a human approval) with retries, branches, parallel steps and timeouts defined in the state machine instead of in code. **Standard** workflows run for up to a year with exactly-once steps; **Express** workflows run for up to five minutes and suit high-volume event processing.
+
+## Caching to take load off the backend
+
+Every request answered from a cache is one the tier behind it doesn't have to scale for.
+
+| Layer                      | Caches                                                                  | Notes                                                       |
+| -------------------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------- |
+| CloudFront                 | Static files and cacheable API responses, at edge locations             | Closest to users; TTLs and invalidations control freshness  |
+| API Gateway (REST)         | API responses per stage                                                 | Regional; saves backend calls for repeated requests         |
+| ElastiCache                | Query results, computed values, sessions (Valkey, Redis OSS, Memcached) | Your code decides what to cache and when to invalidate      |
+| DynamoDB Accelerator (DAX) | DynamoDB reads, in microseconds                                         | Drop-in for the DynamoDB API; for read-heavy tables         |
+| RDS read replicas          | Not a cache, but they spread read queries                               | Replication is asynchronous, so reads can be slightly stale |
+
+- **Lazy loading** (cache-aside) fills the cache on a miss and can serve stale data until the TTL ends. **Write-through** updates the cache on every write, so reads are fresh but rarely read data fills the cache too.
+- The closer to the user, the cheaper and faster each hit, and the harder it is to cache personalised or fast-changing data. Those are cached deeper in the stack, in ElastiCache.
+
+## If the exam says… → think…
+
+| If the exam says…                                                                  | Think…                                                                 |
+| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Users lose their session or cart when an instance is replaced                      | Store sessions in ElastiCache or DynamoDB, not on the instance         |
+| Keep average CPU of the fleet around a value                                       | A target tracking policy                                               |
+| Traffic jumps every weekday at 9:00                                                | A scheduled action, or predictive scaling                              |
+| A front end must keep accepting requests while slow back-end processing catches up | An SQS queue between the tiers                                         |
+| Workers in an Auto Scaling group read from a queue                                 | Scale on backlog per instance with target tracking                     |
+| Messages must be processed in order and exactly once                               | SQS FIFO with a message group ID                                       |
+| A message is processed twice because processing takes longer than expected         | Increase the visibility timeout (or `ChangeMessageVisibility`)         |
+| Too many empty `ReceiveMessage` responses and high SQS cost                        | Long polling (receive wait time up to 20 seconds)                      |
+| Messages that keep failing must be set aside for analysis                          | A dead-letter queue, then redrive after the fix                        |
+| One event must reach several independent systems, and more will join later         | SNS topic with one SQS queue per consumer (fan-out)                    |
+| A subscriber should get only some of a topic's messages                            | An SNS subscription filter policy                                      |
+| Act when a specific API call happens in the account                                | CloudTrail event → EventBridge rule → target                           |
+| Run a function every hour without a server                                         | EventBridge Scheduler → Lambda                                         |
+| Real-time stream that several consumers read, with replay                          | Kinesis Data Streams                                                   |
+| Load streaming data into S3 or Redshift with no code, near real time               | Amazon Data Firehose                                                   |
+| Move an on-premises app that uses AMQP or MQTT without rewriting it                | Amazon MQ                                                              |
+| One function's traffic spike throttles other functions                             | Reserved concurrency on the busy function                              |
+| Lambda cold starts are unacceptable for a latency-sensitive API                    | Provisioned concurrency (or SnapStart)                                 |
+| A job runs longer than 15 minutes                                                  | Not Lambda: ECS/Fargate, Batch or EC2, or split it with Step Functions |
+| Coordinate several Lambda functions with retries, branches and a human approval    | Step Functions                                                         |
+| Rate-limit API clients and issue API keys                                          | API Gateway usage plans                                                |
+| Large file uploads fail or time out through API Gateway                            | A presigned S3 URL, then an S3 event notification to Lambda            |
+| React to new or changed DynamoDB items without changing the writer                 | DynamoDB Streams with a Lambda event source mapping                    |
+| An API must be reachable only from inside the VPC                                  | A private API Gateway endpoint                                         |
+| Repeated identical reads overload the database                                     | ElastiCache (or DAX for DynamoDB) in front of it                       |
+
+## Common traps
+
+- **Sticky sessions don't make a tier stateless.** The session still dies with the instance and load becomes uneven.
+- **Vertical scaling isn't high availability.** One bigger instance is still one instance, and resizing it usually means downtime.
+- **Standard SQS queues can deliver duplicates and out of order.** Consumers must be idempotent, or the answer is FIFO.
+- **FIFO queues trade throughput for order.** Choose FIFO only when order or exactly-once processing is a requirement; order is kept per message group, not across the whole queue.
+- **A message is deleted only when the consumer deletes it.** Receiving doesn't remove it; it comes back after the visibility timeout.
+- **A Lambda function's timeout can't be longer than its queue's visibility timeout**: the event source mapping is refused.
+- **A FIFO queue needs a FIFO dead-letter queue**, and a standard queue a standard one.
+- **SNS doesn't store messages.** If a subscriber must not miss anything while it is down, put an SQS queue between them.
+- **SNS FIFO topics deliver only to SQS queues**, not straight to Lambda, email or HTTP endpoints.
+- **One S3 event type and prefix can't feed two queues directly**, and an SQS FIFO queue isn't a valid destination at all. Use SNS fan-out or EventBridge.
+- **Firehose delivers; it isn't a stream you read.** Real time, several consumers or replay means Kinesis Data Streams.
+- **Lambda concurrency is shared by every function in the Region** unless you reserve some.
+- **A Lambda function in a VPC has no internet access** without a NAT gateway, even in a public subnet.
+- **API Gateway caching is for REST APIs**, not HTTP APIs.
+
+## Links
+
+**AWS documentation**
+
+- [Scaling policies for Amazon EC2 Auto Scaling](https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-scale-based-on-demand.html) and [scaling based on Amazon SQS](https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-using-sqs-queue.html)
+- [Amazon SQS visibility timeout](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html) and [dead-letter queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
+- [Using Lambda with Amazon SQS](https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html)
+- [Fanout to Amazon SQS queues](https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html) and [Amazon SNS message filtering](https://docs.aws.amazon.com/sns/latest/dg/sns-message-filtering.html)
+- [What is Amazon EventBridge?](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-what-is.html)
+- [Amazon Kinesis Data Streams terminology and concepts](https://docs.aws.amazon.com/streams/latest/dev/key-concepts.html) and [What is Amazon Data Firehose?](https://docs.aws.amazon.com/firehose/latest/dev/what-is-this-service.html)
+- [Lambda quotas](https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html) and [configuring concurrency](https://docs.aws.amazon.com/lambda/latest/dg/lambda-concurrency.html)
+- [API Gateway endpoint types](https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-api-endpoint-types.html)
+- [Choosing a Step Functions workflow type](https://docs.aws.amazon.com/step-functions/latest/dg/choosing-workflow-type.html)
+
+**Practice**
+
+- [Practice tests](/practice/): in the **Practice** card, choose **Practice by: Task** and then **2.1** to drill only this task.
