@@ -80,13 +80,16 @@ MSYS_NO_PATHCONV=1 aws logs tail "$LOG_GROUP" --follow
 ### Why
 
 A redrive only moves messages. It does not fix whatever made them fail, so a poison message goes round
-again. Fix the consumer first, then redrive. SQS allows one active move task per queue. The redrive
-allow policy of the DLQ (`byQueue`, only the source queue) is what lets this queue be the origin of the
-move.
+again. Fix the consumer first, then redrive. SQS allows one active move task per queue. The source
+queue's redrive policy names this queue as its DLQ, which is what makes it a valid source for a move
+task. The redrive allow policy (`byQueue`) only limits which queues may use it as their DLQ.
 
 ### Put it back
 
-Nothing: the message is in the DLQ again, as before.
+Nothing to undo, but wait until the DLQ holds the message again (about 3 × 35 seconds; Observe, step
+4 shows how to check) before you start the next experiment. If the message is still going round,
+"Turn off partial batch responses" would delete it from the source queue and its result would be
+wrong.
 
 ## Turn off partial batch responses
 

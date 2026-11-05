@@ -3,7 +3,7 @@
 
 # The zip is built on the machine that runs Terraform. The same bytes must come out in the plan job and
 # in the apply job of infra.yml (it compares a digest of the planned values), so: the archive provider
-# zeroes the timestamps, output_file_mode fixes the file modes, and .gitattributes keeps the line
+# gives every entry of the zip a fixed timestamp (2049-01-01), output_file_mode fixes the file modes, and .gitattributes keeps the line
 # endings of handler.py as LF.
 data "archive_file" "handler" {
   type             = "zip"
@@ -107,7 +107,8 @@ resource "aws_lambda_event_source_mapping" "orders" {
   function_response_types            = ["ReportBatchItemFailures"]
   enabled                            = true
 
-  # Lambda checks the role's SQS permissions and the redrive policy when it creates the mapping.
+  # The role's policy and the redrive policy exist before polling starts, so the DLQ is wired up
+  # before the first message is received.
   depends_on = [
     aws_iam_role_policy.consumer,
     aws_sqs_queue_redrive_policy.source,

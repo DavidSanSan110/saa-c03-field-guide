@@ -32,7 +32,7 @@ resource "aws_sqs_queue_redrive_policy" "source" {
   })
 }
 
-# Only the source queue may use this DLQ, and only it may be redriven from here.
+# Only the source queue may use this DLQ.
 resource "aws_sqs_queue_redrive_allow_policy" "dlq" {
   queue_url = aws_sqs_queue.dlq.url
 

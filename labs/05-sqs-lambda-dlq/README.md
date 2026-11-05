@@ -232,8 +232,11 @@ queue URL, mapping UUID or message ID, so the output is safe in a public log. It
 With `VERIFY_SEND=1 bash verify.sh` the script also runs four live checks. It sends a good order and a
 poison message, waits for the good order in the logs, for the poison message in the DLQ, checks that
 the good order was processed once, and waits for the alarm to go to `ALARM`. It leaves one message in
-the DLQ, because [`break-it.md`](break-it.md) redrives it. The live checks need `sqs:SendMessage` and
-`logs:FilterLogEvents`, which the read-only CI role does not have, so CI runs without them. The
+the DLQ, because [`break-it.md`](break-it.md) redrives it. The live checks are opt-in because they send
+messages (`sqs:SendMessage`), which the read-only CI role cannot do, so CI runs without them. When
+the DLQ already held a message before the run (for example from an earlier `VERIFY_SEND=1` run),
+`alarm-fires` may pass because the alarm was already in `ALARM`: a fresh alarm transition is seen
+only from an empty DLQ. The
 script never reads or deletes a message, never starts a redrive and never changes a queue or the
 mapping. The waits are up to a few minutes: `VERIFY_POLL_SECONDS` (default 5) changes the time between
 two polls.
