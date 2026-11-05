@@ -1,6 +1,7 @@
 // Pure view model of the diagram island (spec 012): geometry, flow model, log and text fallback.
 import type {
   Diagram,
+  DiagramParallelEdge,
   DiagramScenario,
   DiagramStep,
   ElementState,
@@ -290,10 +291,7 @@ export interface LogLine {
 }
 
 /** The route and detail of one played edge; an unknown edge shows its id. */
-function edgeLine(
-  d: Diagram,
-  played: { edge: string; packet?: string; reverse?: boolean },
-): { route: string; detail?: string } {
+function edgeLine(d: Diagram, played: DiagramParallelEdge): { route: string; detail?: string } {
   const edge = d.edges?.find((candidate) => candidate.id === played.edge);
   const [from, to] = [edge?.from ?? played.edge, edge?.to ?? played.edge];
   const detail = played.packet ?? edge?.label;

@@ -258,7 +258,7 @@ function checkStateKeys(
   }
 }
 
-/** A step names exactly one existing element of its kind; reverse and packet need an edge. */
+/** A step names exactly one existing element of its kind; reverse, packet and with need an edge. */
 function checkStepTarget(step: DiagramStep, kinds: ElementKinds, path: Path, ctx: Ctx): void {
   const targets = (['edge', 'node', 'group'] as const).flatMap((kind) => {
     const id = step[kind];
