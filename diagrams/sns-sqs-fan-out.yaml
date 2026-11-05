@@ -1,0 +1,89 @@
+# One publish to an SNS topic delivered to several SQS queues, each consumed on its own, and a
+# subscription filter policy that delivers only matching messages to one queue.
+# Sources: https://docs.aws.amazon.com/sns/latest/dg/sns-sqs-as-subscriber.html
+#          https://docs.aws.amazon.com/sns/latest/dg/sns-common-scenarios.html
+#          https://docs.aws.amazon.com/sns/latest/dg/sns-message-filtering.html
+#          https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-basic-architecture.html
+id: sns-sqs-fan-out
+title: SNS to SQS fan-out
+description: How one message published to an SNS topic reaches several independent SQS queues, and how a filter policy narrows what one queue receives.
+groups:
+  - { id: region, label: eu-west-1, kind: region }
+nodes:
+  - { id: orders, icon: ec2, label: Order service, sub: Publisher, group: region }
+  - {
+      id: topic,
+      icon: simple-notification-service,
+      label: orders topic,
+      sub: SNS standard topic,
+      group: region,
+    }
+  - { id: q-ship, icon: simple-queue-service, label: shipping, sub: SQS queue, group: region }
+  - { id: q-inv, icon: simple-queue-service, label: invoicing, sub: SQS queue, group: region }
+  - { id: q-exp, icon: simple-queue-service, label: express, sub: SQS queue, group: region }
+  - { id: ship-fn, icon: lambda, label: Shipping function, group: region }
+  - { id: inv-app, icon: ec2, label: Invoicing app, group: region }
+  - { id: exp-fn, icon: lambda, label: Express function, group: region }
+edges:
+  - { id: publish, from: orders, to: topic }
+  - { id: to-ship, from: topic, to: q-ship }
+  - { id: to-inv, from: topic, to: q-inv }
+  - { id: to-exp, from: topic, to: q-exp }
+  - { id: ship-poll, from: q-ship, to: ship-fn }
+  - { id: inv-poll, from: q-inv, to: inv-app }
+  - { id: exp-poll, from: q-exp, to: exp-fn }
+scenarios:
+  - id: fan-out
+    label: Publish once, deliver to every queue
+    initial: { q-exp: hidden, to-exp: hidden, exp-poll: hidden, exp-fn: hidden }
+    steps:
+      - edge: publish
+        packet: Publish
+        caption: The order service publishes each order once to the topic. It doesn't know which systems are listening.
+      - edge: to-ship
+        packet: order 42
+        with:
+          - { edge: to-inv, packet: order 42 }
+        caption: SNS sends a copy to every subscribed queue at the same time. Each queue's access policy must allow the topic to send to it.
+      - edge: ship-poll
+        packet: order 42
+        caption: The shipping function reads its own queue and handles the order at its own pace.
+      - node: inv-app
+        caption: The invoicing app is down for a deploy. Its copy waits in its queue, and shipping isn't affected.
+        state: { inv-app: failed, q-inv: highlighted }
+      - edge: inv-poll
+        packet: order 42
+        caption: When the app is back, it works through the backlog. A slow or failed consumer never holds up the others.
+        state: { inv-app: normal, q-inv: normal }
+      - node: q-exp
+        caption: A new team subscribes its own queue to the topic. The order service's code doesn't change.
+        state: { q-exp: appearing, to-exp: appearing, exp-poll: appearing, exp-fn: appearing }
+  - id: filter
+    label: Filter policy on one subscription
+    steps:
+      - node: q-exp
+        caption: The express queue's subscription has a filter policy that only accepts orders whose order_type is express.
+        state: { q-exp: highlighted }
+      - edge: publish
+        packet: order_type standard
+        caption: The order service publishes a standard order, with order_type set as a message attribute.
+        state: { q-exp: normal }
+      - edge: to-ship
+        packet: order_type standard
+        with:
+          - { edge: to-inv, packet: order_type standard }
+        caption: SNS checks every subscription at once. Shipping and invoicing have no filter policy and get a copy; the express filter doesn't match.
+        state: { to-exp: broken }
+      - edge: publish
+        packet: order_type express
+        caption: Next, an express order is published.
+        state: { to-exp: normal }
+      - edge: to-exp
+        packet: order_type express
+        with:
+          - { edge: to-ship, packet: order_type express }
+          - { edge: to-inv, packet: order_type express }
+        caption: This one matches the express filter too, so all three queues get a copy at the same time.
+      - edge: exp-poll
+        packet: order_type express
+        caption: Filtering happens in SNS, so the express function needs no code to skip other orders.

@@ -1,0 +1,81 @@
+# An SQS queue consumed by a Lambda function through an event source mapping, a message that keeps
+# failing and moves to a dead-letter queue, and a redrive back to the source queue (lab 05).
+# Sources: https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html
+#          https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html
+#          https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-visibility-timeout.html
+#          https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html
+#          https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-dead-letter-queue-redrive.html
+id: sqs-lambda-dlq
+title: SQS + Lambda with a dead-letter queue
+description: How Lambda consumes an SQS queue, what happens to a message that keeps failing, and how a dead-letter queue redrive sends it back.
+groups:
+  - { id: region, label: eu-west-1, kind: region }
+nodes:
+  - { id: producer, icon: ec2, label: Order service, sub: Producer, group: region }
+  - { id: queue, icon: simple-queue-service, label: orders, sub: Source queue, group: region }
+  - { id: fn, icon: lambda, label: Lambda function, sub: Consumer, group: region }
+  - {
+      id: dlq,
+      icon: simple-queue-service,
+      label: orders-dlq,
+      sub: Dead-letter queue,
+      group: region,
+    }
+edges:
+  - { id: send, from: producer, to: queue }
+  - { id: poll, from: queue, to: fn }
+  - { id: redrive, from: queue, to: dlq }
+scenarios:
+  - id: process
+    label: Process a batch
+    steps:
+      - edge: send
+        packet: SendMessage
+        caption: The order service calls SendMessage and carries on. SQS stores the message until a consumer deletes it.
+      - edge: poll
+        reverse: true
+        packet: ReceiveMessage
+        caption: Lambda's event source mapping long-polls the queue for you. There is no polling code to write.
+      - edge: poll
+        packet: Batch of messages
+        caption: Lambda invokes the function once with a batch. Those messages stay invisible to other consumers for the visibility timeout.
+      - node: fn
+        caption: The function processes every order in the batch and returns without an error.
+        state: { fn: highlighted }
+      - edge: poll
+        reverse: true
+        packet: DeleteMessageBatch
+        caption: Only now does Lambda delete the batch from the queue. A crash before this point means the messages come back.
+        state: { fn: normal }
+  - id: poison
+    label: A message that keeps failing
+    steps:
+      - edge: send
+        packet: SendMessage
+        caption: A malformed order arrives that the function can't process, however many times it tries.
+      - edge: poll
+        packet: Batch of messages
+        caption: Lambda receives it in a batch. SQS counts every receive of a message as its receive count.
+        metrics: { Receive count: 1 of 3 }
+      - node: fn
+        caption: The function reports only this message as failed (ReportBatchItemFailures). The rest of the batch is deleted.
+        state: { fn: failed }
+      - node: queue
+        caption: The failed message isn't deleted. When its visibility timeout ends it becomes visible again and is received again.
+        state: { fn: normal, queue: highlighted }
+      - edge: poll
+        packet: Same message
+        caption: It fails the second and third time too. The queue's redrive policy sets maxReceiveCount to 3.
+        state: { queue: normal, fn: failed }
+        metrics: { Receive count: 3 of 3 }
+      - edge: redrive
+        packet: Moved message
+        caption: Once the receive count passes maxReceiveCount, SQS moves the message to the dead-letter queue. Other orders keep flowing.
+        state: { fn: normal, dlq: highlighted }
+      - node: dlq
+        caption: It waits in the DLQ for someone to look at it. A CloudWatch alarm on the DLQ's queue depth tells you it is there.
+      - edge: redrive
+        reverse: true
+        packet: StartMessageMoveTask
+        caption: After the bug is fixed, a DLQ redrive moves the messages back to the source queue to be processed again.
+        state: { dlq: normal }

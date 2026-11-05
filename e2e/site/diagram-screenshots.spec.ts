@@ -22,6 +22,8 @@ const REGISTRY = [
   { id: 'kms-envelope-encryption', page: '/d1/1-3-data-security/' },
   { id: 'iam-cross-account-assume-role', page: '/d1/1-1-secure-access/' },
   { id: 'scp-permission-evaluation', page: '/d1/1-1-secure-access/' },
+  { id: 'sqs-lambda-dlq', page: '/d2/2-1-scalable-loosely-coupled/' },
+  { id: 'sns-sqs-fan-out', page: '/d2/2-1-scalable-loosely-coupled/' },
 ] as const;
 
 const THEMES = ['light', 'dark'] as const;

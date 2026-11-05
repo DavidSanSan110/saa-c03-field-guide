@@ -986,3 +986,131 @@ for (const entry of TASK_1_1_DIAGRAMS) {
     }
   });
 }
+
+// ===========================================================================
+// The task 2.1 diagrams on the 2.1 page: sqs-lambda-dlq and sns-sqs-fan-out (spec 013,
+// AC-14…AC-18). Same checks as the Domain 1 blocks, reusing their helpers.
+// ===========================================================================
+
+const TASK_2_1_PAGE_PATH = '/d2/2-1-scalable-loosely-coupled/';
+
+const TASK_2_1_DIAGRAMS = [
+  {
+    id: 'sqs-lambda-dlq',
+    heading: 'Queues: Amazon SQS',
+    scenarioIds: ['process', 'poison'],
+  },
+  {
+    id: 'sns-sqs-fan-out',
+    heading: 'Pub/sub and events: SNS and EventBridge',
+    scenarioIds: ['fan-out', 'filter'],
+  },
+] as const;
+
+async function openTask21Island(page: Page, id: string): Promise<Island> {
+  await page.goto(TASK_2_1_PAGE_PATH);
+  const island = islandFor(page, id);
+  await island.figure.scrollIntoViewIfNeeded();
+  await expect(island.root).toHaveAttribute('data-hydrated', 'true');
+  return island;
+}
+
+for (const entry of TASK_2_1_DIAGRAMS) {
+  test.describe(`the ${entry.id} diagram on the 2.1 page`, () => {
+    test.use({ viewport: DESKTOP_VIEWPORT });
+
+    test(`AC-14: the page contains exactly one figure for ${entry.id}`, async ({ page }) => {
+      await page.goto(TASK_2_1_PAGE_PATH);
+
+      await expect(page.locator(`figure[data-diagram="${entry.id}"]`)).toHaveCount(1);
+    });
+
+    test(`AC-14: the ${entry.id} figure sits under the heading "${entry.heading}"`, async ({
+      page,
+    }) => {
+      await page.goto(TASK_2_1_PAGE_PATH);
+      await expect(page.getByRole('heading', { name: entry.heading, level: 2 })).toHaveCount(1);
+
+      const nearestHeading = await page
+        .locator(`figure[data-diagram="${entry.id}"]`)
+        .evaluate((figure) => {
+          const headings = Array.from(
+            document.querySelectorAll('main h1, main h2, main h3, main h4, main h5, main h6'),
+          ).filter(
+            (heading) =>
+              !figure.contains(heading) &&
+              (heading.compareDocumentPosition(figure) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          );
+          return headings.at(-1)?.textContent?.trim() ?? null;
+        });
+
+      expect(nearestHeading).toBe(entry.heading);
+    });
+
+    test(`AC-15: "Steps as text" of ${entry.id} lists every scenario with its captions in file order`, async ({
+      page,
+    }) => {
+      const diagram = loadDiagramById(entry.id);
+      await page.goto(TASK_2_1_PAGE_PATH);
+      const details = page.locator(`figure[data-diagram="${entry.id}"] details`);
+
+      await expect(details).toHaveCount(1);
+      await expect(details.locator('summary')).toHaveText('Steps as text');
+      const lists = details.locator('ol');
+      await expect(lists).toHaveCount(diagram.scenarios.length);
+      for (const [index, scenario] of diagram.scenarios.entries()) {
+        const list = lists.nth(index);
+        await expect(list.locator('li'), scenario.id).toHaveText(scenario.steps.map(fallbackText));
+        const labelId = await list.getAttribute('aria-labelledby');
+        expect(labelId, `${scenario.id} list is labelled`).toBeTruthy();
+        await expect(page.locator(`[id="${String(labelId)}"]`)).toHaveText(scenario.label);
+      }
+    });
+
+    test(`AC-18: ${entry.id} has the scenarios ${entry.scenarioIds.join(', ')}`, () => {
+      expect(loadDiagramById(entry.id).scenarios.map((scenario) => scenario.id)).toEqual(
+        entry.scenarioIds,
+      );
+    });
+
+    test(`AC-17: axe finds no WCAG A/AA violations with ${entry.id} at the start`, async ({
+      page,
+    }) => {
+      await openTask21Island(page, entry.id);
+
+      await expect.poll(() => axeViolations(page)).toEqual([]);
+    });
+
+    for (const scenarioId of scenarioIdsOf(entry.id, entry.scenarioIds)) {
+      test(`AC-16: ${entry.id} scenario "${scenarioId}" shows each caption in order, and the previous one after a step back`, async ({
+        page,
+      }) => {
+        const scenario = scenarioOf(loadDiagramById(entry.id), scenarioId);
+        const island = await openTask21Island(page, entry.id);
+        await selectScenario(island, scenario);
+
+        for (const [index, step] of scenario.steps.entries()) {
+          await island.forward.click();
+          await expectStep(island, index);
+          await expect(captionRegion(island)).toContainText(step.caption);
+        }
+        test.skip(scenario.steps.length < 2, 'a one-step scenario has no previous caption');
+        await island.back.click();
+        await expectStep(island, scenario.steps.length - 2);
+        await expect(captionRegion(island)).toContainText(scenario.steps.at(-2)?.caption ?? '');
+      });
+
+      test(`AC-17: axe finds no WCAG A/AA violations at the last step of ${entry.id} "${scenarioId}"`, async ({
+        page,
+      }) => {
+        const scenario = scenarioOf(loadDiagramById(entry.id), scenarioId);
+        const island = await openTask21Island(page, entry.id);
+        await selectScenario(island, scenario);
+        for (let step = 0; step < scenario.steps.length; step += 1) await island.forward.click();
+        await expectStep(island, scenario.steps.length - 1);
+
+        await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+      });
+    }
+  });
+}
