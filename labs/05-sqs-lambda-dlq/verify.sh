@@ -23,7 +23,7 @@
 #   bash verify.sh
 #   VERIFY_SEND=1 bash verify.sh
 #   - CI: infra.yml runs it after every apply of this lab, with the read-only fg-tf-plan role and
-#     without VERIFY_SEND (that role may not send messages or read logs).
+#     without VERIFY_SEND (that role may not send messages).
 #   - Reader: sign in with `aws sso login --profile <profile>`, set AWS_PROFILE, then run it.
 # It needs bash 4 or newer, terraform and aws (CLI v2). It learns everything from the `terraform output`
 # values of the stack, so no TF_VAR_* variable is needed. VERIFY_POLL_SECONDS (default 5) is the wait
@@ -31,8 +31,8 @@
 #
 # Exit codes: 0 every check passed (skipped ones do not count), 1 a check failed, 2 it could not run.
 #
-# Why the live checks are opt-in: they send two messages to the queue and read the logs of the
-# function, which the read-only CI role is not allowed to do. The poison message stays in the DLQ on
+# Why the live checks are opt-in: they send two messages to the queue (sqs:SendMessage), which the
+# read-only CI role is not allowed to do, and they wait for the function to work on them. The poison message stays in the DLQ on
 # purpose: break-it.md redrives it. The script never receives or deletes a message, never purges a
 # queue, never starts a redrive and never changes the queues or the mapping: reading a queue would hide
 # its messages from the function and add to their receive count, and a script that stopped halfway
@@ -46,6 +46,13 @@ set +x
 
 if [ "$#" -gt 0 ]; then
   printf '%s\n' 'usage: bash verify.sh (no arguments; run it from the stack directory)' >&2
+  exit 2
+fi
+
+# VERIFY_POLL_SECONDS, when it is set, is a whole number of seconds: digits only (an empty value, a
+# sign, a decimal or a unit is refused before anything runs).
+if [ -n "${VERIFY_POLL_SECONDS+set}" ] && [[ ! $VERIFY_POLL_SECONDS =~ ^[0-9]+$ ]]; then
+  printf '%s\n' 'verify: VERIFY_POLL_SECONDS must be a whole number of seconds (digits only)' >&2
   exit 2
 fi
 
@@ -319,8 +326,11 @@ check_good_processed() {
   fi
   BASE=$TOTAL
   entries='[{"Id":"good","MessageBody":"{\"order_id\":\"'"$RUN_ID"'\"}"},{"Id":"poison","MessageBody":"not an order"}]'
-  run aws sqs send-message-batch --queue-url "$SRC_URL" --entries "$entries"
-  if [ "$RC" -ne 0 ]; then
+  # The CLI exits 0 when only some entries failed: the answer lists them under "Failed". The output
+  # format is set to json for this one call (a profile or AWS_DEFAULT_OUTPUT could say text or table),
+  # and an answer with a non-empty "Failed" list, white space removed, is a failed send.
+  AWS_DEFAULT_OUTPUT=json run aws sqs send-message-batch --queue-url "$SRC_URL" --entries "$entries"
+  if [ "$RC" -ne 0 ] || [[ ${OUT//[[:space:]]/} == *'"Failed":[{'* ]]; then
     fail "$id" 'the messages could not be sent'
     return 1
   fi
