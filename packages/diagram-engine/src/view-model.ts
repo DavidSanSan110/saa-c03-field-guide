@@ -1,6 +1,7 @@
 // Pure view model of the diagram island (spec 012): geometry, flow model, log and text fallback.
 import type {
   Diagram,
+  DiagramParallelEdge,
   DiagramScenario,
   DiagramStep,
   ElementState,
@@ -222,7 +223,10 @@ export function toFlowModel(g: CompiledDiagram, view: PlayerView): FlowModel {
     view.target?.kind === kind && view.target.id === id;
 
   const earlier = scenarioOf(g.diagram, view.scenario.id)?.steps.slice(0, Math.max(view.index, 0));
-  const doneEdges = new Set((earlier ?? []).map((step) => step.edge));
+  const doneEdges = new Set(
+    (earlier ?? []).flatMap((step) => [step.edge, ...(step.with ?? []).map((item) => item.edge)]),
+  );
+  const packets = new Map(view.packets.map((packet) => [packet.edge, packet]));
 
   return {
     width: g.width,
@@ -254,7 +258,7 @@ export function toFlowModel(g: CompiledDiagram, view: PlayerView): FlowModel {
       active: isTarget('node', node.id),
     })),
     edges: g.edges.map((edge) => {
-      const active = view.target?.kind === 'edge' && view.target.id === edge.id;
+      const played = packets.get(edge.id);
       const from = boxes[edge.from] as Box;
       const to = boxes[edge.to] as Box;
       return {
@@ -263,17 +267,17 @@ export function toFlowModel(g: CompiledDiagram, view: PlayerView): FlowModel {
         to: edge.to,
         ...(edge.label === undefined ? {} : { label: edge.label }),
         points: edge.points ?? directLine(from, to),
-        status: active ? 'active' : doneEdges.has(edge.id) ? 'done' : 'idle',
+        status: played ? 'active' : doneEdges.has(edge.id) ? 'done' : 'idle',
         state: stateOf('edge', edge.id),
-        ...(active && view.packet !== undefined
-          ? {
+        ...(played === undefined
+          ? {}
+          : {
               packet: {
-                ...(view.packet.label === undefined ? {} : { label: view.packet.label }),
-                reverse: view.packet.reverse,
+                ...(played.label === undefined ? {} : { label: played.label }),
+                reverse: played.reverse,
                 run: view.run,
               },
-            }
-          : {}),
+            }),
       };
     }),
   };
@@ -286,16 +290,28 @@ export interface LogLine {
   detail?: string;
 }
 
+/** The route and detail of one played edge; an unknown edge shows its id. */
+function edgeLine(d: Diagram, played: DiagramParallelEdge): { route: string; detail?: string } {
+  const edge = d.edges?.find((candidate) => candidate.id === played.edge);
+  const [from, to] = [edge?.from ?? played.edge, edge?.to ?? played.edge];
+  const detail = played.packet ?? edge?.label;
+  return {
+    route: played.reverse === true ? `${to} → ${from}` : `${from} → ${to}`,
+    ...(detail === undefined ? {} : { detail }),
+  };
+}
+
 function logLine(d: Diagram, step: DiagramStep, n: number, total: number): LogLine {
   if (step.edge !== undefined) {
-    const edge = d.edges?.find((candidate) => candidate.id === step.edge);
-    const [from, to] = [edge?.from ?? step.edge, edge?.to ?? step.edge];
-    const detail = step.packet ?? edge?.label;
+    const lines = [{ ...step, edge: step.edge }, ...(step.with ?? [])].map((played) =>
+      edgeLine(d, played),
+    );
+    const details = [...new Set(lines.flatMap((line) => line.detail ?? []))];
     return {
       n,
       total,
-      route: step.reverse === true ? `${to} → ${from}` : `${from} → ${to}`,
-      ...(detail === undefined ? {} : { detail }),
+      route: lines.map((line) => line.route).join(', '),
+      ...(details.length === 0 ? {} : { detail: details.join(', ') }),
     };
   }
   const states = Object.entries(step.state ?? {})

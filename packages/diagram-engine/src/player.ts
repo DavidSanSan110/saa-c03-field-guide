@@ -37,6 +37,8 @@ export interface PlayerView {
   target: { kind: 'edge' | 'node' | 'group'; id: string } | undefined;
   /** Edge steps only. */
   packet: { edge: string; label?: string; reverse: boolean } | undefined;
+  /** Every packet of the current step: the step's own edge first, then `with` in file order (spec 045). */
+  packets: { edge: string; label?: string; reverse: boolean }[];
   caption: string | undefined;
   metrics: Record<string, string | number> | undefined;
   /** Every group, node and edge id → its state now. */
@@ -139,11 +141,25 @@ function targetOf(step: DiagramStep): { kind: 'edge' | 'node' | 'group'; id: str
   return { kind: 'group', id: step.group as string }; // a valid step has exactly one target
 }
 
+type Packet = PlayerView['packets'][number];
+
+/** A packet on one edge: `reverse` defaults to false, `label` only when there is a packet label. */
+function packetFor(edge: string, label: string | undefined, reverse: boolean | undefined): Packet {
+  const packet = { edge, reverse: reverse ?? false };
+  return label === undefined ? packet : { ...packet, label };
+}
+
 /** The packet travelling along an edge step, if any. */
 function packetOf(step: DiagramStep): PlayerView['packet'] {
   if (step.edge === undefined) return undefined;
-  const packet = { edge: step.edge, reverse: step.reverse ?? false };
-  return step.packet === undefined ? packet : { ...packet, label: step.packet };
+  return packetFor(step.edge, step.packet, step.reverse);
+}
+
+/** Every packet of a step: its own edge first, then the `with` edges in file order. */
+function packetsOf(step: DiagramStep): PlayerView['packets'] {
+  const own = packetOf(step);
+  if (own === undefined) return [];
+  return [own, ...(step.with ?? []).map((item) => packetFor(item.edge, item.packet, item.reverse))];
 }
 
 /** Everything the view needs for a player state, derived from the diagram. */
@@ -159,6 +175,7 @@ export function viewPlayer(diagram: Diagram, state: PlayerState): PlayerView {
     step,
     target: step && targetOf(step),
     packet: step && packetOf(step),
+    packets: step ? packetsOf(step) : [],
     caption: step?.caption,
     metrics: step?.metrics,
     states: statesAt(diagram, scenario.id, state.step),

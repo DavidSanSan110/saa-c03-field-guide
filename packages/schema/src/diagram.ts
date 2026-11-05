@@ -49,12 +49,20 @@ export interface DiagramEdge {
   label?: string;
 }
 
+/** An extra edge that plays in the same step as the step's own edge (spec 045). */
+export interface DiagramParallelEdge {
+  edge: string;
+  packet?: string;
+  reverse?: boolean;
+}
+
 export interface DiagramStep {
   edge?: string;
   node?: string;
   group?: string;
   reverse?: boolean;
   packet?: string;
+  with?: DiagramParallelEdge[];
   caption: string;
   state?: Record<string, ElementState>;
   metrics?: Record<string, string | number>;
@@ -136,12 +144,19 @@ const metricsSchema = noProtoKey
     },
   );
 
+const parallelEdgeSchema = z.strictObject({
+  edge: z.string(),
+  packet: nonEmpty.exactOptional(),
+  reverse: z.boolean().exactOptional(),
+});
+
 const stepSchema = z.strictObject({
   edge: z.string().exactOptional(),
   node: z.string().exactOptional(),
   group: z.string().exactOptional(),
   reverse: z.boolean().exactOptional(),
   packet: nonEmpty.exactOptional(),
+  with: z.array(parallelEdgeSchema).min(1).exactOptional(),
   caption: nonEmpty.max(MAX_CAPTION_LENGTH),
   state: stateMap.exactOptional(),
   metrics: metricsSchema.exactOptional(),
@@ -243,7 +258,7 @@ function checkStateKeys(
   }
 }
 
-/** A step names exactly one existing element of its kind; reverse and packet need an edge. */
+/** A step names exactly one existing element of its kind; reverse, packet and with need an edge. */
 function checkStepTarget(step: DiagramStep, kinds: ElementKinds, path: Path, ctx: Ctx): void {
   const targets = (['edge', 'node', 'group'] as const).flatMap((kind) => {
     const id = step[kind];
@@ -259,7 +274,22 @@ function checkStepTarget(step: DiagramStep, kinds: ElementKinds, path: Path, ctx
     for (const field of ['reverse', 'packet'] as const) {
       if (step[field] !== undefined) fail(ctx, [...path, field], `${field} is only for edge steps`);
     }
+    if (step.with !== undefined) fail(ctx, [...path, 'with'], 'with is only for edge steps');
   }
+  checkParallelEdges(step, kinds, path, ctx);
+}
+
+/** Each `with` entry names an edge other than the step's own, and no edge twice. */
+function checkParallelEdges(step: DiagramStep, kinds: ElementKinds, path: Path, ctx: Ctx): void {
+  if (step.edge === undefined) return;
+  const seen = new Set<string>([step.edge]);
+  (step.with ?? []).forEach(({ edge }, index) => {
+    const edgePath = [...path, 'with', index, 'edge'];
+    if (kinds.get(edge) !== 'edge') fail(ctx, edgePath, `unknown edge '${edge}'`);
+    else if (edge === step.edge) fail(ctx, edgePath, `edge '${edge}' is already the step's edge`);
+    else if (seen.has(edge)) fail(ctx, edgePath, `edge '${edge}' is listed twice`);
+    seen.add(edge);
+  });
 }
 
 function checkScenarios(scenarios: DiagramScenario[], kinds: ElementKinds, ctx: Ctx): void {

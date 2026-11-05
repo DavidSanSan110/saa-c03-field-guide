@@ -1461,3 +1461,472 @@ describe('AC-34: GROUP_KIND_NAMES', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 045: parallel edges in a step. The numbering below is spec 045's, not spec 012's.
+// The views are built by hand (`packets` set explicitly, as spec 045 defines them), so these
+// tests do not depend on the player.
+// ---------------------------------------------------------------------------
+
+type ParallelPacket = PlayerView['packets'][number];
+
+/** `flowDiagram()` with scenarios whose steps play several of its edges (put, gen, audit) at once. */
+function parallelDiagram(): Diagram {
+  return {
+    ...flowDiagram(),
+    scenarios: [
+      {
+        id: 'fan',
+        label: 'Fan out',
+        steps: [
+          {
+            edge: 'put',
+            packet: 'order 42',
+            with: [
+              { edge: 'gen', packet: 'copy' },
+              { edge: 'audit', reverse: true },
+            ],
+            caption: 'zero',
+          }, //                                                      0 put + gen + audit(reverse)
+          { node: 's3', caption: 'one' }, //                          1
+          { edge: 'audit', caption: 'two' }, //                       2 audit alone
+          { edge: 'gen', with: [{ edge: 'put' }], caption: 'three' }, // 3 gen + put again
+        ],
+      },
+      {
+        id: 'two',
+        label: 'Two edges',
+        steps: [{ edge: 'put', with: [{ edge: 'gen' }], caption: 'zero' }],
+      },
+      {
+        id: 'log',
+        label: 'Log lines',
+        steps: [
+          {
+            edge: 'put',
+            packet: 'order 42',
+            with: [{ edge: 'gen', packet: 'order 42' }],
+            caption: 'c0',
+          }, // 0 same packet on both
+          { edge: 'put', reverse: true, with: [{ edge: 'gen', reverse: true }], caption: 'c1' }, // 1
+          {
+            edge: 'put',
+            packet: 'a',
+            with: [{ edge: 'gen', packet: 'b' }, { edge: 'audit' }],
+            caption: 'c2',
+          }, // 2 audit adds nothing
+          { edge: 'put', with: [{ edge: 'audit' }], caption: 'c3' }, // 3 nothing to show
+          {
+            edge: 'put',
+            packet: 'a',
+            with: [
+              { edge: 'gen', packet: 'b' },
+              { edge: 'audit', packet: 'a' },
+            ],
+            caption: 'c4',
+          }, // 4 'a' is repeated
+          { edge: 'audit', packet: 'solo', caption: 'c5' }, // 5 no with
+          {
+            edge: 'audit',
+            reverse: true,
+            packet: 'back',
+            with: [{ edge: 'gen', packet: 'back', reverse: true }, { edge: 'put' }],
+            caption: 'c6',
+          }, // 6 audit reversed first
+        ],
+      },
+    ],
+  };
+}
+
+function viewWithPackets(
+  diagram: Diagram,
+  scenario: string,
+  step: number,
+  packets: ParallelPacket[],
+  run = 0,
+): PlayerView {
+  return { ...viewAt(diagram, scenario, step, { run }), packets };
+}
+
+function flowEdge(model: ReturnType<typeof toFlowModel>, id: string) {
+  const found = model.edges.find((candidate) => candidate.id === id);
+  if (found === undefined) throw new Error(`no edge ${id}`);
+  return found;
+}
+
+describe('spec 045 AC-10: toFlowModel at a parallel step', () => {
+  const packets: ParallelPacket[] = [
+    { edge: 'put', label: 'order 42', reverse: false },
+    { edge: 'gen', label: 'copy', reverse: false },
+    { edge: 'audit', reverse: true },
+  ];
+
+  test('AC-10: the own edge and every with edge are active', () => {
+    const compiled = flowCompiled(parallelDiagram());
+
+    const model = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'fan', 0, packets, 7));
+
+    expect(model.edges.map((edge) => [edge.id, edge.status])).toEqual([
+      ['put', 'active'],
+      ['gen', 'active'],
+      ['audit', 'active'],
+    ]);
+  });
+
+  test('AC-10: each edge carries its own packet with reverse, label and run', () => {
+    const compiled = flowCompiled(parallelDiagram());
+
+    const model = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'fan', 0, packets, 7));
+
+    expect(flowEdge(model, 'put').packet).toStrictEqual({
+      label: 'order 42',
+      reverse: false,
+      run: 7,
+    });
+    expect(flowEdge(model, 'gen').packet).toStrictEqual({ label: 'copy', reverse: false, run: 7 });
+  });
+
+  test('AC-10: an entry without a packet label gives a packet with no label key', () => {
+    const compiled = flowCompiled(parallelDiagram());
+
+    const model = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'fan', 0, packets, 7));
+
+    const packet = flowEdge(model, 'audit').packet;
+    expect(packet).toStrictEqual({ reverse: true, run: 7 });
+    expect(packet).not.toHaveProperty('label');
+  });
+
+  test('AC-10: run is view.run for every packet, so the animation restarts on a new run', () => {
+    const compiled = flowCompiled(parallelDiagram());
+
+    const first = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'fan', 0, packets, 3));
+    const second = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'fan', 0, packets, 4));
+
+    expect(first.edges.map((edge) => edge.packet?.run)).toEqual([3, 3, 3]);
+    expect(second.edges.map((edge) => edge.packet?.run)).toEqual([4, 4, 4]);
+  });
+
+  test('AC-10: an edge that is not played has no packet and is not active', () => {
+    const compiled = flowCompiled(parallelDiagram());
+    const twoPackets: ParallelPacket[] = [
+      { edge: 'put', reverse: false },
+      { edge: 'gen', reverse: false },
+    ];
+
+    const model = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'two', 0, twoPackets));
+
+    expect(flowEdge(model, 'put').status).toBe('active');
+    expect(flowEdge(model, 'gen').status).toBe('active');
+    expect(flowEdge(model, 'audit').status).toBe('idle');
+    expect(flowEdge(model, 'audit').packet).toBeUndefined();
+    expect(Object.hasOwn(flowEdge(model, 'audit'), 'packet')).toBe(false);
+  });
+
+  test('AC-10: the packets of a parallel step keep their own direction', () => {
+    const compiled = flowCompiled(parallelDiagram());
+    const mixed: ParallelPacket[] = [
+      { edge: 'put', reverse: true },
+      { edge: 'gen', reverse: false },
+    ];
+
+    const model = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'two', 0, mixed));
+
+    expect(flowEdge(model, 'put').packet?.reverse).toBe(true);
+    expect(flowEdge(model, 'gen').packet?.reverse).toBe(false);
+  });
+
+  test('AC-10: a node or group is never active at an edge step with with', () => {
+    const compiled = flowCompiled(parallelDiagram());
+
+    const model = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'fan', 0, packets));
+
+    expect([...model.groups, ...model.nodes].some((element) => element.active)).toBe(false);
+  });
+
+  test('AC-10: a step without with gives the model it gives today (one packet on the own edge)', () => {
+    const compiled = flowCompiled(parallelDiagram());
+    const solo = viewWithPackets(
+      compiled.diagram,
+      'fan',
+      2,
+      [{ edge: 'audit', reverse: false }],
+      5,
+    );
+
+    const model = toFlowModel(compiled, solo);
+
+    expect(model.edges.filter((edge) => edge.packet !== undefined).map((edge) => edge.id)).toEqual([
+      'audit',
+    ]);
+    expect(flowEdge(model, 'audit').packet).toStrictEqual({ reverse: false, run: 5 });
+    expect(flowEdge(model, 'audit').status).toBe('active');
+  });
+});
+
+describe('spec 045 AC-11: edges of an earlier parallel step are done', () => {
+  test('AC-11: after a parallel step the own edge and all its with edges are done', () => {
+    const compiled = flowCompiled(parallelDiagram());
+
+    const model = toFlowModel(compiled, viewWithPackets(compiled.diagram, 'fan', 1, []));
+
+    expect(model.edges.map((edge) => [edge.id, edge.status])).toEqual([
+      ['put', 'done'],
+      ['gen', 'done'],
+      ['audit', 'done'],
+    ]);
+    expect(model.edges.some((edge) => edge.packet !== undefined)).toBe(false);
+  });
+
+  test('AC-11: with edges stay done at a later edge step that plays another edge', () => {
+    const compiled = flowCompiled(parallelDiagram());
+    const view = viewWithPackets(compiled.diagram, 'fan', 2, [{ edge: 'audit', reverse: false }]);
+
+    const model = toFlowModel(compiled, view);
+
+    expect(flowEdge(model, 'audit').status).toBe('active');
+    expect(flowEdge(model, 'put').status).toBe('done');
+    expect(flowEdge(model, 'gen').status).toBe('done');
+  });
+
+  test('AC-11: an edge done earlier is active when the current step plays it as an own or a with edge', () => {
+    const compiled = flowCompiled(parallelDiagram());
+    const view = viewWithPackets(compiled.diagram, 'fan', 3, [
+      { edge: 'gen', reverse: false },
+      { edge: 'put', reverse: false },
+    ]);
+
+    const model = toFlowModel(compiled, view);
+
+    expect(flowEdge(model, 'gen').status).toBe('active');
+    expect(flowEdge(model, 'put').status).toBe('active');
+    expect(flowEdge(model, 'audit').status).toBe('done');
+  });
+
+  test('AC-11: the edges played only in a later step are still idle', () => {
+    const compiled = flowCompiled(parallelDiagram());
+
+    const model = toFlowModel(
+      compiled,
+      viewWithPackets(compiled.diagram, 'log', 0, [
+        { edge: 'put', label: 'order 42', reverse: false },
+        { edge: 'gen', label: 'order 42', reverse: false },
+      ]),
+    );
+
+    expect(flowEdge(model, 'audit').status).toBe('idle');
+  });
+
+  test('AC-11: an edge that appears only in the with list of an earlier step of the scenario is done', () => {
+    const compiled = flowCompiled(parallelDiagram());
+    const view = viewWithPackets(compiled.diagram, 'log', 3, [
+      { edge: 'put', reverse: false },
+      { edge: 'audit', reverse: false },
+    ]);
+
+    const model = toFlowModel(compiled, view);
+
+    // gen was played (as a with edge) at steps 0 to 2 and is not in the current step.
+    expect(flowEdge(model, 'gen').status).toBe('done');
+    expect(flowEdge(model, 'put').status).toBe('active');
+    expect(flowEdge(model, 'audit').status).toBe('active');
+  });
+});
+
+describe('spec 045 AC-12: logLines for a parallel step', () => {
+  const lineAt = (step: number) => {
+    const line = logLines(parallelDiagram(), 'log', step)[step];
+    if (line === undefined) throw new Error(`no line ${String(step)}`);
+    return line;
+  };
+
+  test('AC-12: the route joins the routes of the played edges in order, own edge first', () => {
+    expect(lineAt(0).route).toBe('client → s3, s3 → kms');
+  });
+
+  test('AC-12: two edges with the same packet give that packet once as the detail', () => {
+    expect(lineAt(0)).toStrictEqual({
+      n: 1,
+      total: 7,
+      route: 'client → s3, s3 → kms',
+      detail: 'order 42',
+    });
+  });
+
+  test('AC-12: each edge is swapped by its own reverse', () => {
+    expect(lineAt(1).route).toBe('s3 → client, kms → s3');
+    expect(lineAt(6).route).toBe('trail → kms, kms → s3, client → s3');
+  });
+
+  test('AC-12: a packet-less edge falls back to its edge label for the detail', () => {
+    // put has neither packet nor label, gen has the label 'Key request'
+    expect(lineAt(1).detail).toBe('Key request');
+  });
+
+  test('AC-12: the detail lists the distinct details in order and edges with none add nothing', () => {
+    expect(lineAt(2).detail).toBe('a, b');
+    expect(lineAt(4).detail).toBe('a, b');
+  });
+
+  test('AC-12: with no packet or edge label on any played edge there is no detail key', () => {
+    const line = lineAt(3);
+
+    expect(line.route).toBe('client → s3, kms → trail');
+    expect(Object.hasOwn(line, 'detail')).toBe(false);
+  });
+
+  test('AC-12: the same detail on two edges is shown once, even when a third edge adds nothing', () => {
+    // step 6: audit 'back', gen 'back' (reverse), put none → 'back'
+    expect(lineAt(6).route).toBe('trail → kms, kms → s3, client → s3');
+    expect(lineAt(6).detail).toBe('back');
+  });
+
+  test("AC-12: a step without with gives exactly today's line", () => {
+    expect(lineAt(5)).toStrictEqual({ n: 6, total: 7, route: 'kms → trail', detail: 'solo' });
+  });
+
+  test('AC-12: earlier lines of the same scenario keep their own routes and details', () => {
+    const lines = logLines(parallelDiagram(), 'log', 5);
+
+    expect(lines.map((line) => line.route)).toEqual([
+      'client → s3, s3 → kms',
+      's3 → client, kms → s3',
+      'client → s3, s3 → kms, kms → trail',
+      'client → s3, kms → trail',
+      'client → s3, s3 → kms, kms → trail',
+      'kms → trail',
+    ]);
+    expect(lines.map((line) => line.n)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  test('AC-12: a node step after a parallel step is unchanged', () => {
+    const lines = logLines(parallelDiagram(), 'fan', 1);
+
+    expect(lines[1]).toStrictEqual({ n: 2, total: 4, route: 's3' });
+  });
+
+  test('AC-12: the fan scenario gives the own edge and the reversed with edge in order', () => {
+    const lines = logLines(parallelDiagram(), 'fan', 0);
+
+    expect(lines).toStrictEqual([
+      {
+        n: 1,
+        total: 4,
+        route: 'client → s3, s3 → kms, trail → kms',
+        detail: 'order 42, copy',
+      },
+    ]);
+  });
+
+  test('AC-12: the text fallback is unchanged by with (the caption describes the step)', () => {
+    const fallback = textFallback(parallelDiagram());
+
+    expect(fallback.find((entry) => entry.id === 'fan')?.steps).toStrictEqual([
+      { caption: 'zero' },
+      { caption: 'one' },
+      { caption: 'two' },
+      { caption: 'three' },
+    ]);
+  });
+});
+
+describe('spec 045 AC-20: toFlowModel and logLines follow the file order of with', () => {
+  // `flowDiagram()` lists its edges put, gen, audit; this step lists them put, then audit, then gen.
+  function reorderedDiagram(): Diagram {
+    return {
+      ...flowDiagram(),
+      scenarios: [
+        {
+          id: 'reordered',
+          label: 'Reordered',
+          steps: [
+            {
+              edge: 'put',
+              packet: 'order 42',
+              with: [
+                { edge: 'audit', reverse: true },
+                { edge: 'gen', packet: 'copy' },
+              ],
+              caption: 'zero',
+            },
+            // the order of edges but not alphabetical, so sorting the with list by id is caught too
+            {
+              edge: 'put',
+              with: [{ edge: 'gen' }, { edge: 'audit', reverse: true }],
+              caption: 'one',
+            },
+          ],
+        },
+      ],
+    };
+  }
+
+  test('AC-20: the fixture lists with in a different order from edges', () => {
+    const d = reorderedDiagram();
+
+    expect((d.edges ?? []).map((edge) => edge.id)).toEqual(['put', 'gen', 'audit']);
+    expect(d.scenarios[0]?.steps[0]?.with?.map((item) => item.edge)).toEqual(['audit', 'gen']);
+  });
+
+  test('AC-20: the packets of the view are in with order, so toFlowModel gets them in that order', () => {
+    const view = viewAt(reorderedDiagram(), 'reordered', 0);
+
+    expect(view.packets.map((packet) => packet.edge)).toEqual(['put', 'audit', 'gen']);
+  });
+
+  test('AC-20: toFlowModel gives each edge its own packet, whatever the order of with', () => {
+    const compiled = flowCompiled(reorderedDiagram());
+
+    const model = toFlowModel(compiled, viewAt(compiled.diagram, 'reordered', 0, { run: 5 }));
+
+    expect(flowEdge(model, 'put').packet).toStrictEqual({
+      label: 'order 42',
+      reverse: false,
+      run: 5,
+    });
+    expect(flowEdge(model, 'gen').packet).toStrictEqual({ label: 'copy', reverse: false, run: 5 });
+    expect(flowEdge(model, 'audit').packet).toStrictEqual({ reverse: true, run: 5 });
+  });
+
+  test('AC-20: toFlowModel lists the edges in the order of the diagram and all are active', () => {
+    const compiled = flowCompiled(reorderedDiagram());
+
+    const model = toFlowModel(compiled, viewAt(compiled.diagram, 'reordered', 0));
+
+    expect(model.edges.map((edge) => [edge.id, edge.status])).toEqual([
+      ['put', 'active'],
+      ['gen', 'active'],
+      ['audit', 'active'],
+    ]);
+  });
+
+  test('AC-20: logLines joins the routes in with order, each with its own reverse', () => {
+    const lines = logLines(reorderedDiagram(), 'reordered', 0);
+
+    expect(lines).toStrictEqual([
+      {
+        n: 1,
+        total: 2,
+        route: 'client → s3, trail → kms, s3 → kms',
+        detail: 'order 42, copy',
+      },
+    ]);
+  });
+
+  test('AC-20: logLines keeps a with order that is not alphabetical either', () => {
+    const lines = logLines(reorderedDiagram(), 'reordered', 1);
+
+    expect(lines[1]).toStrictEqual({
+      n: 2,
+      total: 2,
+      route: 'client → s3, s3 → kms, trail → kms',
+      detail: 'Key request',
+    });
+  });
+
+  test('AC-20: the packets of the view keep a with order that is not alphabetical either', () => {
+    const view = viewAt(reorderedDiagram(), 'reordered', 1);
+
+    expect(view.packets.map((packet) => packet.edge)).toEqual(['put', 'gen', 'audit']);
+  });
+});

@@ -50,6 +50,13 @@ const diagrams = {
           new URL('../../e2e/fixtures/diagram-page.astro', import.meta.url),
         ),
       });
+      // Parallel-edges fixture (spec 045): one step that plays several edges at once.
+      injectRoute({
+        pattern: '/fixtures/diagram-parallel/',
+        entrypoint: fileURLToPath(
+          new URL('../../e2e/fixtures/diagram-parallel-page.astro', import.meta.url),
+        ),
+      });
       // Content-table fixture (spec 039): Markdown tables rendered through the real pipeline.
       injectRoute({
         pattern: '/fixtures/tables/',
