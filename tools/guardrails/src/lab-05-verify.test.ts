@@ -1956,3 +1956,324 @@ describe('verify.sh: audit over every run of this file', () => {
     expect(found).toEqual([]);
   });
 });
+
+// =================================================================================================
+// Review round 1 regressions (AC-36 to AC-38), appended: nothing above this line was changed.
+// =================================================================================================
+
+/** An aws call with the AWS_DEFAULT_OUTPUT it saw (`<unset>` when the variable was not set at all). */
+interface OutputEvent extends Event {
+  output: string;
+}
+
+interface OutputRunResult extends RunResult {
+  /** The aws calls, in order, each with its AWS_DEFAULT_OUTPUT. */
+  awsOutput: OutputEvent[];
+}
+
+/**
+ * A variant of runVerify() for AC-37: the aws stub also writes the AWS_DEFAULT_OUTPUT it sees to
+ * `ev-<n>.out`, next to the `ev-<n>.env` file the other tests read (that format is left as it is).
+ * The stub is the one writeStubs() makes, with one line added.
+ */
+async function runVerifyRecordingOutput(
+  fixture: Fixture,
+  options: Pick<RunOptions, 'args' | 'extraEnv' | 'poll' | 'label'> = {},
+): Promise<OutputRunResult> {
+  const script = scriptPath();
+  const dir = mkdtempSync(join(tmpdir(), 'lab05-verify-'));
+  try {
+    const work = join(dir, 'work');
+    const logs = join(dir, 'logs');
+    const bin = join(dir, 'bin');
+    const temp = join(dir, 'tmp');
+    const rules = join(logs, 'rules');
+    for (const path of [work, logs, bin, temp, rules]) mkdirSync(path);
+    writeStubs(fixture, bin, rules, TOOLS);
+    const awsStub = readFileSync(join(bin, 'aws'), 'utf8');
+    const envLine = '> "$D/ev-$n.env"';
+    if (!awsStub.includes(envLine))
+      throw new Error('the aws stub has no ev-<n>.env line to extend');
+    writeFileSync(
+      join(bin, 'aws'),
+      awsStub.replace(
+        envLine,
+        `${envLine}\nprintf '%s' "\${AWS_DEFAULT_OUTPUT-<unset>}" > "$D/ev-$n.out"`,
+      ),
+      { mode: 0o755 },
+    );
+
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    let originalPath = '';
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === 'PATH') {
+        originalPath = env[key] ?? '';
+        delete env[key];
+      } else if (
+        key.startsWith('GIT_') ||
+        key.startsWith('AWS_') ||
+        key.startsWith('VERIFY_') ||
+        key === 'MSYS_NO_PATHCONV' ||
+        key === 'SHELLOPTS' ||
+        key === 'BASH_ENV'
+      ) {
+        delete env[key];
+      }
+    }
+    env['PATH'] = `${bin}${delimiter}${originalPath}`;
+    env['FAKE_LOG_DIR'] = slash(logs);
+    env['TMPDIR'] = slash(temp);
+    const poll = options.poll === undefined ? '0' : options.poll;
+    if (poll !== null) env['VERIFY_POLL_SECONDS'] = poll;
+    for (const [key, value] of Object.entries(options.extraEnv ?? {})) env[key] = value;
+
+    const done = await execBash([script, ...(options.args ?? [])], work, env);
+    const events = readEvents(logs);
+    const numbers = readdirSync(logs)
+      .map((name) => /^ev-(\d+)\.argv$/.exec(name)?.[1])
+      .filter((digits): digits is string => digits !== undefined)
+      .map(Number)
+      .sort((a, b) => a - b);
+    const awsOutput: OutputEvent[] = [];
+    events.forEach((event, index) => {
+      if (event.tool !== 'aws') return;
+      const outPath = join(logs, `ev-${numbers[index]}.out`);
+      awsOutput.push({
+        ...event,
+        output: existsSync(outPath) ? readFileSync(outPath, 'utf8') : '<no record>',
+      });
+    });
+    return {
+      status: done.status,
+      stdout: done.stdout,
+      stderr: done.stderr,
+      all: done.stdout + done.stderr,
+      events,
+      aws: events.filter((event) => event.tool === 'aws'),
+      sleeps: events.filter((event) => event.tool === 'sleep').map((event) => event.argv.join(' ')),
+      unexpected: readLines(join(logs, 'unexpected.log')),
+      awsOutput,
+    };
+  } finally {
+    try {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+    } catch {
+      // A leftover temp dir must not fail a test.
+    }
+  }
+}
+
+// ---- AC-36: ARNs match exactly, not as a prefix --------------------------------------------------
+
+describe('verify.sh: ARNs match exactly (AC-36)', () => {
+  // The source ARN is a prefix of the DLQ ARN, and an "-old" suffix makes a longer ARN of either.
+  test.concurrent(
+    'AC-36: a redrive allow policy that names the DLQ itself as the source fails',
+    async () => {
+      const result = await runVerify(answer('dlq-redrive-allow', ok(allow(DLQ_ARN))), {
+        label: 'AC-36 allow names the DLQ',
+      });
+      expectRun(result, {}, { 'dlq-redrive-allow': true });
+    },
+  );
+
+  test.concurrent(
+    'AC-36: a redrive allow policy with the source ARN and the same ARN with -old fails',
+    async () => {
+      const result = await runVerify(
+        answer('dlq-redrive-allow', ok(allow(SRC_ARN, `${SRC_ARN}-old`))),
+        { label: 'AC-36 allow with -old second' },
+      );
+      expectRun(result, {}, { 'dlq-redrive-allow': true });
+    },
+  );
+
+  test.concurrent(
+    'AC-36: a redrive allow policy that only names the source ARN with -old fails',
+    async () => {
+      const result = await runVerify(answer('dlq-redrive-allow', ok(allow(`${SRC_ARN}-old`))), {
+        label: 'AC-36 allow with -old only',
+      });
+      expectRun(result, {}, { 'dlq-redrive-allow': true });
+    },
+  );
+
+  test.concurrent(
+    'AC-36: a redrive policy whose dead-letter target is the DLQ ARN with -old fails',
+    async () => {
+      const result = await runVerify(answer('redrive-policy', ok(redrive(`${DLQ_ARN}-old`, '3'))), {
+        label: 'AC-36 redrive -old',
+      });
+      expectRun(
+        result,
+        {},
+        { 'redrive-policy': 'FAIL: redrive-policy: the redrive policy does not target the DLQ' },
+      );
+    },
+  );
+
+  test.concurrent(
+    'AC-36: the exact ARNs still pass (the healthy answers of both checks)',
+    async () => {
+      const result = await runVerify(
+        answering({
+          'dlq-redrive-allow': [ok(allow(SRC_ARN))],
+          'redrive-policy': [ok(redrive(DLQ_ARN, '3'))],
+        }),
+        { label: 'AC-36 exact ARNs' },
+      );
+      expectRun(result);
+    },
+  );
+});
+
+// ---- AC-37: a partial send fails -------------------------------------------------------------------
+
+describe('verify.sh: a partial send fails (AC-37)', () => {
+  const NOT_SENT = ['poison-in-dlq', 'good-once', 'alarm-fires'];
+
+  const successful = [
+    { Id: 'good', MessageId: MSG_GOOD, MD5OfMessageBody: '0123456789abcdef0123456789abcdef' },
+  ];
+  const failedEntry = { Id: 'poison', SenderFault: true, Code: 'X', Message: 'rejected' };
+  const partial = { Successful: successful, Failed: [failedEntry] };
+  const complete = { Successful: successful, Failed: [] };
+
+  /** The same JSON with spaces around the colons and the commas. */
+  const spacedOut = (value: unknown): string =>
+    JSON.stringify(value).replace(/:/g, ' : ').replace(/,/g, ' , ');
+
+  const PARTIAL_ANSWERS: [string, string][] = [
+    ['compact JSON', JSON.stringify(partial)],
+    ['pretty printed JSON', JSON.stringify(partial, null, 2)],
+    ['JSON with spaces around the colons and commas', spacedOut(partial)],
+    [
+      'Failed written after the entries it lists, with a space before the list',
+      `{"Successful":[],"Failed": [{"Id":"good","SenderFault":false,"Code":"InternalError"},{"Id":"poison","SenderFault":true,"Code":"X"}]}`,
+    ],
+  ];
+
+  const EMPTY_FAILED_ANSWERS: [string, string][] = [
+    ['"Failed":[] without spaces', JSON.stringify(complete)],
+    ['"Failed": [] with a space', `{"Successful":[{"Id":"good"},{"Id":"poison"}],"Failed": []}`],
+    ['"Failed" : [ ] with spaces everywhere', `{ "Successful": [], "Failed" : [ ] }`],
+    ['pretty printed JSON with an empty list', JSON.stringify(complete, null, 2)],
+    ['no Failed key at all', JSON.stringify({ Successful: successful })],
+  ];
+
+  test.concurrent(
+    'AC-37: the send-message-batch call runs with AWS_DEFAULT_OUTPUT=json and no other call has it',
+    async () => {
+      const result = await runVerifyRecordingOutput(healthy(), {
+        label: 'AC-37 env',
+        extraEnv: SEND_ENV,
+      });
+      expectRun(result, { live: true });
+      const sends = result.awsOutput.filter((run) => isOp(run, 'sqs', 'send-message-batch'));
+      expect(sends).toHaveLength(1);
+      expect(sends[0]?.output).toBe('json');
+      const others = result.awsOutput.filter((run) => !isOp(run, 'sqs', 'send-message-batch'));
+      expect(others.length).toBeGreaterThan(10);
+      for (const run of others) {
+        expect(['<unset>', ''], run.argv.slice(0, 2).join(' ')).toContain(run.output);
+      }
+    },
+  );
+
+  test.concurrent('AC-37: without VERIFY_SEND=1 no call has AWS_DEFAULT_OUTPUT set', async () => {
+    const result = await runVerifyRecordingOutput(healthy(), { label: 'AC-37 env read-only' });
+    expectRun(result);
+    expect(result.awsOutput.length).toBeGreaterThan(10);
+    for (const run of result.awsOutput) {
+      expect(['<unset>', ''], run.argv.slice(0, 2).join(' ')).toContain(run.output);
+    }
+  });
+
+  test.concurrent.each(PARTIAL_ANSWERS.map(([name, text]) => ({ name, text })))(
+    'AC-37: an answer with a failed entry ($name) fails good-processed and skips the rest',
+    async ({ name, text }) => {
+      const result = await runVerify(answer('send', ok(text)), {
+        label: `AC-37 partial ${name}`,
+        extraEnv: SEND_ENV,
+      });
+      expectRun(
+        result,
+        { live: true },
+        {
+          'good-processed': 'FAIL: good-processed: the messages could not be sent',
+          ...skipLines(NOT_SENT, 'good-processed failed'),
+        },
+      );
+      expect(result.aws.filter((run) => isOp(run, 'logs', 'filter-log-events'))).toEqual([]);
+      expect(runsOf(result, 'alarm-state')).toEqual([]);
+      expect(leaks(result.all)).toEqual([]);
+    },
+  );
+
+  test.concurrent.each(EMPTY_FAILED_ANSWERS.map(([name, text]) => ({ name, text })))(
+    'AC-37: an answer with $name is a successful send',
+    async ({ name, text }) => {
+      const result = await runVerify(answer('send', ok(text)), {
+        label: `AC-37 complete ${name}`,
+        extraEnv: SEND_ENV,
+      });
+      expectRun(result, { live: true });
+      expect(runsOf(result, 'filter')).toHaveLength(2);
+    },
+  );
+});
+
+// ---- AC-38: VERIFY_POLL_SECONDS is digits only ---------------------------------------------------
+
+describe('verify.sh: VERIFY_POLL_SECONDS must be digits only (AC-38)', () => {
+  test.concurrent.each([
+    { name: 'letters', value: 'abc' },
+    { name: 'a decimal', value: '1.5' },
+    { name: 'a negative number', value: '-1' },
+    { name: 'an empty string', value: '' },
+    { name: 'digits and a unit', value: '5s' },
+    { name: 'a plus sign', value: '+3' },
+    { name: 'a space', value: ' ' },
+  ])(
+    'AC-38: VERIFY_POLL_SECONDS of $name exits 2, names the variable and calls nothing',
+    async ({ name, value }) => {
+      const result = await runVerify(healthy(), {
+        label: `AC-38 poll ${name}`,
+        poll: value,
+      });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('VERIFY_POLL_SECONDS');
+      expect(result.aws).toEqual([]);
+      expect(outLines(result.stdout).filter((line) => line.startsWith('verify:'))).toEqual([]);
+      expect(leaks(result.all)).toEqual([]);
+    },
+  );
+
+  test.concurrent(
+    'AC-38: VERIFY_POLL_SECONDS of abc with VERIFY_SEND=1 also exits 2 before any call',
+    async () => {
+      const result = await runVerify(healthy(), {
+        label: 'AC-38 poll abc live',
+        poll: 'abc',
+        extraEnv: SEND_ENV,
+      });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('VERIFY_POLL_SECONDS');
+      expect(result.aws).toEqual([]);
+      expect(result.sleeps).toEqual([]);
+    },
+  );
+
+  test.concurrent.each([{ value: '0' }, { value: '7' }, { value: '12' }])(
+    'AC-38: VERIFY_POLL_SECONDS of $value still works and is the sleep',
+    async ({ value }) => {
+      const result = await runVerify(healthy(), {
+        label: `AC-38 poll ${value}`,
+        poll: value,
+        extraEnv: SEND_ENV,
+      });
+      expectRun(result, { live: true });
+      expect(result.sleeps).toEqual([value, value]);
+    },
+  );
+});
