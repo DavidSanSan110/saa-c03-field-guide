@@ -32,6 +32,9 @@ labs/*/probe.txt
 labs/*/client-without-key.json
 labs/*/heartbeat.txt
 
+# The zip that Terraform builds from a lab's source folder (lab 05)
+labs/*/.build/
+
 # Secrets and keys (never; guardrails also block these)
 .env
 .env.*
