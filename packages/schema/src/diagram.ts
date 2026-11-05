@@ -49,12 +49,20 @@ export interface DiagramEdge {
   label?: string;
 }
 
+/** An extra edge that plays in the same step as the step's own edge (spec 045). */
+export interface DiagramParallelEdge {
+  edge: string;
+  packet?: string;
+  reverse?: boolean;
+}
+
 export interface DiagramStep {
   edge?: string;
   node?: string;
   group?: string;
   reverse?: boolean;
   packet?: string;
+  with?: DiagramParallelEdge[];
   caption: string;
   state?: Record<string, ElementState>;
   metrics?: Record<string, string | number>;

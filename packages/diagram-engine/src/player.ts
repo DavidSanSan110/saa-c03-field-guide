@@ -37,6 +37,8 @@ export interface PlayerView {
   target: { kind: 'edge' | 'node' | 'group'; id: string } | undefined;
   /** Edge steps only. */
   packet: { edge: string; label?: string; reverse: boolean } | undefined;
+  /** Every packet of the current step: the step's own edge first, then `with` in file order (spec 045). */
+  packets: { edge: string; label?: string; reverse: boolean }[];
   caption: string | undefined;
   metrics: Record<string, string | number> | undefined;
   /** Every group, node and edge id → its state now. */
@@ -159,6 +161,7 @@ export function viewPlayer(diagram: Diagram, state: PlayerState): PlayerView {
     step,
     target: step && targetOf(step),
     packet: step && packetOf(step),
+    packets: [], // stub for spec 045: not implemented yet
     caption: step?.caption,
     metrics: step?.metrics,
     states: statesAt(diagram, scenario.id, state.step),

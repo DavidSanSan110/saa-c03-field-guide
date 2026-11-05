@@ -1029,3 +1029,289 @@ describe('review round 1: packet without a label', () => {
     expect(view.packet).not.toHaveProperty('label');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 045: parallel edges in a step (`packets`). The numbering below is spec 045's, not spec 011's.
+//
+// fan (5 steps)
+//   0 edge e-ab packet 'msg', with e-ac, e-ad (packet 'copy', reverse)
+//   1 node b
+//   2 group g
+//   3 edge e-ab (no packet, no reverse, no with)
+//   4 edge e-ab reverse, packet 'x', with e-ac (packet 'y')
+// ---------------------------------------------------------------------------
+
+function makeParallelDiagram(): Diagram {
+  return {
+    id: 'parallel-demo',
+    title: 'Parallel demo',
+    groups: [{ id: 'g', label: 'Group', kind: 'generic' }],
+    nodes: [
+      { id: 'a', icon: 'user', label: 'A' },
+      { id: 'b', icon: 'ec2', label: 'B', group: 'g' },
+      { id: 'c', icon: 'ec2', label: 'C', group: 'g' },
+      { id: 'd', icon: 'ec2', label: 'D', group: 'g' },
+    ],
+    edges: [
+      { id: 'e-ab', from: 'a', to: 'b' },
+      { id: 'e-ac', from: 'a', to: 'c' },
+      { id: 'e-ad', from: 'a', to: 'd' },
+    ],
+    scenarios: [
+      {
+        id: 'fan',
+        label: 'Fan out',
+        steps: [
+          {
+            edge: 'e-ab',
+            packet: 'msg',
+            with: [{ edge: 'e-ac' }, { edge: 'e-ad', packet: 'copy', reverse: true }],
+            caption: 'A sends to B, C and D at once.',
+          },
+          { node: 'b', caption: 'B works.' },
+          { group: 'g', caption: 'The group is shown.' },
+          { edge: 'e-ab', caption: 'A sends to B alone.' },
+          {
+            edge: 'e-ab',
+            reverse: true,
+            packet: 'x',
+            with: [{ edge: 'e-ac', packet: 'y' }],
+            caption: 'B and C answer A.',
+          },
+        ],
+      },
+    ],
+  };
+}
+
+/** A player on `fan`, paused at `step`. */
+function fanAt(diagram: Diagram, step: number): PlayerState {
+  return run(diagram, initPlayer(diagram, 'fan'), goto(step));
+}
+
+describe('spec 045 AC-7: packets at an edge step with with', () => {
+  test('AC-7: packets is the own packet followed by one entry per with item, in file order', () => {
+    const d = makeParallelDiagram();
+
+    const view = viewPlayer(d, fanAt(d, 0));
+
+    expect(view.packets).toStrictEqual([
+      { edge: 'e-ab', label: 'msg', reverse: false },
+      { edge: 'e-ac', reverse: false },
+      { edge: 'e-ad', label: 'copy', reverse: true },
+    ]);
+  });
+
+  test('AC-7: reverse defaults to false and label is present only when the item has packet', () => {
+    const d = makeParallelDiagram();
+
+    const [, withoutPacket, withPacket] = viewPlayer(d, fanAt(d, 0)).packets;
+
+    expect(withoutPacket).toStrictEqual({ edge: 'e-ac', reverse: false });
+    expect(withoutPacket).not.toHaveProperty('label');
+    expect(withPacket).toStrictEqual({ edge: 'e-ad', label: 'copy', reverse: true });
+  });
+
+  test('AC-7: packet and target still describe the step own edge only', () => {
+    const d = makeParallelDiagram();
+
+    const view = viewPlayer(d, fanAt(d, 0));
+
+    expect(view.packet).toStrictEqual({ edge: 'e-ab', label: 'msg', reverse: false });
+    expect(view.target).toStrictEqual({ kind: 'edge', id: 'e-ab' });
+  });
+
+  test('AC-7: packets[0] deep-equals packet', () => {
+    const d = makeParallelDiagram();
+
+    const view = viewPlayer(d, fanAt(d, 0));
+
+    expect(view.packets[0]).toStrictEqual(view.packet);
+  });
+
+  test('AC-7: the own packet keeps its own reverse while with items have theirs', () => {
+    const d = makeParallelDiagram();
+
+    const view = viewPlayer(d, fanAt(d, 4));
+
+    expect(view.packets).toStrictEqual([
+      { edge: 'e-ab', label: 'x', reverse: true },
+      { edge: 'e-ac', label: 'y', reverse: false },
+    ]);
+    expect(view.packet).toStrictEqual({ edge: 'e-ab', label: 'x', reverse: true });
+  });
+
+  test('AC-7: an own edge without a packet gives no label on packets[0]', () => {
+    const d = makeParallelDiagram();
+    const step = d.scenarios[0]?.steps[0];
+    if (step === undefined) throw new Error('fixture has no step 0');
+    delete step.packet;
+
+    const view = viewPlayer(d, fanAt(d, 0));
+
+    expect(view.packets[0]).toStrictEqual({ edge: 'e-ab', reverse: false });
+    expect(view.packets[0]).not.toHaveProperty('label');
+  });
+
+  test('AC-7: the other view fields keep their meaning at a parallel step', () => {
+    const d = makeParallelDiagram();
+    const state = fanAt(d, 0);
+
+    const view = viewPlayer(d, state);
+
+    expect(view.index).toBe(0);
+    expect(view.total).toBe(5);
+    expect(view.caption).toBe('A sends to B, C and D at once.');
+    expect(view.states).toEqual(statesAt(d, 'fan', 0));
+    expect(view.run).toBe(state.run);
+    expect(view.step).toEqual(d.scenarios[0]?.steps[0]);
+  });
+
+  test('AC-7: viewPlayer on a frozen diagram works and leaves the with list untouched', () => {
+    const d = deepFreeze(makeParallelDiagram());
+
+    const view = viewPlayer(d, fanAt(d, 0));
+
+    expect(view.packets).toHaveLength(3);
+    expect(d.scenarios[0]?.steps[0]?.with).toStrictEqual([
+      { edge: 'e-ac' },
+      { edge: 'e-ad', packet: 'copy', reverse: true },
+    ]);
+  });
+});
+
+describe('spec 045 AC-8: packets without with, at node and group steps and at the start', () => {
+  test('AC-8: an edge step without with has packets equal to [packet]', () => {
+    const d = makeParallelDiagram();
+
+    const view = viewPlayer(d, fanAt(d, 3));
+
+    expect(view.packet).toStrictEqual({ edge: 'e-ab', reverse: false });
+    expect(view.packets).toStrictEqual([{ edge: 'e-ab', reverse: false }]);
+  });
+
+  test('AC-8: an edge step with packet and reverse but no with has packets equal to [packet]', () => {
+    const d = makeDiagram();
+
+    const view = viewPlayer(d, pausedAt(d, 2));
+
+    expect(view.packet).toStrictEqual({ edge: 'e-query', label: 'rows', reverse: true });
+    expect(view.packets).toStrictEqual([view.packet]);
+  });
+
+  test('AC-8: a node step has no packets', () => {
+    const d = makeParallelDiagram();
+
+    expect(viewPlayer(d, fanAt(d, 1)).packets).toStrictEqual([]);
+  });
+
+  test('AC-8: a group step has no packets', () => {
+    const d = makeParallelDiagram();
+
+    expect(viewPlayer(d, fanAt(d, 2)).packets).toStrictEqual([]);
+  });
+
+  test('AC-8: step -1 has no packets', () => {
+    const d = makeParallelDiagram();
+
+    expect(viewPlayer(d, initPlayer(d, 'fan')).packets).toStrictEqual([]);
+  });
+
+  test('AC-8: after Reset from a parallel step there are no packets', () => {
+    const d = makeParallelDiagram();
+
+    expect(viewPlayer(d, run(d, fanAt(d, 0), reset)).packets).toStrictEqual([]);
+  });
+
+  test('AC-8: the existing fixture diagram has packets for every edge step and none otherwise', () => {
+    const d = makeDiagram();
+
+    const counts = [0, 1, 2, 3, 4].map((step) => viewPlayer(d, pausedAt(d, step)).packets.length);
+
+    expect(counts).toEqual([1, 0, 1, 0, 1]);
+  });
+});
+
+describe('spec 045 AC-9: revisiting a parallel step', () => {
+  test('AC-9: stepping forward past a parallel step and back gives the same packets', () => {
+    const d = makeParallelDiagram();
+    const first = viewPlayer(d, fanAt(d, 0));
+
+    const again = viewPlayer(d, run(d, fanAt(d, 0), next, next, back, back));
+
+    expect(first.packets).toHaveLength(3);
+    expect(again.index).toBe(0);
+    expect(again.packets).toStrictEqual(first.packets);
+  });
+
+  test('AC-9: run changes when the parallel step is reached again, so the view restarts', () => {
+    const d = makeParallelDiagram();
+    const first = fanAt(d, 0);
+
+    const forward = run(d, first, next);
+    const returned = run(d, forward, back);
+
+    expect(returned.run).toBeGreaterThan(forward.run);
+    expect(forward.run).toBeGreaterThan(first.run);
+    expect(viewPlayer(d, returned).packets).toHaveLength(3);
+    expect(viewPlayer(d, returned).run).not.toBe(viewPlayer(d, first).run);
+  });
+
+  test('AC-9: going back from the last parallel step and forward again gives the same packets', () => {
+    const d = makeParallelDiagram();
+    const first = viewPlayer(d, fanAt(d, 4));
+
+    const again = viewPlayer(d, run(d, fanAt(d, 4), back, next));
+
+    expect(first.packets).toHaveLength(2);
+    expect(again.packets).toStrictEqual(first.packets);
+  });
+
+  test('AC-9: a Reset and goto to the parallel step gives the same packets as before', () => {
+    const d = makeParallelDiagram();
+    const first = viewPlayer(d, fanAt(d, 0));
+
+    const again = viewPlayer(d, run(d, fanAt(d, 4), reset, goto(0)));
+
+    expect(first.packets).toHaveLength(3);
+    expect(again.packets).toStrictEqual(first.packets);
+  });
+});
+
+describe('spec 045 AC-20: packets keep the file order of with', () => {
+  /** `with` lists e-ad before e-ac, while the diagram lists e-ac before e-ad in `edges`. */
+  function makeReorderedDiagram(): Diagram {
+    const d = makeParallelDiagram();
+    const step = d.scenarios[0]?.steps[0];
+    if (step === undefined) throw new Error('fixture has no step 0');
+    step.with = [{ edge: 'e-ad', packet: 'late', reverse: true }, { edge: 'e-ac' }];
+    return d;
+  }
+
+  test('AC-20: the fixture lists with in a different order from edges', () => {
+    const d = makeReorderedDiagram();
+
+    expect((d.edges ?? []).map((edge) => edge.id)).toEqual(['e-ab', 'e-ac', 'e-ad']);
+    expect(d.scenarios[0]?.steps[0]?.with?.map((item) => item.edge)).toEqual(['e-ad', 'e-ac']);
+  });
+
+  test('AC-20: packets is the own packet, then the with items in file order, not in edges order', () => {
+    const d = makeReorderedDiagram();
+
+    const view = viewPlayer(d, fanAt(d, 0));
+
+    expect(view.packets).toStrictEqual([
+      { edge: 'e-ab', label: 'msg', reverse: false },
+      { edge: 'e-ad', label: 'late', reverse: true },
+      { edge: 'e-ac', reverse: false },
+    ]);
+  });
+
+  test('AC-20: the order is the same when the step is reached again', () => {
+    const d = makeReorderedDiagram();
+
+    const view = viewPlayer(d, run(d, fanAt(d, 0), next, back));
+
+    expect(view.packets.map((packet) => packet.edge)).toEqual(['e-ab', 'e-ad', 'e-ac']);
+  });
+});

@@ -1,0 +1,11 @@
+---
+// Test page for parallel edges in a step (spec 045), injected as /fixtures/diagram-parallel/ when
+// FIELD_GUIDE_FIXTURES=1 or in dev. Never part of a production build.
+import StarlightPage from '../../apps/site/node_modules/@astrojs/starlight/dist/components/StarlightPage.astro';
+import Diagram from '../../apps/site/src/components/Diagram.astro';
+import { parallelFixture } from './parallel-fixture.ts';
+---
+
+<StarlightPage frontmatter={{ title: 'Parallel diagram fixture', pagefind: false }}>
+  <Diagram diagram={parallelFixture} />
+</StarlightPage>

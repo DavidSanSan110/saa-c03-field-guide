@@ -1292,3 +1292,254 @@ describe('AC-16: a parent chain that runs into a cycle it is not part of', () =>
     expectRejected(data, 'groups');
   });
 });
+
+// ---------------------------------------------------------------------------
+// Spec 045: parallel edges in a step (`with`). The numbering below is spec 045's, not spec 009's.
+// ---------------------------------------------------------------------------
+
+/** Sets the `with` list of the first step of the example diagram (an edge step on `put`). */
+function withOnFirstStep(entries: unknown): unknown {
+  return make((d) => {
+    stepAt(d, 0).with = bad(entries);
+  });
+}
+
+describe('spec 045 AC-1: a valid with list', () => {
+  const entries = [{ edge: 'gen' }, { edge: 'audit', packet: 'x', reverse: true }];
+
+  test('AC-1: an edge step with two with entries validates', () => {
+    expectAccepted(withOnFirstStep(entries));
+  });
+
+  test('AC-1: validateDiagram returns the with list unchanged', () => {
+    const result = validateDiagram(withOnFirstStep(entries));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(stepAt(result.diagram, 0).with).toStrictEqual(entries);
+  });
+
+  test('AC-1: a single entry with only an edge validates and keeps its shape', () => {
+    const result = validateDiagram(withOnFirstStep([{ edge: 'gen' }]));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(stepAt(result.diagram, 0).with).toStrictEqual([{ edge: 'gen' }]);
+  });
+
+  test('AC-1: reverse false and a packet on an entry are kept as written', () => {
+    const result = validateDiagram(withOnFirstStep([{ edge: 'gen', packet: 'y', reverse: false }]));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(stepAt(result.diagram, 0).with).toStrictEqual([
+        { edge: 'gen', packet: 'y', reverse: false },
+      ]);
+    }
+  });
+
+  test('AC-1: the step own reverse and packet can be combined with with', () => {
+    const data = make((d) => {
+      d.scenarios[0] = {
+        id: 'upload',
+        label: 'Upload an object',
+        steps: [
+          {
+            edge: 'put',
+            reverse: true,
+            packet: 'order 42',
+            with: [{ edge: 'gen', packet: 'order 42' }],
+            caption: 'Two edges at once.',
+          },
+        ],
+      };
+    });
+
+    expectAccepted(data);
+  });
+
+  test('AC-1: with on an edge step of the fuller diagram validates', () => {
+    const data = make((d) => {
+      stepAt(d, 0).with = [{ edge: 'to-a' }, { edge: 'to-b', packet: 'copy', reverse: true }];
+    }, fullDiagram);
+
+    expectAccepted(data);
+  });
+});
+
+describe('spec 045 AC-2: with belongs to edge steps', () => {
+  /** True when some error has a path that ends in `.with`. */
+  function expectWithPathError(data: unknown): void {
+    const result = validateDiagram(data);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.errors.some((error) => /\.with: /.test(error))).toBe(true);
+    }
+    expect(diagramSchema.safeParse(data).success).toBe(false);
+  }
+
+  test('AC-2: rejects with on a node step', () => {
+    expectWithPathError(
+      make((d) => {
+        at(d.scenarios).steps[3] = { node: 's3', with: [{ edge: 'gen' }], caption: 'Node step.' };
+      }),
+    );
+  });
+
+  test('AC-2: rejects with on a group step', () => {
+    expectWithPathError(
+      make((d) => {
+        at(d.scenarios).steps[0] = {
+          group: 'region',
+          with: [{ edge: 'gen' }],
+          caption: 'Group step.',
+        };
+      }),
+    );
+  });
+
+  test('AC-2: the error for a node step points at the step it belongs to', () => {
+    const data = make((d) => {
+      at(d.scenarios).steps[3] = { node: 's3', with: [{ edge: 'gen' }], caption: 'Node step.' };
+    });
+
+    expectRejectedAt(data, 'scenarios.0.steps.3.with');
+  });
+});
+
+describe('spec 045 AC-3: with entries name edges of the diagram', () => {
+  test('AC-3: rejects an unknown edge id', () => {
+    expectRejected(withOnFirstStep([{ edge: 'ghost' }]), 'with.0.edge', "unknown edge 'ghost'");
+  });
+
+  test('AC-3: rejects a node id', () => {
+    expectRejected(withOnFirstStep([{ edge: 's3' }]), 'with.0.edge', "unknown edge 's3'");
+  });
+
+  test('AC-3: rejects a group id', () => {
+    expectRejected(withOnFirstStep([{ edge: 'region' }]), 'with.0.edge', "unknown edge 'region'");
+  });
+
+  test('AC-3: the error is reported at the index of the bad entry', () => {
+    expectRejected(
+      withOnFirstStep([{ edge: 'gen' }, { edge: 'ghost' }]),
+      'with.1.edge',
+      "unknown edge 'ghost'",
+    );
+  });
+
+  test('AC-3: the error has the usual path: message form', () => {
+    expectRejectedAt(withOnFirstStep([{ edge: 'ghost' }]), 'scenarios.0.steps.0.with.0.edge');
+  });
+});
+
+describe('spec 045 AC-4: no own edge and no repeated edge in with', () => {
+  test('AC-4: rejects an entry naming the step own edge', () => {
+    expectRejected(withOnFirstStep([{ edge: 'put' }]), '.with.', 'put');
+  });
+
+  test('AC-4: rejects the step own edge when it is not the first entry', () => {
+    expectRejected(withOnFirstStep([{ edge: 'gen' }, { edge: 'put' }]), '.with.1', 'put');
+  });
+
+  test('AC-4: rejects the same edge twice in with and names the edge id', () => {
+    expectRejected(withOnFirstStep([{ edge: 'gen' }, { edge: 'gen' }]), '.with.', 'gen');
+  });
+
+  test('AC-4: rejects a repeated edge with different packets', () => {
+    expectRejected(
+      withOnFirstStep([
+        { edge: 'gen', packet: 'a' },
+        { edge: 'audit' },
+        { edge: 'gen', packet: 'b', reverse: true },
+      ]),
+      '.with.',
+      'gen',
+    );
+  });
+
+  test('AC-4: the same edge in the with lists of two different steps is fine', () => {
+    const data = make((d) => {
+      stepAt(d, 0).with = [{ edge: 'gen' }];
+      stepAt(d, 2).with = [{ edge: 'gen' }];
+    });
+
+    expectAccepted(data);
+  });
+});
+
+describe('spec 045 AC-5: malformed with lists and entries', () => {
+  test('AC-5: rejects an empty with list', () => {
+    expectRejected(withOnFirstStep([]), '.with: ');
+  });
+
+  test('AC-5: rejects an entry without edge', () => {
+    expectRejected(withOnFirstStep([{ packet: 'x' }]), '.with.0.edge: ');
+  });
+
+  test.each(['', '   ', '\t\n'])('AC-5: rejects an entry with the blank packet %j', (packet) => {
+    expectRejected(withOnFirstStep([{ edge: 'gen', packet }]), 'with.0.packet');
+  });
+
+  test.each([['yes'], [1], [null]])(
+    'AC-5: rejects an entry with the non-boolean reverse %j',
+    (reverse) => {
+      expectRejected(withOnFirstStep([{ edge: 'gen', reverse }]), 'with.0.reverse');
+    },
+  );
+
+  test('AC-5: rejects an entry with an unknown key', () => {
+    expectRejected(withOnFirstStep([{ edge: 'gen', caption: 'extra' }]), '.with.0: ');
+  });
+
+  test('AC-5: rejects an entry that is not an object', () => {
+    expectRejected(withOnFirstStep(['gen']), '.with.0: ');
+  });
+
+  test('AC-5: rejects a with that is not a list', () => {
+    expectRejected(withOnFirstStep({ edge: 'gen' }), '.with: ');
+  });
+
+  test('AC-5: one bad entry among good ones still rejects the diagram', () => {
+    expectRejected(
+      withOnFirstStep([{ edge: 'gen' }, { edge: 'audit', packet: ' ' }]),
+      'with.1.packet',
+    );
+  });
+});
+
+describe('spec 045 AC-6: the type export and unchanged validation', () => {
+  test('AC-6: DiagramParallelEdge is exported from the package root as a type', () => {
+    const entry: schemaRoot.DiagramParallelEdge = { edge: 'gen', packet: 'x', reverse: true };
+    const step: schemaRoot.DiagramStep = { edge: 'put', with: [entry], caption: 'Typed.' };
+
+    expect(step.with).toStrictEqual([entry]);
+  });
+
+  test.each([
+    ['the example diagram', exampleDiagram],
+    ['the fuller diagram', fullDiagram],
+    ['the minimal diagram', minimalDiagram],
+  ])('AC-6: %s still validates to { ok: true } with its output unchanged', (_name, diagram) => {
+    const result = validateDiagram(structuredClone(diagram));
+
+    expect(result).toStrictEqual({ ok: true, diagram });
+  });
+
+  test('AC-6: a validated diagram without with has no with key on any step', () => {
+    const result = validateDiagram(structuredClone(fullDiagram));
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const steps = result.diagram.scenarios.flatMap((scenario) => scenario.steps);
+      for (const step of steps) expect(Object.hasOwn(step, 'with')).toBe(false);
+    }
+  });
+
+  test('AC-6: reverse and packet on an edge step without with are still accepted', () => {
+    expectAccepted(
+      make((d) => {
+        stepAt(d, 1).reverse = true;
+        stepAt(d, 1).packet = 'GenerateDataKey';
+      }),
+    );
+  });
+});
