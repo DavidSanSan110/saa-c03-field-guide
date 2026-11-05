@@ -148,6 +148,17 @@ function packetOf(step: DiagramStep): PlayerView['packet'] {
   return step.packet === undefined ? packet : { ...packet, label: step.packet };
 }
 
+/** Every packet of a step: its own edge first, then the `with` edges in file order. */
+function packetsOf(step: DiagramStep): PlayerView['packets'] {
+  const own = packetOf(step);
+  if (own === undefined) return [];
+  const extra = (step.with ?? []).map((item) => {
+    const packet = { edge: item.edge, reverse: item.reverse ?? false };
+    return item.packet === undefined ? packet : { ...packet, label: item.packet };
+  });
+  return [own, ...extra];
+}
+
 /** Everything the view needs for a player state, derived from the diagram. */
 export function viewPlayer(diagram: Diagram, state: PlayerState): PlayerView {
   const scenario = scenarioOrFirst(diagram, state.scenario);
@@ -161,7 +172,7 @@ export function viewPlayer(diagram: Diagram, state: PlayerState): PlayerView {
     step,
     target: step && targetOf(step),
     packet: step && packetOf(step),
-    packets: [], // stub for spec 045: not implemented yet
+    packets: step ? packetsOf(step) : [],
     caption: step?.caption,
     metrics: step?.metrics,
     states: statesAt(diagram, scenario.id, state.step),

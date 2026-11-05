@@ -144,12 +144,19 @@ const metricsSchema = noProtoKey
     },
   );
 
+const parallelEdgeSchema = z.strictObject({
+  edge: z.string(),
+  packet: nonEmpty.exactOptional(),
+  reverse: z.boolean().exactOptional(),
+});
+
 const stepSchema = z.strictObject({
   edge: z.string().exactOptional(),
   node: z.string().exactOptional(),
   group: z.string().exactOptional(),
   reverse: z.boolean().exactOptional(),
   packet: nonEmpty.exactOptional(),
+  with: z.array(parallelEdgeSchema).min(1).exactOptional(),
   caption: nonEmpty.max(MAX_CAPTION_LENGTH),
   state: stateMap.exactOptional(),
   metrics: metricsSchema.exactOptional(),
@@ -267,7 +274,22 @@ function checkStepTarget(step: DiagramStep, kinds: ElementKinds, path: Path, ctx
     for (const field of ['reverse', 'packet'] as const) {
       if (step[field] !== undefined) fail(ctx, [...path, field], `${field} is only for edge steps`);
     }
+    if (step.with !== undefined) fail(ctx, [...path, 'with'], 'with is only for edge steps');
   }
+  checkParallelEdges(step, kinds, path, ctx);
+}
+
+/** Each `with` entry names an edge other than the step's own, and no edge twice. */
+function checkParallelEdges(step: DiagramStep, kinds: ElementKinds, path: Path, ctx: Ctx): void {
+  if (step.edge === undefined) return;
+  const seen = new Set<string>([step.edge]);
+  (step.with ?? []).forEach(({ edge }, index) => {
+    const edgePath = [...path, 'with', index, 'edge'];
+    if (kinds.get(edge) !== 'edge') fail(ctx, edgePath, `unknown edge '${edge}'`);
+    else if (edge === step.edge) fail(ctx, edgePath, `edge '${edge}' is already the step's edge`);
+    else if (seen.has(edge)) fail(ctx, edgePath, `edge '${edge}' is listed twice`);
+    seen.add(edge);
+  });
 }
 
 function checkScenarios(scenarios: DiagramScenario[], kinds: ElementKinds, ctx: Ctx): void {
