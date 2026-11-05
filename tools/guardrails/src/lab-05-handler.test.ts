@@ -16,7 +16,9 @@ vi.setConfig({ testTimeout: 60_000 });
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(HERE, '..', '..', '..');
-const HANDLER = join(REPO_ROOT, 'labs', '05-sqs-lambda-dlq', 'src', 'handler.py');
+const LAB_DIR = join(REPO_ROOT, 'labs', '05-sqs-lambda-dlq');
+const HANDLER_RELATIVE = 'src/handler.py';
+const HANDLER = join(LAB_DIR, 'src', 'handler.py');
 
 const SENTINEL = '--- handler result ---';
 
@@ -67,12 +69,11 @@ interface Run {
 
 function runHandler(event: unknown): Run {
   if (!existsSync(HANDLER)) throw new Error('missing file: labs/05-sqs-lambda-dlq/src/handler.py');
-  // The path goes with forward slashes: bash and python both take them on Windows.
-  const handlerPath = HANDLER.split('\\').join('/');
+  // Run from the lab folder with a relative path: no absolute path reaches the shell.
   const done = spawnSync(
     'bash',
-    ['-c', 'exec "$0" "$@"', python(), '-I', '-c', DRIVER, handlerPath],
-    { input: JSON.stringify(event), encoding: 'utf8', windowsHide: true },
+    ['-c', 'exec "$0" "$@"', python(), '-I', '-c', DRIVER, HANDLER_RELATIVE],
+    { cwd: LAB_DIR, input: JSON.stringify(event), encoding: 'utf8', windowsHide: true },
   );
   expect(done.status, `python exited with ${String(done.status)}: ${done.stderr}`).toBe(0);
   const lines = done.stdout.split(/\r?\n/);
