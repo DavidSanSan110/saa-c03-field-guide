@@ -47,7 +47,10 @@ export function labStacksToPlan(stacks: string[], changedFiles: string[]): strin
  * files under labs/ and modules/, which no plan reads.
  */
 export function labStacksToRun(stacks: string[], changedFiles: string[]): string[] {
-  void stacks;
-  void changedFiles;
-  throw new Error('not implemented');
+  const kept = changedFiles.filter((file) => {
+    const path = file.replaceAll('\\', '/');
+    const inLabOrModule = path.startsWith('labs/') || path.startsWith('modules/');
+    return !(inLabOrModule && path.toLowerCase().endsWith('.md'));
+  });
+  return labStacksToPlan(stacks, kept);
 }
