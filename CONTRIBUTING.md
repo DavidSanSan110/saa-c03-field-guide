@@ -52,7 +52,7 @@ Stacks live in `bootstrap/<name>`, `labs/<name>` and `modules/<name>`. For every
 
 ### How labs reach AWS
 
-Labs are planned and applied only by the `infra.yml` workflow, never from a laptop. It works on the lab stacks (`labs/NN-slug`) a change touches; `bootstrap/*` is applied locally by a maintainer.
+Labs are planned and applied only by the `infra.yml` workflow, never from a laptop. It works on the lab stacks (`labs/NN-slug`) a change touches (a change to Markdown files only, in a lab or under `modules/`, touches none); `bootstrap/*` is applied locally by a maintainer.
 
 - **Pull request:** every lab the PR touches gets a read-only `terraform plan` with the plan role and `-lock=false` (that role can't write the lock file). The summary appears as one PR comment and the cost estimate as an infracost comment. Pull requests from forks and from Dependabot can't be planned: a maintainer pushes a commit with the same changes to a branch of this repository.
 - **Merge to `main`:** the labs the push changed are planned again, then wait for a reviewer's approval in the `infra` environment. The apply job plans again with the apply role and applies the saved plan only if its change set is exactly the one that was shown (a SHA-256 digest of it); otherwise it fails. A read-only `verify.sh` then runs when the lab has one.
