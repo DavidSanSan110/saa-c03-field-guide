@@ -65,8 +65,8 @@ flowchart LR
 Estimated with `infracost breakdown --path labs/05-sqs-lambda-dlq`: **$0.10 per month**, all of it the
 alarm (and the first ten alarms of an AWS Organization are free). Everything else is billed by use,
 so infracost shows prices and no total for it. With an uncommitted usage file for one live day
-(about 50 Lambda requests of 1 second at 128 MB, about 25,000 SQS requests of idle polling and 1 MB of
-logs) infracost gives **$0.11**: $0.10 for the alarm, which is a month's price for something that exists
+(about 50 Lambda requests of 1 second at 128 MB, about 25,000 SQS requests of idle polling, a little
+above the rate measured below, and 1 MB of logs) infracost gives **$0.11**: $0.10 for the alarm, which is a month's price for something that exists
 for one day, and $0.01 for the SQS requests. Infracost does not apply any free tier.
 
 | What                                | List price in `eu-west-1`                                         |
@@ -87,11 +87,12 @@ them.
 **The idle pollers are the part to watch.** Lambda long-polls the queue for the mapping and the
 polls of an empty queue are SQS requests, billed like any other (long and short polling cost the same).
 How many Lambda makes is not documented: the documentation says it can scale down to as few as 2
-concurrent pollers on a quiet queue. The 25,000 requests a day in the usage file above are an
-assumption, not a measurement. Read the real rate on the live day: the CloudWatch metric
-`NumberOfEmptyReceives` of the source queue (namespace `AWS/SQS`, dimension `QueueName`) counts the
-polls that found nothing. This section gets the measured figure when it is known. Until then, do not
-leave the lab running.
+concurrent pollers on a quiet queue. The CloudWatch metric `NumberOfEmptyReceives` of the source queue
+(namespace `AWS/SQS`, dimension `QueueName`) counts the polls that found nothing. In a test run of this
+lab in `eu-west-1` (November 2026) it was a steady **15 a minute** (900 an hour, about 21,600 a day)
+over 8.5 idle hours. That is about 650,000 requests in a 30-day month: two thirds of the monthly free
+tier, or about $0.26 at list price once the free tier is used up. The rate is not documented and can
+change, so read the metric yourself and do not leave the lab running.
 
 ## Prerequisites
 
