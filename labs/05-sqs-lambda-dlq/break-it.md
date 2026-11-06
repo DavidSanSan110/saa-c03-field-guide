@@ -140,7 +140,8 @@ Check with `get-event-source-mapping` that the state is `Enabled` and the list h
 
 ### What to do
 
-First ask Terraform. The rule is a validation on the variable, so the plan stops before it calls AWS:
+First ask Terraform. The rule is a validation on the variable, so the plan stops before it changes
+anything (it may read a few resources first):
 
 ```bash
 terraform plan -var visibility_timeout_seconds=10
@@ -153,7 +154,8 @@ aws sqs set-queue-attributes --queue-url "$SOURCE_URL" --attributes VisibilityTi
 aws lambda update-event-source-mapping --uuid "$MAPPING" --batch-size 10
 ```
 
-Last, go below the function timeout of 5 seconds, which is the one case Lambda checks:
+Wait until `get-event-source-mapping` shows `Enabled` again, then go below the function timeout of 5
+seconds, the case the Lambda documentation says it checks:
 
 ```bash
 aws sqs set-queue-attributes --queue-url "$SOURCE_URL" --attributes VisibilityTimeout=3
@@ -165,22 +167,23 @@ aws lambda update-event-source-mapping --uuid "$MAPPING" --batch-size 10
 - The plan fails with the message of the variable: `visibility_timeout_seconds must be at least 6
 times the function timeout plus the batching window`. Terraform used 6 × 5 + 5 = 35 as the lower
   limit.
-- `VisibilityTimeout=10` is accepted by SQS. The mapping update is, to confirm on the live day, accepted
-  too: 10 seconds is longer than the 5-second function timeout, which is all Lambda checks. Six times
-  is a recommendation, not a check.
-- `VisibilityTimeout=3` is accepted by SQS, and then the mapping update is refused with an
-  `InvalidParameterValueException` that names the queue's visibility timeout and the function timeout
-  (the exact text is not in the AWS documentation, to confirm on the live day).
+- `VisibilityTimeout=10` is accepted by SQS, and so is the mapping update: 10 seconds is longer than
+  the 5-second function timeout. Six times is a recommendation, not a check.
+- `VisibilityTimeout=3` is accepted by SQS. The Lambda documentation says Lambda checks the rule when
+  you create or update a mapping and returns an error when the function timeout is longer than the
+  visibility timeout; reports of that error show an `InvalidParameterValueException` that names both
+  values. In a test run of this lab (November 2026) the update was **accepted** anyway, also when it
+  changed the batch size, and the mapping stayed `Enabled` with a 3-second visibility timeout.
 
 ### Why
 
 A message that is processed longer than its visibility timeout becomes visible again while the first
 invocation still works on it, and is processed twice. The Lambda documentation asks for at least six
 times the function timeout (plus the batching window), because invocations can be retried and a batch
-waits for its window. AWS enforces only the weakest form, and only when a mapping is created or
-updated: the check does not run when you change the queue afterwards, which is why the CLI accepts
-the queue change first. Terraform's validation is stricter on purpose, so a plan never produces a
-setup the documentation warns about.
+waits for its window. AWS checks at most the weakest form, and only when a mapping is created or
+updated; nothing checks a change to the queue afterwards, and the test run shows that even the update
+check can let a too-short timeout through. So do not rely on AWS to catch it. Terraform's validation
+is stricter on purpose, so a plan never produces a setup the documentation warns about.
 
 ### Put it back
 
