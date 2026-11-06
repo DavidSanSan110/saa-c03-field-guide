@@ -75,7 +75,9 @@ MSYS_NO_PATHCONV=1 aws logs tail "$LOG_GROUP" --follow
 
 ### What you see
 
-- The task is `RUNNING`, then `COMPLETED` after it moved one message.
+- The task is `RUNNING`, then `COMPLETED` after it moved the messages of the DLQ. Right after the
+  start the counter can lag: `COMPLETED` with `ApproximateNumberOfMessagesMoved` 0 for a few seconds.
+  Run `list-message-move-tasks` again.
 - The message comes back to the source queue, **with a new message ID**: the `failed message <id>`
   lines in the log now show an ID that differs from the first run. It fails 3 more times, because
   nothing fixed the consumer, and it ends in the DLQ again.
@@ -98,8 +100,9 @@ wrong.
 
 ### What to do
 
-Clear the response types of the mapping, check it, wait until the state is `Enabled` again and send the
-pair once more (a different order ID, so you can tell the runs apart):
+Clear the response types of the mapping, check it, wait until the state is `Enabled` again (about 15
+seconds; it is `Updating` until then) and send the pair once more (a different order ID, so you can tell
+the runs apart):
 
 ```bash
 aws lambda update-event-source-mapping --uuid "$MAPPING" --function-response-types '[]'
@@ -111,18 +114,18 @@ MSYS_NO_PATHCONV=1 aws logs tail "$LOG_GROUP" --follow
 
 ### What you see
 
-To confirm on the live day: the function still returns the failure list, but Lambda ignores it. The
-batch counts as a success, so the poison message is deleted with the good order. `failed message <id>`
-shows **once**, not three times, and the message **never reaches the DLQ**: its count stays where it
-was. If AWS behaves differently, this text is wrong and gets corrected.
+- The check prints only `Enabled`: the list is empty, so the text output has nothing to show for it.
+- The function still returns the failure list, but Lambda ignores it. The invocation counts as a
+  success, so the poison message is deleted as if it had been processed. `failed message <id>` shows
+  **once**, not three times, and the message **never reaches the DLQ**: its count stays where it was.
 
 ### Why
 
 Without `ReportBatchItemFailures`, only an exception fails a batch, and then the whole batch goes back
 to the queue, good orders included. Our function never throws, so with the setting off a bad message is
-silently lost. The setting is what makes "only the poison message fails" possible. (The syntax of
-`--function-response-types '[]'` is not shown in the CLI documentation either: the API accepts zero
-items, to confirm on the live day.)
+silently lost. The setting is what makes "only the poison message fails" possible. (The CLI
+documentation has no example of clearing the setting: `--function-response-types '[]'`, an empty JSON
+list, does it.)
 
 ### Put it back
 
