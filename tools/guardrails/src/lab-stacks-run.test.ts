@@ -115,3 +115,9 @@ describe('labStacksToRun: errors and shape', () => {
     ).toEqual(['labs/00-a', 'labs/01-b']);
   });
 });
+
+describe('labStacksToRun: regressions', () => {
+  test('AC-21: a file ending in cmd (not .md) still selects the lab', () => {
+    expect(labStacksToRun(STACKS, ['labs/01-b/run.cmd'])).toEqual(['labs/01-b']);
+  });
+});

@@ -137,3 +137,90 @@ describe('CONTRIBUTING.md', () => {
     expect(lines).toContainEqual(expect.stringContaining(sentence));
   });
 });
+
+// Review round 1 regression ACs (spec 047): wrapped calls, names held in locals, comment lines.
+
+describe('markdownReads: regressions, Markdown strings anywhere', () => {
+  test('AC-18: a templatefile( call wrapped over lines names the line of the .md string', () => {
+    const problems = markdownReads('x = templatefile(\n  "${path.module}/README.md",\n  {}\n)');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('line 2');
+    expect(problems[0]).toContain('reads a Markdown file');
+  });
+
+  test('AC-18: a Markdown name held in a local is flagged on its line', () => {
+    const problems = markdownReads('locals {\n  doc = "README.md"\n}');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('line 2');
+    expect(problems[0]).toContain('reads a Markdown file');
+  });
+
+  test('AC-18: a local_file filename that ends in .md is flagged', () => {
+    const problems = markdownReads('filename = "${path.module}/x.md"');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('line 1');
+    expect(problems[0]).toContain('reads a Markdown file');
+  });
+
+  test('AC-18: an upper-case .MD string is flagged', () => {
+    const problems = markdownReads('  doc = "a.MD"');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('line 1');
+    expect(problems[0]).toContain('reads a Markdown file');
+  });
+
+  test('AC-18: file("...README.md") gives exactly one problem, not two', () => {
+    const problems = markdownReads('x = file("${path.module}/README.md")');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('line 1');
+    expect(problems[0]).toContain('reads a Markdown file');
+  });
+});
+
+describe('markdownReads: regressions, texts that are still allowed', () => {
+  test.each([
+    [
+      'a description that names source_file and a .md',
+      'description = "the source_file is README.md"',
+    ],
+    ['a # comment line holding a quoted .md', '  # "README.md"'],
+    ['a // comment line holding a quoted .md', '// x = "a.md"'],
+    ['a name that continues after .md', 'x = "README.md.tpl"'],
+    ['a .mdx name', 'x = "a.mdx"'],
+  ])('AC-19: %s', (_name, text) => {
+    expect(markdownReads(text)).toEqual([]);
+  });
+});
+
+describe('markdownReads: regressions, a .md at the end of a line', () => {
+  test('AC-20: a file call with a .md in a trailing comment gives exactly one problem', () => {
+    const problems = markdownReads('x = file(var.p) # a.md');
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toContain('line 1');
+    expect(problems[0]).toContain('reads a Markdown file');
+  });
+});
+
+describe('the real repo: other Terraform file kinds', () => {
+  test('AC-22: no tracked *.tf.json or *.tftpl file under labs/ or modules/ reads Markdown', () => {
+    const result = spawnSync('git', ['ls-files', '--', 'labs', 'modules'], {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    if (result.status !== 0) throw new Error(`git ls-files failed: ${result.stderr}`);
+    const files = result.stdout
+      .split(/\r?\n/)
+      .filter(
+        (file) =>
+          (file.startsWith('labs/') || file.startsWith('modules/')) &&
+          (file.endsWith('.tf.json') || file.endsWith('.tftpl')),
+      );
+    const found: string[] = [];
+    for (const file of files) {
+      const text = readFileSync(join(REPO_ROOT, ...file.split('/')), 'utf8');
+      for (const problem of markdownReads(text)) found.push(`${file}: ${problem}`);
+    }
+    expect(found).toEqual([]);
+  });
+});
