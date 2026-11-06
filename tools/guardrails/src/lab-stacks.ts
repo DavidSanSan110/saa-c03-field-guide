@@ -41,3 +41,13 @@ export function labStacksToPlan(stacks: string[], changedFiles: string[]): strin
   const inside = labs.filter((lab) => changed.some((file) => file.startsWith(`${lab}/`)));
   return [...new Set([...inside, ...stacksReadingChangedInputs(labs, changed)])].sort();
 }
+
+/**
+ * The lab stacks a change set must plan and apply (spec 047): `labStacksToPlan` without the Markdown
+ * files under labs/ and modules/, which no plan reads.
+ */
+export function labStacksToRun(stacks: string[], changedFiles: string[]): string[] {
+  void stacks;
+  void changedFiles;
+  throw new Error('not implemented');
+}
