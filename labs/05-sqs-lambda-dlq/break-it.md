@@ -39,14 +39,17 @@ alarm (Observe, steps 4 and 5).
 
 ### What you see
 
-- `processed order o-1` once, and `failed message <id>` three times, about 35 seconds apart.
+- `processed order o-1` once, and `failed message <id>` three times, 35 to 40 seconds apart (the
+  visibility timeout plus the batching window).
 - One message in the DLQ, and the alarm `fg-lab05-orders-dlq-not-empty` in `ALARM` after a minute or
   two.
 
 ### Why
 
 The function answers with `ReportBatchItemFailures`: it names only the poison message, so Lambda
-deletes the rest of the batch (the good order) and returns the poison message to the queue. Each
+deletes the rest of the batch (the good order) and returns the poison message to the queue. One
+`send-message-batch` does not promise one batch at the function: Lambda may deliver the two
+messages in two invocations, and then the good order's batch simply succeeds. Each
 return makes it visible again after the visibility timeout. The redrive policy counts the receives
 (`maxReceiveCount` is 3), and when a message has used them all SQS moves it to the DLQ. Nothing about
 the DLQ is in the function or its role. The Lambda documentation recommends a `maxReceiveCount` of
@@ -72,7 +75,9 @@ MSYS_NO_PATHCONV=1 aws logs tail "$LOG_GROUP" --follow
 
 ### What you see
 
-- The task is `RUNNING`, then `COMPLETED` after it moved one message.
+- The task is `RUNNING`, then `COMPLETED` after it moved the messages of the DLQ. Right after the
+  start the counter can lag: `COMPLETED` with `ApproximateNumberOfMessagesMoved` 0 for a few seconds.
+  Run `list-message-move-tasks` again.
 - The message comes back to the source queue, **with a new message ID**: the `failed message <id>`
   lines in the log now show an ID that differs from the first run. It fails 3 more times, because
   nothing fixed the consumer, and it ends in the DLQ again.
@@ -95,8 +100,9 @@ wrong.
 
 ### What to do
 
-Clear the response types of the mapping, check it, wait until the state is `Enabled` again and send the
-pair once more (a different order ID, so you can tell the runs apart):
+Clear the response types of the mapping, check it, wait until the state is `Enabled` again (about 15
+seconds; it is `Updating` until then) and send the pair once more (a different order ID, so you can tell
+the runs apart):
 
 ```bash
 aws lambda update-event-source-mapping --uuid "$MAPPING" --function-response-types '[]'
@@ -108,18 +114,18 @@ MSYS_NO_PATHCONV=1 aws logs tail "$LOG_GROUP" --follow
 
 ### What you see
 
-To confirm on the live day: the function still returns the failure list, but Lambda ignores it. The
-batch counts as a success, so the poison message is deleted with the good order. `failed message <id>`
-shows **once**, not three times, and the message **never reaches the DLQ**: its count stays where it
-was. If AWS behaves differently, this text is wrong and gets corrected.
+- The check prints only `Enabled`: the list is empty, so the text output has nothing to show for it.
+- The function still returns the failure list, but Lambda ignores it. The invocation counts as a
+  success, so the poison message is deleted as if it had been processed. `failed message <id>` shows
+  **once**, not three times, and the message **never reaches the DLQ**: its count stays where it was.
 
 ### Why
 
 Without `ReportBatchItemFailures`, only an exception fails a batch, and then the whole batch goes back
 to the queue, good orders included. Our function never throws, so with the setting off a bad message is
-silently lost. The setting is what makes "only the poison message fails" possible. (The syntax of
-`--function-response-types '[]'` is not shown in the CLI documentation either: the API accepts zero
-items, to confirm on the live day.)
+silently lost. The setting is what makes "only the poison message fails" possible. (The CLI
+documentation has no example of clearing the setting: `--function-response-types '[]'`, an empty JSON
+list, does it.)
 
 ### Put it back
 
@@ -134,7 +140,8 @@ Check with `get-event-source-mapping` that the state is `Enabled` and the list h
 
 ### What to do
 
-First ask Terraform. The rule is a validation on the variable, so the plan stops before it calls AWS:
+First ask Terraform. The rule is a validation on the variable, so the plan stops before it changes
+anything (it may read a few resources first):
 
 ```bash
 terraform plan -var visibility_timeout_seconds=10
@@ -147,7 +154,8 @@ aws sqs set-queue-attributes --queue-url "$SOURCE_URL" --attributes VisibilityTi
 aws lambda update-event-source-mapping --uuid "$MAPPING" --batch-size 10
 ```
 
-Last, go below the function timeout of 5 seconds, which is the one case Lambda checks:
+Wait until `get-event-source-mapping` shows `Enabled` again, then go below the function timeout of 5
+seconds, the case the Lambda documentation says it checks:
 
 ```bash
 aws sqs set-queue-attributes --queue-url "$SOURCE_URL" --attributes VisibilityTimeout=3
@@ -159,22 +167,23 @@ aws lambda update-event-source-mapping --uuid "$MAPPING" --batch-size 10
 - The plan fails with the message of the variable: `visibility_timeout_seconds must be at least 6
 times the function timeout plus the batching window`. Terraform used 6 × 5 + 5 = 35 as the lower
   limit.
-- `VisibilityTimeout=10` is accepted by SQS. The mapping update is, to confirm on the live day, accepted
-  too: 10 seconds is longer than the 5-second function timeout, which is all Lambda checks. Six times
-  is a recommendation, not a check.
-- `VisibilityTimeout=3` is accepted by SQS, and then the mapping update is refused with an
-  `InvalidParameterValueException` that names the queue's visibility timeout and the function timeout
-  (the exact text is not in the AWS documentation, to confirm on the live day).
+- `VisibilityTimeout=10` is accepted by SQS, and so is the mapping update: 10 seconds is longer than
+  the 5-second function timeout. Six times is a recommendation, not a check.
+- `VisibilityTimeout=3` is accepted by SQS. The Lambda documentation says Lambda checks the rule when
+  you create or update a mapping and returns an error when the function timeout is longer than the
+  visibility timeout; reports of that error show an `InvalidParameterValueException` that names both
+  values. In a test run of this lab (November 2026) the update was **accepted** anyway, also when it
+  changed the batch size, and the mapping stayed `Enabled` with a 3-second visibility timeout.
 
 ### Why
 
 A message that is processed longer than its visibility timeout becomes visible again while the first
 invocation still works on it, and is processed twice. The Lambda documentation asks for at least six
 times the function timeout (plus the batching window), because invocations can be retried and a batch
-waits for its window. AWS enforces only the weakest form, and only when a mapping is created or
-updated: the check does not run when you change the queue afterwards, which is why the CLI accepts
-the queue change first. Terraform's validation is stricter on purpose, so a plan never produces a
-setup the documentation warns about.
+waits for its window. AWS checks at most the weakest form, and only when a mapping is created or
+updated; nothing checks a change to the queue afterwards, and the test run shows that even the update
+check can let a too-short timeout through. So do not rely on AWS to catch it. Terraform's validation
+is stricter on purpose, so a plan never produces a setup the documentation warns about.
 
 ### Put it back
 
