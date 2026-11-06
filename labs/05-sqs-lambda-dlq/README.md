@@ -175,13 +175,14 @@ Use one terminal, so the shell variables stay. The lab lives in `eu-west-1`.
      --entries '[{"Id":"good","MessageBody":"{\"order_id\":\"o-1\"}"},{"Id":"poison","MessageBody":"not an order"}]'
    ```
 
-   Both messages go in the same batch, so the function receives them together.
+   The function usually receives both in one batch, but that is not guaranteed: Lambda may hand them
+   over in two invocations a few seconds apart. The result is the same either way.
 
 3. Follow the log of the function. Press Ctrl+C when you have seen enough. `processed order o-1`
    appears **once**: the function reports only the poison message as failed, so Lambda deletes the
-   good order with the batch. `failed message <id>` appears **three times**, about 35 seconds apart:
-   each time the message is hidden for the visibility timeout, then becomes visible again and is
-   received again. Logs can arrive a few seconds late:
+   good order. `failed message <id>` appears **three times**, 35 to 40 seconds apart: each time the
+   message is hidden for the visibility timeout, then becomes visible again and is received again
+   (the batching window adds a few seconds). Logs can arrive a few seconds late:
 
    ```bash
    MSYS_NO_PATHCONV=1 aws logs tail "$LOG_GROUP" --follow

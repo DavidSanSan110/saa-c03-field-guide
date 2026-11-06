@@ -39,14 +39,17 @@ alarm (Observe, steps 4 and 5).
 
 ### What you see
 
-- `processed order o-1` once, and `failed message <id>` three times, about 35 seconds apart.
+- `processed order o-1` once, and `failed message <id>` three times, 35 to 40 seconds apart (the
+  visibility timeout plus the batching window).
 - One message in the DLQ, and the alarm `fg-lab05-orders-dlq-not-empty` in `ALARM` after a minute or
   two.
 
 ### Why
 
 The function answers with `ReportBatchItemFailures`: it names only the poison message, so Lambda
-deletes the rest of the batch (the good order) and returns the poison message to the queue. Each
+deletes the rest of the batch (the good order) and returns the poison message to the queue. One
+`send-message-batch` does not promise one batch at the function: Lambda may deliver the two
+messages in two invocations, and then the good order's batch simply succeeds. Each
 return makes it visible again after the visibility timeout. The redrive policy counts the receives
 (`maxReceiveCount` is 3), and when a message has used them all SQS moves it to the DLQ. Nothing about
 the DLQ is in the function or its role. The Lambda documentation recommends a `maxReceiveCount` of
