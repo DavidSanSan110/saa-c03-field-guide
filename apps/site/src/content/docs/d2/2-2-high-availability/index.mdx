@@ -1,14 +1,200 @@
 ---
 title: 'Task 2.2: Design highly available and/or fault-tolerant architectures'
-description: 'Placeholder for task statement 2.2.'
+description: 'Regions and Availability Zones as failure domains, load balancers and Auto Scaling across AZs, RDS Multi-AZ, read replicas, Aurora, DynamoDB global tables and ElastiCache, Route 53 health checks and routing policies, RPO and RTO with the four disaster recovery strategies, AWS Backup and Elastic Disaster Recovery, and recovering a single instance, with exam cues and common traps.'
 ---
 
 import FlowDiagram from '../../../../components/FlowDiagram.astro';
 
-This chapter is being written.
+A **highly available** system keeps serving when a part of it breaks; a **fault-tolerant** one does so without users noticing. On AWS both come from the same habit: run at least two copies of everything, put them in places that don't fail together, and let something automatic (a health check, a failover, an Auto Scaling group) move traffic away from the broken copy. Most questions in this task ask which failure a design must survive and the cheapest way to survive it.
 
-Back to [Domain 2: Design Resilient Architectures](/d2/).
+Part of [Domain 2: Design Resilient Architectures](/d2/).
+
+## Failure domains: Regions and Availability Zones
+
+An **Availability Zone** (AZ) is one or more data centres with their own power, cooling and network links. The AZs of a Region are far enough apart (up to about 100 km) that a fire, flood or power cut should hit only one of them, yet close enough for synchronous replication. Every public **Region** has at least three AZs. Regions are isolated from each other, and your data stays in one Region unless you copy or replicate it yourself.
+
+| Design                             | Survives                                          | Does not survive                                                  | Typical example                                                |
+| ---------------------------------- | ------------------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------------- |
+| One instance in one AZ             | A host fault, if instance recovery brings it back | Loss of the AZ, a bad deployment, any long outage                 | Dev and test, or a workload that can accept downtime           |
+| Copies spread over two or more AZs | Loss of an instance, a host or a whole AZ         | Loss of the Region; deleted or corrupted data (it replicates too) | ALB + Auto Scaling group across AZs, RDS Multi-AZ              |
+| Copies in two or more Regions      | Loss of a whole Region                            | Corrupted data, unless you also keep point-in-time backups        | Aurora Global Database or DynamoDB global tables with Route 53 |
+
+- **Multi-AZ is the default answer for "highly available".** Multi-Region is for a Region-wide disaster, a legal requirement to keep copies far apart, or users on several continents, and it costs more.
+- **Plan capacity for the loss of one AZ.** If the app needs four instances at peak, running only four across two AZs leaves two when an AZ fails. Six across three AZs still leaves four.
+- **Replication is not a backup.** A deleted table or a ransomware-encrypted volume is copied to every replica within seconds. Keep point-in-time backups as well.
 
 ## ALB and Auto Scaling across two AZs
 
+The standard highly available web tier is a load balancer with a node in each AZ, in front of an Auto Scaling group whose subnets cover the same AZs. Clients use the load balancer's DNS name, so instances can be replaced at any time. Step through the diagram to see an AZ fail and recover.
+
 <FlowDiagram id="alb-asg-az-failure" />
+
+|                    | Application Load Balancer (ALB)                                    | Network Load Balancer (NLB)                                       | Gateway Load Balancer (GWLB)                                      |
+| ------------------ | ------------------------------------------------------------------ | ----------------------------------------------------------------- | ----------------------------------------------------------------- |
+| Layer              | 7: HTTP, HTTPS, gRPC, WebSockets                                   | 4: TCP, UDP, TLS                                                  | 3: IP packets, exchanged with appliances over GENEVE on port 6081 |
+| Address            | DNS name only; node IPs change                                     | One static IP per AZ, optionally an Elastic IP                    | Reached through Gateway Load Balancer endpoints in route tables   |
+| Cross-zone default | Always on at the load balancer; can be turned off per target group | Off; can be turned on (inter-AZ data transfer is charged)         | Off; can be turned on                                             |
+| Pick it for        | Web apps and APIs, routing by path, host or header                 | Very high throughput, fixed IPs for allow lists, non-HTTP traffic | Inline firewalls and inspection appliances                        |
+
+An ALB must be enabled in at least two AZs. A load balancer node only sends traffic to targets in AZs that are enabled on the load balancer, so the load balancer and the Auto Scaling group must cover the same AZs.
+
+**Health checks.** The load balancer checks every registered target on a port and path. ALB defaults for instance targets: a check every 30 seconds, a 5-second timeout, unhealthy after 2 failures in a row, healthy again after 5 successes, and success code 200. An unhealthy target gets no new requests until it passes again. If every target in a target group is unhealthy, the ALB **fails open** and sends traffic to all of them anyway.
+
+**Cross-zone load balancing.** Each load balancer node gets roughly the same share of client traffic. With cross-zone on, a node spreads its share over the targets in every AZ; with it off, only over the targets in its own AZ. Example with one target in AZ a and three in AZ b: cross-zone on gives each target 25 %; off, the lone target in AZ a takes 50 % and each target in AZ b about 17 %. Turn it off only when every AZ has enough targets for its own share.
+
+**Deregistration delay** (called **connection draining** on the Classic Load Balancer). When a target is deregistered, by scale-in or by replacement, the load balancer stops sending it new requests but gives in-flight ones time to finish: 300 seconds by default, from 0 to 3,600. Short requests suit a low value so instances leave faster; long uploads or downloads need a higher one.
+
+**Auto Scaling group health checks.**
+
+| Health check type      | On by default  | Replaces an instance when                                                           |
+| ---------------------- | -------------- | ----------------------------------------------------------------------------------- |
+| EC2 status checks      | Yes, always    | The instance is not running, or its instance or system status check is impaired     |
+| Elastic Load Balancing | No, turn it on | The load balancer reports the instance unhealthy (for example, the app returns 500) |
+
+- Without the ELB health check type, an instance whose web server has crashed still passes EC2 status checks. The ALB stops routing to it, but the group never replaces it, so you run short of capacity.
+- The **health check grace period** stops the group from replacing new instances that are still starting. It is 300 seconds by default in the console and 0 through the API or CLI.
+- The group tries to keep the same number of instances in each AZ. If an AZ is unavailable it launches in the others; when the AZ recovers, it **rebalances** by launching first and terminating afterwards, briefly going above its maximum if it must.
+
+## Database high availability
+
+| Option                   | Copies                                                                    | Replication                                   | Can the copy serve reads?        | Failover                                                                       |
+| ------------------------ | ------------------------------------------------------------------------- | --------------------------------------------- | -------------------------------- | ------------------------------------------------------------------------------ |
+| RDS Multi-AZ DB instance | Primary + one standby in another AZ                                       | Synchronous                                   | No                               | Automatic, typically 60–120 seconds; the endpoint's DNS moves to the standby   |
+| RDS Multi-AZ DB cluster  | Writer + two reader instances, three AZs                                  | Semisynchronous (one reader must acknowledge) | Yes                              | Automatic, typically under 35 seconds                                          |
+| RDS read replica         | Up to 15 per source; same AZ, another AZ or another Region                | Asynchronous                                  | Yes, that is its job             | None: you **promote** it by hand (a reboot, a few minutes) and repoint the app |
+| Aurora DB cluster        | Six copies of the storage across three AZs, plus up to 15 Aurora Replicas | Storage written synchronously across AZs      | Yes, through the reader endpoint | Automatic to a replica, usually under 60 seconds and often under 30            |
+
+- **Multi-AZ is for availability, read replicas are for read scaling.** A read replica lags behind, needs a manual promotion and a new connection string, so on its own it isn't the HA answer. A cross-Region read replica is, however, a cheap way to keep a copy of the data in a recovery Region.
+- Turning on Multi-AZ for an existing instance causes no downtime: RDS snapshots the primary, builds the standby from it and starts synchronous replication. Writes can get slower afterwards.
+- A replica can itself be Multi-AZ, which gives both read capacity and a standby.
+- **Aurora** keeps the data safe even if instances fail, because the storage spans three AZs whatever the number of instances. Connect writers to the **cluster endpoint**, which always points at the current primary, and readers to the **reader endpoint**. Each replica has a failover **priority** from 0 (first choice) to 15; ties go to the largest instance. With no replica at all, Aurora has to create a new primary, which typically takes under 10 minutes.
+- **Aurora Global Database**: one primary Region that takes writes and up to 10 read-only secondary Regions, replicated at the storage layer with lag typically under a second. After a Regional outage a secondary is promoted to take writes (**failover**): the DR whitepaper says in under a minute, the Aurora guide says within a few minutes, and the last seconds of writes can be lost. A **switchover** moves the primary for planned work with no data loss.
+- **RDS Proxy** keeps application connections open while the database fails over and cuts Aurora Multi-AZ failover time by up to 66 %.
+- **DynamoDB global tables** replicate a table to several Regions, and every replica accepts reads **and** writes (multi-active). Replication is asynchronous by default, with last writer wins on conflicts; a strong-consistency mode exists. Global tables carry a 99.999 % availability SLA, against 99.99 % for a single-Region table.
+- **ElastiCache (Valkey or Redis OSS) Multi-AZ** needs at least one replica in another AZ. If the primary fails, the replica with the least lag is promoted within seconds and the primary endpoint follows it, so the app changes nothing. Replication is asynchronous, so the last few writes can be lost. **Memcached** has no replicas and no failover.
+
+## DNS failover with Route 53
+
+Route 53 can stop returning an endpoint when its health check fails. This is how traffic moves between Regions, or from a site to a static "sorry" page, without touching the clients.
+
+| Health check type | What it watches                                                                                                                                                                                                                                                                                                            |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Endpoint          | Checkers around the world send HTTP, HTTPS or TCP requests to a public IP or domain name every 30 seconds (or 10, for a fee). HTTP needs a 2xx or 3xx answer, optionally with a search string in the first 5,120 bytes. Healthy while more than 18 % of checkers agree; status changes after 3 results in a row by default |
+| Calculated        | Other health checks, combined with AND, OR or "at least x of them healthy"                                                                                                                                                                                                                                                 |
+| CloudWatch alarm  | The data stream of a CloudWatch alarm. The way to health-check private resources, because the checkers run outside your VPC and can't reach private IPs                                                                                                                                                                    |
+
+| Routing policy | What it does                                                                                                                | Role in HA                                                                               |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Simple         | Returns all the values in one record                                                                                        | None: values are **not** health-checked                                                  |
+| Failover       | Answers with the primary while it is healthy, otherwise with the secondary                                                  | **Active-passive**: a standby Region or a static S3 site                                 |
+| Weighted       | Splits answers between records in proportion to their weights; weight 0 records are used only when all others are unhealthy | Active-active across Regions, gradual cut-overs, canary releases                         |
+| Latency        | Answers with the Region that has the lowest latency for the user                                                            | Active-active across Regions; an unhealthy Region drops out                              |
+| Geolocation    | Answers by the user's continent, country or US state; the smallest match wins                                               | Localisation or legal limits. Add a **default** record, or unmatched users get no answer |
+| Multivalue     | Up to eight healthy records, chosen at random                                                                               | Simple client-side spreading with health checks; not a load balancer                     |
+
+- **Active-active** uses any policy except failover: all healthy records are answered. **Active-passive** uses the failover policy.
+- For an alias record pointing at an AWS resource such as an ALB, set **Evaluate target health** instead of creating a separate health check.
+- Geoproximity (shift traffic between locations with a bias) and IP-based routing exist too; they are about where traffic goes rather than about failover.
+
+## Backups and disaster recovery
+
+Disaster recovery (DR) is planned from two numbers the business sets. **RPO** (recovery point objective) is the most time you accept between the last good copy of the data and the failure: how much data you can lose. **RTO** (recovery time objective) is the longest you accept between the failure and service being back: how long you can be down. The lower both are, the more the DR costs. Step through the four strategies:
+
+<FlowDiagram id="dr-strategies" />
+
+| Strategy                 | Running in the recovery Region                           | On failover                                       | RPO / RTO       | Cost |
+| ------------------------ | -------------------------------------------------------- | ------------------------------------------------- | --------------- | ---- |
+| Backup and restore       | Nothing but backup copies                                | Restore the data, deploy everything from IaC      | Hours           | $    |
+| Pilot light              | The data layer, kept current by replication; servers off | Promote the database, start and scale the servers | Tens of minutes | $$   |
+| Warm standby             | A complete but smaller copy of production                | Promote the database, send traffic, then scale up | Minutes         | $$$  |
+| Multi-site active/active | Full production in each Region, all serving users        | Stop sending users to the failed Region           | Near zero       | $$$$ |
+
+- **Pilot light or warm standby?** A pilot light can't serve a single request until servers are switched on. A warm standby can serve straight away at reduced capacity and only has to scale.
+- Backup and restore relies on **infrastructure as code** (CloudFormation, CDK) and copied AMIs to rebuild quickly. Without them the RTO grows.
+- Replication tools for the warmer strategies: cross-Region RDS read replicas, Aurora Global Database, DynamoDB global tables, S3 Cross-Region Replication, ElastiCache Global Datastore. Traffic moves with Route 53 health checks or AWS Global Accelerator.
+- Multi-AZ inside one Region already covers the loss of a data centre. Plan a multi-Region strategy when the disaster to survive is the loss of a Region, or a regulation demands it.
+
+**AWS Backup** manages backups for many services from one place: EC2, EBS, S3, RDS and Aurora, DynamoDB, EFS, FSx, DocumentDB, Neptune, Redshift and more.
+
+- A **backup plan** holds rules: how often, the backup window, when to move to cold storage, how long to keep, and **copy rules** to other Regions or accounts. Resources join a plan by ID or by **tag**.
+- Backups (recovery points) live in a **backup vault**. Resource types that AWS Backup fully manages are encrypted with the vault's KMS key; others (such as EBS and RDS snapshots) keep the source's encryption, and copies to another Region or account use the destination vault's key. Copying to a vault in another Region protects against a Regional disaster; copying to another account in your organisation protects against a compromised account.
+- **Vault Lock** makes a vault write-once-read-many. In governance mode, users with the right IAM permissions can still remove the lock. In compliance mode, after a grace time of at least three days, nobody can delete backups early or change the lock, not even the root user or AWS.
+- AWS Backup doesn't fail over for you: a DR restore is a job you start, or script. **Restore testing** plans run restores on a schedule to prove the backups work and time them, then delete what they restored.
+
+**AWS Elastic Disaster Recovery** (DRS) continuously replicates whole servers (on premises, in another cloud, or EC2 in another Region) at block level into a low-cost staging area in your account. On a disaster it launches full-size recovery instances within minutes, from the latest state or an earlier point in time, and later replicates back for **failback**. It is a managed pilot light for servers; it doesn't cover RDS.
+
+## Recovering a single instance
+
+Sometimes an app runs on one instance that can't be duplicated (a licence, legacy software). It can still recover from failures automatically:
+
+- **EC2 instance recovery.** When a **system status check** fails (a problem with the AWS host, its power or its network), AWS moves the instance to new hardware. **Simplified automatic recovery** is on by default for supported instance types; a **CloudWatch alarm** on `StatusCheckFailed_System` with the recover action does the same with your own alarm and SNS notification. The instance keeps its ID, private, public and Elastic IP addresses, metadata, placement group, EBS volumes and AZ; it loses what was in RAM (and instance store data, with the alarm action). It doesn't help when only the instance status check fails (a problem inside the OS), or when the whole AZ is down.
+- **Auto Scaling group of one** (min = max = desired = 1) with subnets in several AZs. If the instance or its AZ fails, the group launches a replacement in another AZ. The replacement is a new instance: new ID and IPs, no Elastic IP and no data volumes from the old one, so keep data off the instance (EFS, S3, a database) and reattach the address with a script or a lifecycle hook.
+- **Keeping the address.** An **Elastic IP** is a static public IPv4 address in one Region that you can move to a replacement instance (five per Region by default, and every one is charged). Alternatively point a DNS name at the instance and change the record, or use Route 53 failover to a standby.
+- **Snapshots and AMIs.** An EBS volume lives in one AZ. Its **snapshots** are incremental, stored across all the AZs of the Region and restorable to any of them, and they can be copied to other Regions. An **AMI** captures the instance's volumes and configuration so a replacement starts already set up; copy it to the recovery Region for DR. Automate both with AWS Backup or Data Lifecycle Manager.
+
+## If the exam says… → think…
+
+| If the exam says…                                                                    | Think…                                                                  |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
+| The application must keep running if an Availability Zone fails                      | ALB + Auto Scaling group across at least two AZs, RDS Multi-AZ          |
+| An instance with a crashed web server is never replaced                              | Turn on the ELB health check type on the Auto Scaling group             |
+| New instances are terminated before they finish booting                              | Increase the health check grace period                                  |
+| Clients need fixed IP addresses for an allow list                                    | NLB with an Elastic IP per AZ (or Global Accelerator)                   |
+| Inspect all traffic with third-party firewall appliances                             | Gateway Load Balancer                                                   |
+| Users get errors while instances are scaled in                                       | Deregistration delay long enough for in-flight requests                 |
+| Database must fail over automatically with no data loss                              | RDS Multi-AZ (synchronous standby)                                      |
+| Failover must be fast and the standbys should also serve reads                       | RDS Multi-AZ DB cluster, or Aurora with replicas in other AZs           |
+| Reporting queries slow down the production database                                  | A read replica (not Multi-AZ)                                           |
+| Choose which Aurora replica becomes primary on failover                              | Failover priority tiers (0 is first)                                    |
+| Relational database readable in several Regions, Regional recovery in minutes        | Aurora Global Database                                                  |
+| Users in several Regions must write locally with low latency                         | DynamoDB global tables                                                  |
+| Cache must survive the loss of a node or an AZ                                       | ElastiCache for Valkey or Redis OSS with Multi-AZ, not Memcached        |
+| Send traffic to a standby site only when the main one is down                        | Route 53 failover routing with a health check on the primary            |
+| Send each user to the Region that answers fastest, skipping unhealthy Regions        | Route 53 latency routing with health checks                             |
+| Health-check a resource that has only a private IP                                   | CloudWatch alarm + Route 53 health check on that alarm                  |
+| Cheapest DR; hours of downtime and data loss are acceptable                          | Backup and restore with cross-Region copies and IaC                     |
+| Database always replicated to the recovery Region, app servers off until needed      | Pilot light                                                             |
+| Recovery Region must take traffic immediately, at reduced capacity                   | Warm standby                                                            |
+| Near-zero RTO and RPO, cost is not a concern                                         | Multi-site active/active                                                |
+| Back up many services centrally, with copies in another Region and account           | AWS Backup plan with copy rules                                         |
+| Backups must be impossible to delete, even by an administrator                       | AWS Backup Vault Lock in compliance mode                                |
+| Recover on-premises servers into AWS with continuous replication                     | AWS Elastic Disaster Recovery                                           |
+| A single instance must come back after a hardware failure with the same IP addresses | EC2 instance recovery (CloudWatch recover action or automatic recovery) |
+| A single instance must survive the loss of its AZ                                    | Auto Scaling group with min = max = 1 across several AZs                |
+
+## Common traps
+
+- **A read replica isn't a standby.** It is asynchronous, failover is a manual promotion, and the app has to change its endpoint.
+- **The Multi-AZ DB instance standby can't serve reads.** Readable standbys mean a Multi-AZ DB cluster or Aurora.
+- **Replication copies mistakes.** Only point-in-time backups recover from deleted or corrupted data.
+- **An Auto Scaling group ignores load balancer health by default.** Turn on the ELB health check type.
+- **The load balancer and the Auto Scaling group must cover the same AZs.** Targets in an AZ that isn't enabled on the load balancer get no traffic.
+- **Cross-zone load balancing is off by default on NLB and GWLB**, and turning it on adds inter-AZ data transfer charges for the NLB.
+- **Simple routing doesn't use health checks.** For DNS failover, use failover, weighted, latency, geolocation or multivalue records with health checks.
+- **Route 53 health checkers can't reach private IPs.** Use a CloudWatch alarm-based health check.
+- **Geolocation without a default record** leaves users from unmatched locations with no answer.
+- **RPO is about data, RTO is about time.** Don't swap them.
+- **Pilot light can't serve traffic until servers start**; warm standby can, at reduced size.
+- **EC2 instance recovery stays in the same AZ** and only reacts to system status check failures.
+- **A replacement from an Auto Scaling group is a new instance**: its Elastic IP and data volumes don't follow automatically.
+- **Memcached has no replication or failover.** HA caching means Valkey or Redis OSS with Multi-AZ.
+
+## Links
+
+**AWS documentation**
+
+- [Availability Zones](https://docs.aws.amazon.com/whitepapers/latest/aws-fault-isolation-boundaries/availability-zones.html) and [Regions](https://docs.aws.amazon.com/whitepapers/latest/aws-fault-isolation-boundaries/regions.html) (AWS Fault Isolation Boundaries)
+- [How Elastic Load Balancing works](https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html) and [health checks for ALB target groups](https://docs.aws.amazon.com/elasticloadbalancing/latest/application/target-group-health-checks.html)
+- [Health checks for instances in an Auto Scaling group](https://docs.aws.amazon.com/autoscaling/ec2/userguide/health-checks-overview.html) and [distributing instances across Availability Zones](https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-benefits.html)
+- [RDS Multi-AZ DB instance deployments](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZSingleStandby.html), [Multi-AZ DB clusters](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html) and [read replicas](https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.html)
+- [High availability for Amazon Aurora](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Concepts.AuroraHighAvailability.html) and [Aurora Global Database](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.html)
+- [DynamoDB global tables](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GlobalTables.html) and [ElastiCache Multi-AZ](https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/AutoFailover.html)
+- [How Route 53 determines health](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-determining-health-of-endpoints.html), [choosing a routing policy](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-policy.html) and [active-active and active-passive failover](https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-types.html)
+- [Disaster recovery options in the cloud](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html) and [RTO and RPO](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/business-continuity-plan-bcp.html)
+- [What is AWS Backup?](https://docs.aws.amazon.com/aws-backup/latest/devguide/whatisbackup.html), [AWS Backup Vault Lock](https://docs.aws.amazon.com/aws-backup/latest/devguide/vault-lock.html) and [restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)
+- [What is AWS Elastic Disaster Recovery?](https://docs.aws.amazon.com/drs/latest/userguide/what-is-drs.html)
+- [Automatic instance recovery](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-recover.html) and [Elastic IP addresses](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/elastic-ip-addresses-eip.html)
+
+**Practice**
+
+- [Practice tests](/practice/): in the **Practice** card, choose **Practice by: Task** and then **2.2** to drill only this task.
