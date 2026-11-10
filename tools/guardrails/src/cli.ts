@@ -20,7 +20,7 @@ import {
 } from './test-lock.ts';
 import type { CommitChange, CommitInfo } from './test-lock.ts';
 import { stacksToCheck, terraformStacks } from './terraform-stacks.ts';
-import { LabStackError, labStacks, labStacksToPlan } from './lab-stacks.ts';
+import { LabStackError, labStacks, labStacksToRun } from './lab-stacks.ts';
 
 const USAGE = `Usage:
   guardrails paths [--staged | --all | <files...>]
@@ -290,7 +290,7 @@ function terraformStacksJson(args: string[]): string {
 function labStacksJson(args: string[]): string {
   if (args.length === 1 && args[0] === '--all') return JSON.stringify(labStacks(trackedStacks()));
   if (args[0] !== '--stack') {
-    return JSON.stringify(labStacksToPlan(trackedStacks(), changedFiles(args)));
+    return JSON.stringify(labStacksToRun(trackedStacks(), changedFiles(args)));
   }
   const [, stack, ...extra] = args;
   if (stack === undefined || stack.startsWith('-') || extra.length > 0) throw new UsageError();
