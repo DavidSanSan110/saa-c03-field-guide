@@ -24,6 +24,7 @@ const REGISTRY = [
   { id: 'scp-permission-evaluation', page: '/d1/1-1-secure-access/' },
   { id: 'sqs-lambda-dlq', page: '/d2/2-1-scalable-loosely-coupled/' },
   { id: 'sns-sqs-fan-out', page: '/d2/2-1-scalable-loosely-coupled/' },
+  { id: 'dr-strategies', page: '/d2/2-2-high-availability/' },
 ] as const;
 
 const THEMES = ['light', 'dark'] as const;
