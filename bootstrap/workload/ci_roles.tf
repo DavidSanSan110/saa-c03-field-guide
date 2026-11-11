@@ -60,9 +60,9 @@ resource "aws_iam_role_policy_attachment" "tf_plan_read_only" {
   policy_arn = "arn:aws:iam::aws:policy/ReadOnlyAccess"
 }
 
-# ReadOnlyAccess can read object contents, secret values and parameters. These denies keep a plan from
-# turning into a data read, at the price that a lab which manages S3 objects, secrets or parameters
-# cannot be planned by tf-plan (see the README).
+# ReadOnlyAccess can read object contents, secret values, parameters and log events, and receive queue
+# messages. These denies keep a plan from turning into a data read, at the price that a lab which
+# manages S3 objects, secrets or parameters cannot be planned by tf-plan (see the README).
 resource "aws_iam_role_policy" "tf_plan_deny" {
   name = "deny-data-reads"
   role = aws_iam_role.tf_plan.name
@@ -90,6 +90,28 @@ resource "aws_iam_role_policy" "tf_plan_deny" {
         Effect   = "Deny"
         Action   = ["ssm:GetParameter", "ssm:GetParameters", "ssm:GetParametersByPath", "ssm:GetParameterHistory"]
         Resource = "arn:aws:ssm:*:${local.account_id}:parameter/*"
+      },
+      {
+        # Receiving a message is not a read: it hides the message and raises its receive count.
+        Sid      = "DenyMessageReads"
+        Effect   = "Deny"
+        Action   = "sqs:ReceiveMessage"
+        Resource = "arn:aws:sqs:*:${local.account_id}:*"
+      },
+      {
+        # Log lines are data. Log stream ARNs start with the log group's, so one pattern covers both.
+        Sid    = "DenyLogReads"
+        Effect = "Deny"
+        Action = [
+          "logs:FilterLogEvents",
+          "logs:GetLogEvents",
+          "logs:GetLogRecord",
+          "logs:GetQueryResults",
+          "logs:StartLiveTail",
+          "logs:StartQuery",
+          "logs:Unmask",
+        ]
+        Resource = "arn:aws:logs:*:${local.account_id}:log-group:*"
       },
     ]
   })
