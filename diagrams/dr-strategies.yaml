@@ -1,0 +1,131 @@
+# The four disaster recovery strategies between two Regions: what already runs in the recovery
+# Region, what happens on failover, and the RPO / RTO / cost each one buys.
+# Sources: https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html
+#          https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/business-continuity-plan-bcp.html
+#          https://docs.aws.amazon.com/aws-backup/latest/devguide/cross-region-backup.html
+#          https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-configuring.html
+#          https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_ReadRepl.Promote.html
+#          https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/aurora-global-database.html
+id: dr-strategies
+title: Disaster recovery strategies
+description: What runs in the recovery Region for backup and restore, pilot light, warm standby and multi-site, and what each failover takes.
+groups:
+  - { id: primary, label: eu-west-1 (primary), kind: region }
+  - { id: recovery, label: us-east-1 (recovery), kind: region }
+nodes:
+  - { id: users, icon: user, label: Users }
+  - { id: dns, icon: route-53, label: Route 53, sub: Health-checked records }
+  - { id: app-a, icon: ec2, label: App servers, sub: Production size, group: primary }
+  - { id: db-a, icon: rds, label: Database, sub: Primary, group: primary }
+  - { id: vault, icon: backup, label: Backup vault, sub: Cross-Region copies, group: recovery }
+  - { id: app-b, icon: ec2, label: App servers, sub: Recovery, group: recovery }
+  - { id: db-b, icon: rds, label: Database, sub: Recovery, group: recovery }
+edges:
+  - { id: query, from: users, to: dns }
+  - { id: to-a, from: dns, to: app-a }
+  - { id: to-b, from: dns, to: app-b }
+  - { id: a-db, from: app-a, to: db-a }
+  - { id: b-db, from: app-b, to: db-b }
+  - { id: copy, from: db-a, to: vault }
+  - { id: restore, from: vault, to: db-b }
+  - { id: replicate, from: db-a, to: db-b }
+scenarios:
+  - id: backup-restore
+    label: Backup and restore
+    initial: { app-b: hidden, db-b: hidden, to-b: hidden, b-db: hidden, replicate: hidden }
+    steps:
+      - edge: copy
+        packet: Backup copy
+        caption: Backups are copied to a vault in the recovery Region on a schedule. Nothing else runs there, so you pay only for storage.
+        metrics: &backup { RPO: Hours, RTO: Hours, Cost: $ }
+      - node: app-a
+        caption: The primary Region fails. Everything written since the last backup copy is lost; that gap is the RPO.
+        state: { app-a: failed, db-a: failed }
+        metrics: *backup
+      - edge: restore
+        packet: Restore
+        caption: You restore the database from the latest copy. Big databases can take hours to restore.
+        state: { db-b: appearing }
+        metrics: *backup
+      - node: app-b
+        caption: Then you deploy the app servers, ideally from infrastructure as code so the rebuild is repeatable.
+        state: { app-b: appearing, b-db: normal }
+        metrics: *backup
+      - edge: to-b
+        packet: Requests
+        caption: Only now can DNS send users to the recovery Region. Rebuilding everything is why the RTO is hours.
+        state: { to-b: highlighted }
+        metrics: *backup
+  - id: pilot-light
+    label: Pilot light
+    initial:
+      { app-b: hidden, to-b: hidden, b-db: hidden, vault: hidden, copy: hidden, restore: hidden }
+    steps:
+      - edge: replicate
+        packet: Replication
+        caption: The data layer is live in the recovery Region, kept current by replication. The app servers are switched off.
+        metrics: &pilot { RPO: Tens of minutes, RTO: Tens of minutes, Cost: $$ }
+      - node: app-a
+        caption: The primary Region fails. Little data is lost, because the replica was only seconds or minutes behind.
+        state: { app-a: failed, db-a: failed }
+        metrics: *pilot
+      - node: db-b
+        caption: The replica is promoted to a standalone database that accepts writes.
+        state: { db-b: highlighted }
+        metrics: *pilot
+      - node: app-b
+        caption: You start the app servers from their AMIs and scale them out. Until then the site can't serve anyone.
+        state: { app-b: appearing, b-db: normal, db-b: normal }
+        metrics: *pilot
+      - edge: to-b
+        packet: Requests
+        caption: DNS now sends users to the recovery Region. Starting the servers is what separates pilot light from warm standby.
+        state: { to-b: highlighted }
+        metrics: *pilot
+  - id: warm-standby
+    label: Warm standby
+    initial: { vault: hidden, copy: hidden, restore: hidden }
+    steps:
+      - edge: replicate
+        packet: Replication
+        caption: A full copy of the system runs in the recovery Region at a smaller size, and its database is a live replica.
+        metrics: &warm { RPO: Minutes, RTO: Minutes, Cost: $$$ }
+      - node: app-a
+        caption: The primary Region fails. Its Route 53 health check turns unhealthy.
+        state: { app-a: failed, db-a: failed }
+        metrics: *warm
+      - node: db-b
+        caption: The replica is promoted so it accepts writes. The app servers are already running and connected to it.
+        state: { db-b: highlighted }
+        metrics: *warm
+      - edge: to-b
+        packet: Requests
+        caption: Failover routing answers with the recovery Region. It can serve straight away, at reduced capacity.
+        state: { to-b: highlighted, db-b: normal }
+        metrics: *warm
+      - node: app-b
+        caption: Auto Scaling grows the standby to production size while it serves. No server had to be switched on.
+        state: { app-b: highlighted }
+        metrics: *warm
+  - id: multi-site
+    label: Multi-site active/active
+    initial: { vault: hidden, copy: hidden, restore: hidden }
+    steps:
+      - edge: to-a
+        with: [{ edge: to-b, packet: Requests }]
+        packet: Requests
+        caption: Both Regions serve users all the time at full size. Route 53 spreads users between them, for example by latency.
+        metrics: &multi { RPO: Near zero, RTO: Near zero, Cost: $$$$ }
+      - edge: replicate
+        packet: Replication
+        caption: Data replicates between the Regions, for example with DynamoDB global tables.
+        metrics: *multi
+      - node: app-a
+        caption: A Region fails. Its health checks turn unhealthy and Route 53 stops returning it.
+        state: { app-a: failed, db-a: failed }
+        metrics: *multi
+      - edge: to-b
+        packet: Requests
+        caption: The other Region takes every user. Nothing has to start or scale first, so recovery is almost immediate.
+        state: { to-b: highlighted }
+        metrics: *multi
