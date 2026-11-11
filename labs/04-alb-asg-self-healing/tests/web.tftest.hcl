@@ -440,3 +440,28 @@ run "ac13_outputs" {
     error_message = "output private_route_table_id is not the private route table ID"
   }
 }
+
+# AC-32: the group uses the launch template version AWS reports as the latest one (a run-level override
+# gives the template latest_version 7, so "1" or "$Default" in the group would fail)
+run "ac32_group_uses_the_latest_template_version" {
+  command = plan
+
+  override_resource {
+    target          = aws_launch_template.web
+    override_during = plan
+    values = {
+      id             = "lt-0123456789abcdef0"
+      latest_version = 7
+    }
+  }
+
+  assert {
+    condition     = one(aws_autoscaling_group.web.launch_template).id == "lt-0123456789abcdef0"
+    error_message = "the group does not use the launch template"
+  }
+
+  assert {
+    condition     = one(aws_autoscaling_group.web.launch_template).version == "7"
+    error_message = "the group's launch template version is not the template's latest_version (7)"
+  }
+}

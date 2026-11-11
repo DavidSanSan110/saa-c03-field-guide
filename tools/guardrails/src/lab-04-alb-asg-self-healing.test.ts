@@ -1150,3 +1150,262 @@ describe('AC-28: the 2.2 page links the lab', () => {
     expect(section).toEqual([BULLET]);
   });
 });
+
+// =================================================================================================
+// Review regressions (round 1): AC-29 (user data really runs) and AC-34 (docs)
+// =================================================================================================
+
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { basename, delimiter } from 'node:path';
+
+const STUB_TOKEN = 'TOKEN-FROM-STUB';
+const STUB_INSTANCE_ID = 'i-0123456789abcdef0';
+const STUB_ZONE = 'eu-west-1a';
+
+interface UserDataRun {
+  status: number | null;
+  stderr: string;
+  /** The content of index.html in the rewritten folder, or undefined when there is none. */
+  index: string | undefined;
+  /** The arguments of every curl call. */
+  curl: string[][];
+  /** The arguments of every systemd-run call. */
+  systemd: string[][];
+  /** The folder the script was told to serve. */
+  folder: string;
+}
+
+/** The lines of a log of `<name>\t<arg>\t<arg>...` lines, split into [name, ...args]. */
+function logLines(path: string): string[][] {
+  if (!existsSync(path)) return [];
+  return readFileSync(path, 'utf8')
+    .split('\n')
+    .filter((line) => line !== '')
+    .map((line) => line.split('\t'));
+}
+
+/**
+ * Runs a COPY of user-data.sh with /srv/fg-lab04 rewritten to a temp folder: bash is started with the
+ * temp folder as cwd and the relative path `user-data.sh`, with stub `curl` and `systemd-run` first on
+ * PATH (the real curl never runs: the run refuses to start if `curl` does not resolve to the stub).
+ */
+function runUserData(failToken = false): UserDataRun {
+  const original = readLabFile('user-data.sh');
+  const dir = mkdtempSync(join(tmpdir(), 'lab04-userdata-'));
+  try {
+    const slashDir = dir.replace(/\\/g, '/');
+    const folder = `${slashDir}/srv`;
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    const shebang = process.platform === 'win32' ? '/usr/bin/bash' : bashPath();
+    const curlStub = [
+      `#!${shebang}`,
+      '{ printf \'curl\'; for a in "$@"; do printf \'\\t%s\' "$a"; done; printf \'\\n\'; } >> "$FAKE_LOG_DIR/curl.log"',
+      "url=''; header=''; prev=''",
+      'for a in "$@"; do',
+      '  case "$prev" in',
+      '    -H|--header) case "$a" in X-aws-ec2-metadata-token:*) header="$a";; esac;;',
+      '  esac',
+      '  case "$a" in http://*) url="$a";; esac',
+      '  prev="$a"',
+      'done',
+      'case "$url" in',
+      '  */latest/api/token)',
+      '    if [ -n "${FAKE_FAIL_TOKEN-}" ]; then exit 7; fi',
+      `    echo '${STUB_TOKEN}'; exit 0;;`,
+      '  */meta-data/instance-id|*/meta-data/placement/availability-zone)',
+      `    if [ "$header" != 'X-aws-ec2-metadata-token: ${STUB_TOKEN}' ]; then exit 22; fi`,
+      `    case "$url" in */instance-id) echo '${STUB_INSTANCE_ID}';; *) echo '${STUB_ZONE}';; esac`,
+      '    exit 0;;',
+      'esac',
+      'exit 22',
+      '',
+    ].join('\n');
+    const systemdStub = [
+      `#!${shebang}`,
+      '{ printf \'systemd-run\'; for a in "$@"; do printf \'\\t%s\' "$a"; done; printf \'\\n\'; } >> "$FAKE_LOG_DIR/systemd.log"',
+      'exit 0',
+      '',
+    ].join('\n');
+    writeFileSync(join(bin, 'curl'), curlStub, { mode: 0o755 });
+    writeFileSync(join(bin, 'systemd-run'), systemdStub, { mode: 0o755 });
+    writeFileSync(join(dir, 'user-data.sh'), original.replaceAll('/srv/fg-lab04', folder));
+
+    const env: NodeJS.ProcessEnv = { ...process.env };
+    let originalPath = '';
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === 'PATH') {
+        originalPath = env[key] ?? '';
+        delete env[key];
+      } else if (key === 'SHELLOPTS' || key === 'BASH_ENV' || key.startsWith('FAKE_')) {
+        delete env[key];
+      }
+    }
+    env['PATH'] = `${bin}${delimiter}${originalPath}`;
+    env['FAKE_LOG_DIR'] = slashDir;
+    if (failToken) env['FAKE_FAIL_TOKEN'] = '1';
+
+    const guard = spawnSync(bashPath(), ['-c', 'command -v curl; command -v systemd-run'], {
+      cwd: dir,
+      env,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    const resolved = guard.stdout.split('\n').filter((line) => line !== '');
+    for (const line of resolved) {
+      if (!line.replace(/\\/g, '/').includes(`${basename(dir)}/bin/`)) {
+        throw new Error(`the stubs are not first on PATH: ${line}`);
+      }
+    }
+    expect(resolved, 'curl and systemd-run must resolve to the stubs').toHaveLength(2);
+
+    const result = spawnSync(bashPath(), ['user-data.sh'], {
+      cwd: dir,
+      env,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    const indexPath = join(dir, 'srv', 'index.html');
+    return {
+      status: result.status,
+      stderr: result.stderr,
+      index: existsSync(indexPath) ? readFileSync(indexPath, 'utf8') : undefined,
+      curl: logLines(join(dir, 'curl.log')).map((line) => line.slice(1)),
+      systemd: logLines(join(dir, 'systemd.log')).map((line) => line.slice(1)),
+      folder,
+    };
+  } finally {
+    rmSync(dir, { recursive: true, force: true, maxRetries: 3 });
+  }
+}
+
+describe('AC-29: user-data.sh really runs (a copy, with stub curl and systemd-run)', () => {
+  test('AC-29: it writes exactly the instance ID and zone of the stub, and a newline, to index.html', () => {
+    const run = runUserData();
+    expect(run.status, run.stderr).toBe(0);
+    expect(run.index).toBe(`instance=${STUB_INSTANCE_ID} az=${STUB_ZONE}\n`);
+  });
+
+  test('AC-29: that line matches the regular expression of check 15 of verify.sh', () => {
+    const run = runUserData();
+    expect(run.index?.replace(/\n$/, '')).toMatch(
+      /^instance=i-[0-9a-f]{8,17} az=(eu-west-1a|eu-west-1b)$/,
+    );
+  });
+
+  test('AC-29: every metadata read sends the token of the stub in -H "X-aws-ec2-metadata-token: <token>"', () => {
+    const run = runUserData();
+    const reads = run.curl.filter((argv) =>
+      argv.some((argument) => argument.includes('/meta-data/')),
+    );
+    expect(reads.length, 'the script reads fewer than two metadata values').toBeGreaterThanOrEqual(
+      2,
+    );
+    for (const argv of reads) {
+      const headers = argv.filter((_argument, index) => argv[index - 1] === '-H');
+      expect(headers, argv.join(' ')).toContain(`X-aws-ec2-metadata-token: ${STUB_TOKEN}`);
+    }
+  });
+
+  test('AC-29: every curl call has -f (also in -fsS), --retry 5 and --retry-connrefused', () => {
+    const run = runUserData();
+    expect(run.curl.length, 'the script makes fewer than three curl calls').toBeGreaterThanOrEqual(
+      3,
+    );
+    for (const argv of run.curl) {
+      const line = argv.join(' ');
+      expect(
+        argv.some((argument) => argument === '--fail' || /^-[A-Za-z]*f[A-Za-z]*$/.test(argument)),
+        `no -f in: ${line}`,
+      ).toBe(true);
+      expect(argv[argv.indexOf('--retry') + 1], `no --retry 5 in: ${line}`).toBe('5');
+      expect(argv, `no --retry-connrefused in: ${line}`).toContain('--retry-connrefused');
+    }
+  });
+
+  test('AC-29: systemd-run gets exactly --unit fg-lab04-web python3 -m http.server 80 --directory <the folder>', () => {
+    const run = runUserData();
+    expect(run.systemd).toEqual([
+      ['--unit', 'fg-lab04-web', 'python3', '-m', 'http.server', '80', '--directory', run.folder],
+    ]);
+  });
+
+  test('AC-29: when the token call fails (curl exits 7) the script exits non-zero and does not start the server', () => {
+    const run = runUserData(true);
+    expect(run.status).not.toBe(0);
+    expect(run.status).not.toBeNull();
+    expect(run.systemd).toEqual([]);
+    expect(run.index === undefined || !run.index.startsWith('instance=')).toBe(true);
+  });
+});
+
+describe('AC-34: the review fixes in the reader docs', () => {
+  const breakIt = (): string => readLabFile('break-it.md');
+  const readme = (): string => readLabFile('README.md');
+  const section = (title: string): string => need(sectionOf(breakIt(), 2, title), `## ${title}`);
+
+  /** The paragraph (lines up to a blank line) that ends right before the line `fenceLine`. */
+  function paragraphBefore(markdown: string, fenceLine: number): string {
+    const lines = markdown.split(/\r?\n/);
+    let i = fenceLine - 1;
+    while (i >= 0 && (lines[i] ?? '').trim() === '') i -= 1;
+    const out: string[] = [];
+    while (i >= 0 && (lines[i] ?? '').trim() !== '') {
+      out.unshift(lines[i] ?? '');
+      i -= 1;
+    }
+    return out.join('\n');
+  }
+
+  test("AC-34: Break the health check says the instances' grace period ended long ago", () => {
+    expect(flat(section('Break the health check'))).toContain('their grace period ended long ago');
+  });
+
+  test('AC-34: Break the health check does not say "After the grace period of 120 seconds"', () => {
+    expect(flat(section('Break the health check'))).not.toContain(
+      'after the grace period of 120 seconds',
+    );
+  });
+
+  test('AC-34: the README paragraph about the service-linked roles says "Saved plan is stale"', () => {
+    const paragraphs = readme()
+      .split(/\r?\n\s*\r?\n/)
+      .filter((paragraph) => /service-linked/i.test(paragraph));
+    expect(paragraphs.length, 'no paragraph about the service-linked roles').toBeGreaterThan(0);
+    expect(paragraphs.some((paragraph) => flat(paragraph).includes('saved plan is stale'))).toBe(
+      true,
+    );
+  });
+
+  test('AC-34: that paragraph also gives terraform plan -out lab.tfplan (plan again, then apply)', () => {
+    const paragraphs = readme()
+      .split(/\r?\n\s*\r?\n/)
+      .filter((paragraph) => /service-linked/i.test(paragraph));
+    expect(paragraphs.length, 'no paragraph about the service-linked roles').toBeGreaterThan(0);
+    expect(
+      paragraphs.some((paragraph) => flat(paragraph).includes('terraform plan -out lab.tfplan')),
+    ).toBe(true);
+  });
+
+  test.each(['README.md', 'break-it.md'])('AC-34: %s does not say "it shows no change"', (name) => {
+    expect(flat(readLabFile(name))).not.toContain('it shows no change');
+  });
+
+  test('AC-34: the "No changes" plan after a break is worded "should show no change"', () => {
+    expect(flat(breakIt()) + flat(readme())).toContain('should show no change');
+  });
+
+  test('AC-34: the terminate-instance-in-auto-scaling-group example is introduced with "instead of"', () => {
+    const text = section('Terminate an instance');
+    const block = scan(text).blocks.find((candidate) =>
+      candidate.body.includes('terminate-instance-in-auto-scaling-group'),
+    );
+    expect(block, 'no code block with terminate-instance-in-auto-scaling-group').toBeDefined();
+    expect(flat(paragraphBefore(text, block?.line ?? 0))).toContain('instead of');
+  });
+
+  test('AC-34: Terminate an instance does not say "usually takes a few minutes"', () => {
+    expect(flat(section('Terminate an instance'))).not.toContain('usually takes a few minutes');
+  });
+});

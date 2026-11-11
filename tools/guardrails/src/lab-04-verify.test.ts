@@ -1809,3 +1809,79 @@ describe('verify.sh: audit over every run of this file', () => {
     expect(found).toEqual([]);
   });
 });
+
+// =================================================================================================
+// Review regressions (round 1): AC-30, AC-31, AC-33
+// =================================================================================================
+
+describe('verify.sh: review regressions (round 1)', () => {
+  const NOT_BOTH_AZS = failLine(
+    'serves-both-azs',
+    'the load balancer did not answer from both AZs',
+  );
+
+  test.concurrent.each([
+    { name: 'the first zone twice', answer: row(AZ1, AZ1) },
+    { name: 'the second zone twice', answer: row(AZ2, AZ2) },
+  ])('AC-30: alb-azs fails when AWS answers $name', async ({ name, answer }) => {
+    const result = await runVerify(answering('alb-azs', ok(answer)), {
+      label: `AC-30 alb-azs ${name}`,
+    });
+    expectRun(result, { 'alb-azs': true });
+    expect(lastLine(result)).toMatch(/^verify: FAIL \(1 failed,/);
+  });
+
+  test.concurrent.each([
+    { name: 'the first subnet twice', answer: `${PRIV1},${PRIV1}` },
+    { name: 'the second subnet twice', answer: `${PRIV2},${PRIV2}` },
+  ])('AC-30: asg-subnets fails when AWS answers $name', async ({ name, answer }) => {
+    const result = await runVerify(answering('asg-subnets', ok(answer)), {
+      label: `AC-30 asg-subnets ${name}`,
+    });
+    expectRun(result, { 'asg-subnets': true });
+    expect(lastLine(result)).toMatch(/^verify: FAIL \(1 failed,/);
+  });
+
+  test.concurrent(
+    'AC-31: a curl that exits 28 does not count, even if its stdout names the second zone',
+    async () => {
+      const result = await runVerify(
+        curling(
+          { out: instanceAnswer(INST2, AZ2), exit: 28, err: STUB_ERR, quiet: false },
+          ok(instanceAnswer(INST1, AZ1)),
+        ),
+        { label: 'AC-31 curl exit 28 with an answer' },
+      );
+      expectRun(result, { 'serves-both-azs': NOT_BOTH_AZS });
+      expect(result.curl).toHaveLength(30);
+    },
+  );
+
+  test.concurrent.each(
+    OUTPUT_NAMES.filter(
+      (name) => name === 'availability_zones' || name === 'private_subnet_ids',
+    ).flatMap((name) => [
+      { name, words: 'one word', value: name === 'availability_zones' ? AZ1 : PRIV1 },
+      {
+        name,
+        words: 'three words',
+        value: name === 'availability_zones' ? `${AZ1} ${AZ2} ${AZ3}` : `${PRIV1} ${PRIV2} ${PUB1}`,
+      },
+    ]),
+  )('AC-33: $name with $words stops the script with exit 2', async ({ name, words, value }) => {
+    const fixture = healthy();
+    fixture.outputs[name] = ok(value);
+    const result = await runVerify(fixture, { label: `AC-33 ${name} ${words}` });
+    expect(result.status).toBe(2);
+    expect(result.stderr.trim()).not.toBe('');
+    expect(verdictLines(result.stdout)).toEqual([]);
+    const lastTerraform = result.calls.map((line) => line[0]).lastIndexOf('terraform');
+    expect(lastTerraform, 'the outputs were never read').toBeGreaterThanOrEqual(0);
+    const after = result.calls
+      .slice(lastTerraform + 1)
+      .filter((line) => line[0] === 'aws' || line[0] === 'curl');
+    expect(after, 'a call was made after the outputs were read').toEqual([]);
+    expect(checkRuns(result)).toEqual([]);
+    expect(result.curl).toEqual([]);
+  });
+});
