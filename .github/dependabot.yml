@@ -21,6 +21,18 @@ updates:
       # Stay on TypeScript 6.0.x: typescript-eslint supports TypeScript up to <6.1.
       - dependency-name: typescript
         versions: ['>=6.1']
+      # The diagram engine pins elkjs exactly (spec AC-15): a new version can move every layout and
+      # screenshot baseline, so it is updated on purpose, in its own PR.
+      - dependency-name: elkjs
+      # axe-core 4.14 reports label-content-name-mismatch on Starlight's own search button (its
+      # aria-label "Search" does not include the visible "Ctrl K" hint). Stay on 4.13 until Starlight
+      # or our site fixes the button.
+      - dependency-name: '@axe-core/playwright'
+        versions: ['>=4.14']
+      # The Playwright 1.65 image runs Node 26, which no longer ships corepack, and `pnpm e2e:docker`
+      # runs `corepack enable` in it. Stay on 1.64 (and its image) until that script is fixed.
+      - dependency-name: '@playwright/test'
+        versions: ['>=1.65']
 
   - package-ecosystem: github-actions
     directory: /
