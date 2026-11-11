@@ -67,14 +67,14 @@ it launches new instances before it terminates the earlier ones. That does not d
 experiment.) The load balancer sends no new requests to a target that is deregistering, so the loop
 shifts to the surviving instance while the replacement boots.
 
-Terminating through Auto Scaling does the same. With `--no-should-decrement-desired-capacity` it
-launches a replacement after the instance terminates. Wait until two targets are `healthy` again. To
-do the same through Auto Scaling, instead of `terminate-instances`, pick a running instance (not the
-one you terminated above, which is gone) and run:
+Terminating through Auto Scaling gives the same result: with `--no-should-decrement-desired-capacity`
+the group launches a replacement after the instance terminates. To try it, wait until two targets are
+`healthy` again, then, instead of `terminate-instances`, pick a running instance (not the one you
+terminated above, which is gone) and run:
 
 ```bash
 VICTIM2=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG" \
-  --query "AutoScalingGroups[0].Instances[?AvailabilityZone=='$AZ1' && LifecycleState=='InService'].InstanceId | [0]" --output text | tr -d '\r')
+  --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService'].InstanceId | [0]" --output text | tr -d '\r')
 aws autoscaling terminate-instance-in-auto-scaling-group --instance-id "$VICTIM2" \
   --no-should-decrement-desired-capacity
 ```

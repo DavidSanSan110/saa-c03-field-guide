@@ -166,7 +166,7 @@ Run every command from `labs/04-alb-asg-self-healing/`.
    the destroy). If the apply fails on one of them right after it was created, the resources that did get
    created change the picture, so `terraform apply lab.tfplan` then stops with `Saved plan is stale`.
    Run `terraform plan -out lab.tfplan` again, then `terraform apply lab.tfplan`. In CI, dispatch the
-   apply again: the approval gate refuses a plan that changed since you approved it.
+   apply again: the apply job checks that the plan is the one you approved and refuses a changed one.
 
 3. Wait a few minutes for the instances to start and pass the health check, then check the stack with
    `bash verify.sh` (see [Verify](#verify)).
