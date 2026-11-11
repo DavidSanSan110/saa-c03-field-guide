@@ -1,0 +1,40 @@
+id: 'd2-2.2-0019'
+domain: 2
+task: '2.2'
+services:
+  - 'ec2-auto-scaling'
+  - 'elb'
+difficulty: hard # easy | medium | hard
+type: multiple # single | multiple
+stem: 'An online exam platform needs 6 EC2 instances to serve its peak load. An Auto Scaling group manages them and an Application Load Balancer spreads requests over them, today in two Availability Zones. The company is moving to three zones. The requirement is that if any one Availability Zone is lost at peak, the remaining zones must still serve the full peak load immediately, without waiting for new instances to launch, and at the lowest cost that meets this. The load balancer is currently enabled in only two of the three zones. Which actions meet these requirements? Choose two.'
+options:
+  - key: A
+    text: "Set the group's minimum and desired capacity to 6 across three zones, and let target tracking scale out after a zone is lost."
+    correct: false
+    why: 'Six instances in three zones is two per zone, so losing a zone leaves four. The remaining capacity is short until new instances launch, which relies on scaling during the failure instead of capacity already in place.'
+  - key: B
+    text: "Set the group's minimum and desired capacity to 9 and spread the instances over subnets in three zones, three per zone."
+    correct: true
+    why: 'If one zone with three instances is lost, six remain, which is the peak need. This is a statically stable design: the capacity already exists, so no launch has to succeed during the failure. Three zones need 9 instances in total, fewer than the 12 that two zones would need for the same guarantee.'
+  - key: C
+    text: 'Keep two zones and run 6 instances in each, 12 in total.'
+    correct: false
+    why: 'This also survives the loss of a zone, but it pays for 12 instances. Three zones with 9 meets the same requirement at lower cost, which the stem asks for.'
+  - key: D
+    text: 'Enable the load balancer in the third Availability Zone as well, so it matches the zones used by the group.'
+    correct: true
+    why: 'A load balancer only sends traffic to targets in zones that are enabled on it. Without the third zone enabled, instances placed there would get no traffic and the plan of three per zone would not work.'
+  - key: E
+    text: 'Raise the health check grace period so replacement instances are not terminated while they start.'
+    correct: false
+    why: 'The grace period only protects new instances while they boot. It does not add capacity in advance, so it does nothing for serving peak load straight after a zone is lost.'
+cue: 'peak needs 6, survive loss of one of three zones immediately, lowest cost, ALB enabled in only two zones'
+references:
+  - 'https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/rel_withstand_component_failures_static_stability.html'
+  - 'https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html'
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-benefits.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

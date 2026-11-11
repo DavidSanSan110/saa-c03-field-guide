@@ -1,0 +1,35 @@
+id: 'd2-2.2-0024'
+domain: 2
+task: '2.2'
+services:
+  - 'dynamodb'
+difficulty: hard
+type: single
+stem: 'A gaming company stores player inventories in a DynamoDB global table with replicas in us-east-1 and eu-west-1. A faulty release deployed in us-east-1 overwrote the inventory attribute of many items with wrong values. The team noticed six hours later and found the bad values in both replicas. Point-in-time recovery has been on for the us-east-1 replica since the table was created, and the team also takes an on-demand backup of the table once a week. The company wants to get back the data as it was just before the release, losing as little recent data as possible. How should the team restore the data?'
+options:
+  - key: A
+    text: 'Redirect the game to the eu-west-1 replica, because it holds an independent copy of the data.'
+    correct: false
+    why: 'Writes to one replica are replicated to the others, typically within a second or less. The eu-west-1 replica received the bad values too, so it is not an independent clean copy.'
+  - key: B
+    text: 'Restore the us-east-1 table with point-in-time recovery to a time just before the release, which creates a new table, then validate it and switch the application to it or copy the good items back.'
+    correct: true
+    why: 'Point-in-time recovery lets you restore to any second within the recovery window, up to about five minutes before the current time. It always restores to a new table, which is independent of the global table, so the damaged data is untouched until you decide how to move to the restored one.'
+  - key: C
+    text: 'Restore the most recent weekly on-demand backup, since backups are not affected by replication.'
+    correct: false
+    why: 'The backup is not replicated, but it is up to a week old, so every change made since then would be lost. The goal is to lose as little recent data as possible, which point-in-time recovery does much better.'
+  - key: D
+    text: 'Turn on DynamoDB Streams on the table and replay the stream to undo the change.'
+    correct: false
+    why: 'A stream carries the changes that were made, including the faulty ones, and is not a restore feature. Undoing the damage would require custom tooling and a record of the earlier values, which a stream does not give you as a ready-made recovery.'
+cue: 'replicas copied the bad data, restore to a time before the release with little data loss'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/PointInTimeRecovery_Howitworks.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Point-in-time-recovery.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/V2globaltables_HowItWorks.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

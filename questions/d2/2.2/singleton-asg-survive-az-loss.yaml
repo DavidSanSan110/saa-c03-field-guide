@@ -1,0 +1,35 @@
+id: 'd2-2.2-0020'
+domain: 2
+task: '2.2'
+services:
+  - 'ec2-auto-scaling'
+  - 'ec2'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A company runs a job scheduler that must run as a single copy, because two copies would run every job twice. The scheduler is stateless: its configuration comes from user data and its job state is kept in a separate database. It runs on one EC2 instance in one Availability Zone, and a recent zone outage left it down for hours. The company wants the scheduler to start again automatically in another zone if its zone fails, at the lowest cost. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Create an Auto Scaling group with minimum, maximum and desired capacity of 1, using a launch template and subnets in at least two Availability Zones.'
+    correct: true
+    why: 'The group keeps one instance running. If the instance or its whole zone fails, the group launches a replacement in a subnet of another zone. The maximum of 1 keeps it to a single copy and there is no idle standby to pay for. (While it rebalances zones, Auto Scaling can briefly go one instance over the maximum; suspending the AZRebalance process prevents that.) Because the replacement is a new instance, the scheduler must take its configuration from the launch template and keep state outside the instance, which the stem says it does.'
+  - key: B
+    text: 'Add a CloudWatch alarm on the StatusCheckFailed_System metric with the EC2 recover action.'
+    correct: false
+    why: 'Instance recovery moves the instance to new hardware but keeps it in the same Availability Zone. It reacts to failures of the host, not to the loss of the zone, so the scheduler would stay down during a zone outage.'
+  - key: C
+    text: 'Move the scheduler to a larger instance type in the same zone.'
+    correct: false
+    why: 'A bigger instance changes capacity, not failure domains. The scheduler would still sit in a single Availability Zone and go down with it.'
+  - key: D
+    text: 'Keep the instance and take a daily EBS snapshot that an operator restores in another zone when needed.'
+    correct: false
+    why: 'Snapshots are stored across the zones of the Region and can be restored anywhere, but restoring by hand is not automatic, and the stem asks for the scheduler to start again without human action.'
+cue: 'single copy, stateless, must restart in another Availability Zone automatically, lowest cost'
+references:
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/auto-scaling-benefits.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ec2-instance-recover.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

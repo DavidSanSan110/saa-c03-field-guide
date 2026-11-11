@@ -1,0 +1,40 @@
+id: 'd2-2.2-0021'
+domain: 2
+task: '2.2'
+services:
+  - 'elb'
+  - 'route53'
+difficulty: medium # easy | medium | hard
+type: multiple # single | multiple
+stem: 'A streaming company serves its API through an Application Load Balancer that spans three Availability Zones, with the same number of instances in each zone. During an incident, requests handled in one zone show high latency and a rising error rate, but the instances still pass every load balancer health check, so none is marked unhealthy. The team wants to be able to move traffic away from that single zone with one action, and to do it safely. Which actions should a solutions architect take? Choose two.'
+options:
+  - key: A
+    text: 'Enable zonal shift on the Application Load Balancer, which is off by default, so a shift can be started for the impaired zone.'
+    correct: true
+    why: 'Zonal shift is an Application Recovery Controller capability that is disabled by default and must be turned on for each load balancer. Once on, one action makes the load balancer stop sending new traffic to the affected zone, which works even when health checks do not catch the problem.'
+  - key: B
+    text: 'Make sure the other two zones already have enough instances to carry the full load before shifting.'
+    correct: true
+    why: 'A zonal shift does not wait for Auto Scaling to add capacity. The guidance is to pre-scale so the remaining zones can take the shifted traffic; otherwise the shift would overload them.'
+  - key: C
+    text: 'Deregister every instance in the affected zone and let Auto Scaling replace them.'
+    correct: false
+    why: 'This is slower and more manual than a shift, and replacements launched into the same impaired zone would suffer the same problem. A zonal shift is the single action designed for this.'
+  - key: D
+    text: 'Shorten the target group health check interval so the instances in the impaired zone are marked unhealthy sooner.'
+    correct: false
+    why: 'The instances pass the check, so a faster interval would see the same result. The failure is partial and is not visible to the health check, which is why a manual or automatic shift is needed.'
+  - key: E
+    text: 'Create a Route 53 failover record that points to the load balancer, with a health check on the impaired zone.'
+    correct: false
+    why: 'Route 53 failover switches between whole endpoints, not between the zones of one load balancer, and its health checks would not see this partial failure either.'
+cue: 'one zone has latency and errors, health checks stay green, move traffic away from one Availability Zone with one action'
+references:
+  - 'https://docs.aws.amazon.com/elasticloadbalancing/latest/application/zonal-shift.html'
+  - 'https://docs.aws.amazon.com/r53recovery/latest/dg/arc-zonal-shift.html'
+  - 'https://docs.aws.amazon.com/r53recovery/latest/dg/arc-zonal-autoshift.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

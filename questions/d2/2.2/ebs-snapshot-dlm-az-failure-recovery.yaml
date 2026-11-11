@@ -1,0 +1,37 @@
+id: 'd2-2.2-0027'
+domain: 2
+task: '2.2'
+services:
+  - 'ebs'
+  - 'ec2'
+difficulty: easy
+type: single
+stem: 'A company runs a licensed reporting tool on a single EC2 instance in one Availability Zone. The data lives on a gp3 EBS data volume. If the Availability Zone fails, the company wants to start a replacement instance in another Availability Zone with the data as it was at most 12 hours earlier, and wants the backups created and cleaned up automatically with the least operational effort. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Keep the volume and attach it to a new instance launched in another Availability Zone when the failure happens.'
+    correct: false
+    why: 'A volume and the instance it is attached to must be in the same Availability Zone. A volume cannot be attached across zones, and it is unavailable anyway if its zone is down.'
+  - key: B
+    text: 'Move the data to an instance store volume, which is physically attached to the host, and copy it to the new instance when needed.'
+    correct: false
+    why: 'Instance store data does not persist when the instance is stopped, hibernated or terminated, or when the underlying disk fails, so it is not a place to keep data you must recover.'
+  - key: C
+    text: 'Create an Amazon Data Lifecycle Manager policy that targets the volume by tag, takes a snapshot every 12 hours and retains a set number of them. After a failure, create a volume from the latest snapshot in the other Availability Zone and attach it to the new instance.'
+    correct: true
+    why: 'Snapshot data is replicated across all Availability Zones in the Region, so a snapshot can be restored as a volume in any zone of that Region. Data Lifecycle Manager creates the snapshots on a schedule and deletes old ones, so nothing needs to be run by hand.'
+  - key: D
+    text: 'Change the volume to io2 and enable Multi-Attach so an instance in another Availability Zone can attach it.'
+    correct: false
+    why: 'Multi-Attach lets several instances use one volume, but they must all be in the same Availability Zone as the volume. It does not give access across zones.'
+cue: 'EBS volume is tied to one AZ, data at most 12 hours old, automated backups'
+references:
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-snapshots.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/snapshot-lifecycle.html'
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-volumes.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instance-store-lifetime.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

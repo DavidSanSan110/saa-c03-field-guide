@@ -1,0 +1,40 @@
+id: 'd2-2.2-0023'
+domain: 2
+task: '2.2'
+services:
+  - 'rds-proxy'
+  - 'rds'
+  - 'ecs'
+difficulty: hard
+type: multiple
+stem: 'A company runs a containerized service on Amazon ECS in one VPC. It uses an Amazon RDS for MySQL database, deployed as a Multi-AZ DB instance, through the instance endpoint, and each task keeps its own pool of long-lived connections. During a recent failover every pooled connection broke, the tasks kept resolving the old address for a while because of local DNS caching, and the service threw errors for minutes. The company wants most connections to survive a future failover and wants to avoid depending on DNS behavior inside the tasks. Which actions should a solutions architect take? Choose two.'
+options:
+  - key: A
+    text: 'Create an RDS Proxy for the DB instance in the same VPC and change the tasks to connect to the proxy endpoint.'
+    correct: true
+    why: 'The proxy keeps accepting connections at the same address and moves them to the new writer after a failover, so idle connections stay open and clients are not exposed to DNS propagation or local DNS caching delays.'
+  - key: B
+    text: 'Set a very low DNS TTL on the tasks and have the pool re-resolve the database name more often.'
+    correct: false
+    why: 'This only makes the tasks notice the new writer sooner. Their connections to the old writer are still dropped on failover, and the service stays dependent on DNS behavior, which is what the company wants to remove.'
+  - key: C
+    text: 'Make the application retry statements and transactions that were running at the moment of the failover.'
+    correct: true
+    why: 'Through the proxy, only connections in the middle of a transaction or SQL statement are cancelled during a failover. The application must therefore be able to retry that in-flight work.'
+  - key: D
+    text: 'Make the RDS Proxy publicly accessible so tasks in any network can reach it.'
+    correct: false
+    why: 'A proxy cannot be publicly accessible and must be in the same VPC as the database. Public access is also unrelated to keeping connections alive during a failover.'
+  - key: E
+    text: 'Create a read replica and attach the RDS Proxy to the replica so reads keep working while the writer fails over.'
+    correct: false
+    why: 'For instances in a replication configuration a proxy can be associated only with the writer DB instance, not with a read replica, so this cannot be configured.'
+cue: 'pooled connections broke on failover and DNS caching delayed the tasks'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.howitworks.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/rds-proxy.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

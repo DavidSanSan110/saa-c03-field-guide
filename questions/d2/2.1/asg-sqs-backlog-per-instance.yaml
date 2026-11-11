@@ -1,0 +1,35 @@
+id: 'd2-2.1-0023'
+domain: 2
+task: '2.1'
+services:
+  - 'ec2-auto-scaling'
+  - 'sqs'
+  - 'cloudwatch'
+difficulty: medium
+type: single
+stem: 'A company runs image-resizing workers on an Auto Scaling group. The workers read upload jobs from an Amazon SQS queue, and each job takes about 0.5 seconds. Uploads arrive in unpredictable waves, and the business wants every job to start within 30 seconds of arriving. Average CPU on the workers stays low even when the queue is long, because they wait on network transfers. The team also does not want the fleet to overshoot while the queue drains. Which scaling configuration is the best fit?'
+options:
+  - key: A
+    text: "A target tracking policy on the group's average CPU utilization, with a target of 50 percent."
+    correct: false
+    why: 'CPU stays low while workers wait on the network, so it does not rise with the backlog and the group would not scale out when the queue grows.'
+  - key: B
+    text: "A target tracking policy on the queue's visible message count, with a target of 60 messages."
+    correct: false
+    why: 'A policy that targets only the number of messages ignores how many instances are already working. Each instance would count the same queue length, so the group can add more instances than needed while the queue drains.'
+  - key: C
+    text: 'A target tracking policy on a backlog-per-instance metric (visible messages divided by the number of InService instances), with a target of 60 messages per instance.'
+    correct: true
+    why: 'Backlog per instance scales capacity in proportion to the work waiting for each worker. The target is the acceptable latency divided by the time to process one message: 30 seconds / 0.5 seconds = 60. Metric math can build the metric without publishing a custom one.'
+  - key: D
+    text: 'Scheduled actions that raise the minimum capacity before the busiest hours seen in the previous month.'
+    correct: false
+    why: 'The waves are unpredictable, so a fixed schedule leaves the fleet too small during unexpected waves and too large the rest of the time. It also does not react to the actual queue.'
+cue: 'scale queue workers in proportion to the queue, avoid overshoot, CPU does not reflect load -> backlog per instance (messages / InService instances) with target tracking'
+references:
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/as-using-sqs-queue.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

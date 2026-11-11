@@ -1,0 +1,35 @@
+id: 'd2-2.2-0026'
+domain: 2
+task: '2.2'
+services:
+  - 'elasticache'
+difficulty: hard
+type: single
+stem: 'A streaming company keeps user login sessions in an Amazon ElastiCache for Valkey cluster in us-east-1, with Multi-AZ and automatic failover enabled. Sessions exist only in the cache, and losing them logs every viewer out. The company needs the sessions to be available in eu-west-1 with low replication lag, so that after a full outage of us-east-1 the application can resume there. A manual step during a disaster is acceptable. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Add more replicas across all Availability Zones of us-east-1 and keep Multi-AZ enabled.'
+    correct: false
+    why: 'Multi-AZ replicas protect against the loss of a node or an Availability Zone. All of them are in us-east-1, so a Regional outage still loses the sessions.'
+  - key: B
+    text: 'Create an ElastiCache global datastore with the existing cluster as primary and a secondary cluster in eu-west-1. During an outage, promote the secondary cluster to primary and point the application at it.'
+    correct: true
+    why: 'A global datastore replicates asynchronously from the primary to read-only secondary clusters in other Regions, which keeps a current copy of the sessions. If the primary Region becomes unavailable, you can promote a secondary cluster to primary, which makes it accept writes.'
+  - key: C
+    text: 'Create a global datastore and rely on ElastiCache to fail over to the eu-west-1 cluster automatically.'
+    correct: false
+    why: 'ElastiCache does not support automatic failover from one Region to another. The secondary cluster must be promoted manually, and the application must be directed to it.'
+  - key: D
+    text: 'Create an empty cluster in eu-west-1 and let the application rebuild the cache from the database after the failover.'
+    correct: false
+    why: 'The sessions live only in the cache, so there is nothing in the database to rebuild them from. Every viewer would be logged out, which is the outcome the company wants to avoid.'
+cue: 'sessions only in the cache, second Region with low lag, manual promotion acceptable'
+references:
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Redis-Global-Datastore.html'
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Redis-Global-Datastores-Getting-Started.html'
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/Redis-Global-Datastores-Console.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
