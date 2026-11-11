@@ -112,13 +112,22 @@ PRIV=$OUT
 output_of private_route_table_id
 PRIV_RT=$OUT
 
-# The two AZs and the two private subnets, one word each.
+# The two AZs and the two private subnets: exactly two words each, or the script stops here.
 AZ_1=''
 AZ_2=''
 PRIV_1=''
 PRIV_2=''
-read -r AZ_1 AZ_2 <<<"$AZS"
-read -r PRIV_1 PRIV_2 <<<"$PRIV"
+EXTRA=''
+read -r AZ_1 AZ_2 EXTRA <<<"$AZS"
+if [ -z "$AZ_2" ] || [ -n "$EXTRA" ]; then
+  echo 'verify: terraform output availability_zones is not two words' >&2
+  exit 2
+fi
+read -r PRIV_1 PRIV_2 EXTRA <<<"$PRIV"
+if [ -z "$PRIV_2" ] || [ -n "$EXTRA" ]; then
+  echo 'verify: terraform output private_subnet_ids is not two words' >&2
+  exit 2
+fi
 
 # The account ID needs no permission. It is never printed.
 run aws sts get-caller-identity --query Account --output text
