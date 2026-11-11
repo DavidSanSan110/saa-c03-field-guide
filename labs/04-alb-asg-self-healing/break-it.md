@@ -54,22 +54,28 @@ aws autoscaling describe-scaling-activities --auto-scaling-group-name "$ASG" \
 - The new instance appears as a target in `initial` (reason `Elb.InitialHealthChecking`) and turns
   `healthy` after its health checks pass. Then both AZs answer again.
 
-How long the replacement takes is not stated in the documentation, so time it: it usually takes a few
-minutes. Check in which AZ it starts too. The group balances its AZs, so expect the AZ that lost its
-instance; the documentation does not promise this for a single replacement.
+How long the replacement takes is not stated in the documentation, so time it and note the result.
+Check in which AZ it starts too. The group balances its AZs, so expect the AZ that lost its instance;
+the documentation does not promise this for a single replacement.
 
 ### Why
 
 The group keeps its desired capacity of 2. The documentation says that a manual termination of an
-instance in a group launches a replacement to maintain it, and that rebalancing launches new instances
-before it terminates the earlier ones. The load balancer sends no new requests to a target that is
-deregistering, so the loop shifts to the surviving instance while the replacement boots.
+instance in a group launches a replacement to maintain the desired capacity, so the replacement
+follows the termination. (Rebalancing is a different event: when a group moves capacity between AZs,
+it launches new instances before it terminates the earlier ones. That does not describe this
+experiment.) The load balancer sends no new requests to a target that is deregistering, so the loop
+shifts to the surviving instance while the replacement boots.
 
 Terminating through Auto Scaling does the same. With `--no-should-decrement-desired-capacity` it
-launches a replacement after the instance terminates:
+launches a replacement after the instance terminates. Wait until two targets are `healthy` again. To
+do the same through Auto Scaling, instead of `terminate-instances`, pick a running instance (not the
+one you terminated above, which is gone) and run:
 
 ```bash
-aws autoscaling terminate-instance-in-auto-scaling-group --instance-id "$VICTIM" \
+VICTIM2=$(aws autoscaling describe-auto-scaling-groups --auto-scaling-group-names "$ASG" \
+  --query "AutoScalingGroups[0].Instances[?AvailabilityZone=='$AZ1' && LifecycleState=='InService'].InstanceId | [0]" --output text | tr -d '\r')
+aws autoscaling terminate-instance-in-auto-scaling-group --instance-id "$VICTIM2" \
   --no-should-decrement-desired-capacity
 ```
 
@@ -100,10 +106,11 @@ request loop running.
   the code 404.
 - The request loop still gets answers. With every target unhealthy, the load balancer **fails open**:
   it sends requests to all targets anyway. The pages are fine, so the answers are right.
-- After the grace period of 120 seconds the group replaces the instances. The new ones fail the same
-  check, so it happens again, round after round. Each round costs a few instance-minutes. You may see
-  gaps in the loop while a round replaces the instances. How fast the rounds follow each other is not
-  stated in the documentation, so watch `describe-scaling-activities` and note it.
+- Soon after they turn unhealthy, the group replaces them: their grace period ended long ago. Each new
+  instance gets 120 seconds of grace, then fails the same check and is replaced in turn, round after
+  round. Each round costs a few instance-minutes. You may see gaps in the loop while a round replaces
+  the instances. How fast the rounds follow each other is not stated in the documentation, so watch
+  `describe-scaling-activities` and note it.
 
 ### Why
 
@@ -124,8 +131,8 @@ MSYS_NO_PATHCONV=1 aws elbv2 modify-target-group --target-group-arn "$TG" --heal
 ```
 
 Wait until two targets are `healthy` (`describe-target-health`) before the next section. The instance
-IDs may be different from the start: the group replaced them. Terraform sees no change, because the
-path is `/` again.
+IDs may be different from the start: the group replaced them. A `terraform plan` should show no
+change, because the path is `/` again.
 
 ## Shift traffic away from one AZ
 
@@ -180,5 +187,5 @@ Cancel the shift, or let it expire after 30 minutes:
 aws arc-zonal-shift cancel-zonal-shift --zonal-shift-id "$SHIFT"
 ```
 
-Wait a little, and both AZs answer in the loop again. Then run `terraform plan`: it shows no change.
+Wait a little, and both AZs answer in the loop again. Then run `terraform plan`: it should show no change.
 Destroy the lab when you are done ([Destroy now](README.md#destroy-now)).

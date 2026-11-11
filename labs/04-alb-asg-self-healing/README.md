@@ -163,7 +163,10 @@ Run every command from `labs/04-alb-asg-self-healing/`.
    load balancer with its target group and listener, and the launch template and the group. The load
    balancer is billing from this moment. The first time an AWS account creates a load balancer or an
    Auto Scaling group, AWS creates a service-linked role for the service (it is free and stays after
-   the destroy). If the apply fails on one of them right after it was created, apply again.
+   the destroy). If the apply fails on one of them right after it was created, the resources that did get
+   created change the picture, so `terraform apply lab.tfplan` then stops with `Saved plan is stale`.
+   Run `terraform plan -out lab.tfplan` again, then `terraform apply lab.tfplan`. In CI, dispatch the
+   apply again: the approval gate refuses a plan that changed since you approved it.
 
 3. Wait a few minutes for the instances to start and pass the health check, then check the stack with
    `bash verify.sh` (see [Verify](#verify)).
