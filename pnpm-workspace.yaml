@@ -10,3 +10,8 @@ minimumReleaseAge: 4320
 # (via @expressive-code/core, latest) still pins 6.x, so force 7.x for that one edge only.
 overrides:
   postcss-nested>postcss-selector-parser: ^7.1.6
+  # rolldown 1.3's wasm binding asks for the @emnapi 2.0.0 beta, and pnpm then gives the same beta to
+  # the language server behind `astro check`, which crashes on exit and hangs. Keep @emnapi on the
+  # stable line. rolldown loads its native binary on the platforms we run (win32-x64, linux-x64).
+  '@emnapi/core': ^1.11.3
+  '@emnapi/runtime': ^1.11.3
