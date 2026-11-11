@@ -185,7 +185,7 @@ typed into the parent by hand, and a recreated zone gets different name servers.
 
 | Role          | Assumed by                                                     | Can                                                                                                                                                                                                               | Cannot                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | ------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fg-tf-plan`  | jobs on pull requests and on the main branch of the repository | read the configuration of resources (`ReadOnlyAccess`); read lab state under `labs/`                                                                                                                              | write or delete any object in the state bucket, lock files included; read state outside `labs/`; read secret values (`secretsmanager:GetSecretValue`); read the account's own SSM parameters; read objects in other buckets                                                                                                                                                                                                                                       |
+| `fg-tf-plan`  | jobs on pull requests and on the main branch of the repository | read the configuration of resources (`ReadOnlyAccess`); read lab state under `labs/`                                                                                                                              | write or delete any object in the state bucket, lock files included; read state outside `labs/`; read secret values (`secretsmanager:GetSecretValue`); read the account's own SSM parameters; receive SQS messages (`sqs:ReceiveMessage`); read CloudWatch Logs events; read objects in other buckets                                                                                                                                                             |
 | `fg-tf-apply` | jobs that run in the `infra` GitHub environment                | create, change and delete almost anything (`AdministratorAccess`); change the hosted zone and its records; read and write lab state under `labs/`; create roles under `/lab/` and change their trust and policies | change the CI roles, `OrganizationAccountAccessRole`, the boundary or the OIDC provider; write to any role outside the `/lab/` path; create or change a role without the boundary; create IAM users, access keys or login profiles; turn off account Block Public Access or EBS default encryption, change the default EBS key, delete the analyzer or hide its findings; change the state bucket's settings; touch `bootstrap/` state or any key outside `labs/` |
 
 **`fg-tf-apply` is only as safe as the `infra` environment.** The trust policy accepts any job of the
@@ -213,13 +213,14 @@ policy denies to the CI roles.
 `<key>.tflock` into the bucket, and `fg-tf-plan` is denied every write. A plan with `-lock=false`
 only reads state. `fg-tf-apply` writes the lock normally.
 
-**Trade-off of the plan role's read denies.** `ReadOnlyAccess` can read object contents, secret values
-and parameters; `fg-tf-plan` denies the ones that matter, so a pull request cannot turn a plan into a
-data read of the kinds it denies. The price: a lab that manages S3 objects, secrets or SSM parameters in the account cannot be
-planned by `fg-tf-plan` (the read fails with an explicit deny). Plan such a lab locally instead, or
-keep the data out of Terraform. AWS public parameters (such as AMI IDs under `/aws/service/`) still
-resolve. `ReadOnlyAccess` can still read some data that is not denied (DynamoDB items, CloudWatch Logs
-events, Lambda environment variables), so do not keep secrets there.
+**Trade-off of the plan role's read denies.** `ReadOnlyAccess` can read object contents, secret values,
+parameters and log events, and receive queue messages; `fg-tf-plan` denies the ones that matter, so a
+pull request cannot turn a plan into a data read of the kinds it denies. The price: a lab that manages
+S3 objects, secrets or SSM parameters in the account cannot be planned by `fg-tf-plan` (the read fails
+with an explicit deny; Terraform never receives messages or reads log events). Plan such a lab locally
+instead, or keep the data out of Terraform. AWS public parameters (such as AMI IDs under
+`/aws/service/`) still resolve. `ReadOnlyAccess` can still read some data that is not denied (DynamoDB
+items, Lambda environment variables), so do not keep secrets there.
 
 Policy documents are built with `jsonencode` from plan-time values (names, the account ID and the
 Region), never from computed attributes, so the plan shows the exact JSON and a role can be named in
