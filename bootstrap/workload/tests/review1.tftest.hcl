@@ -244,13 +244,13 @@ run "ac32_bootstrap_deny_never_covers_the_bucket_arn" {
   }
 }
 
-# AC-33: the tf-plan inline policy has exactly the three expected denies
-run "ac33_tf_plan_deny_is_exactly_three_statements" {
+# AC-33: the tf-plan inline policy has exactly the five expected denies
+run "ac33_tf_plan_deny_is_exactly_five_statements" {
   command = plan
 
   assert {
-    condition     = length(jsondecode(aws_iam_role_policy.tf_plan_deny.policy).Statement) == 3
-    error_message = "tf_plan_deny must have exactly 3 statements"
+    condition     = length(jsondecode(aws_iam_role_policy.tf_plan_deny.policy).Statement) == 5
+    error_message = "tf_plan_deny must have exactly 5 statements"
   }
 
   assert {

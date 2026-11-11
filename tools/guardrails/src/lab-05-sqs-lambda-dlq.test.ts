@@ -863,14 +863,35 @@ interface Deny {
   text: string;
 }
 
-/** Every `Effect = "Deny"` statement of a guardrail file (locals included), with its Sid. */
-function denyStatements(...segments: string[]): Deny[] {
-  const text = repoText(...segments);
+/** Every `Effect = "Deny"` statement of a guardrail text (locals included), with its Sid. */
+function denyStatementsOfText(text: string, file: string): Deny[] {
   return [...text.matchAll(/\bEffect\s*=\s*"Deny"/g)].map((match) => {
     const statement = enclosingBlock(text, match.index);
     const sid = /\bSid\s*=\s*"([^"]+)"/.exec(statement)?.[1] ?? '';
-    return { file: segments.join('/'), sid, text: statement };
+    return { file, sid, text: statement };
   });
+}
+
+/** Every `Effect = "Deny"` statement of a guardrail file (locals included), with its Sid. */
+function denyStatements(...segments: string[]): Deny[] {
+  return denyStatementsOfText(repoText(...segments), segments.join('/'));
+}
+
+/**
+ * What the AC-33 scan reads of a guardrail text (comments already stripped): every Deny of scp.tf and
+ * boundary.tf, but of ci_roles.tf only the tf_apply_deny policy (the guardrails over what the lab and
+ * its deploy do). A deny on the read-only plan role (tf_plan_deny) cannot shadow the lab's demo.
+ */
+function scannedDenies(file: string, text: string): Deny[] {
+  if (!file.endsWith('ci_roles.tf')) return denyStatementsOfText(text, file);
+  const applyPolicy = blockBodies(
+    text,
+    /\bresource\s+"aws_iam_role_policy"\s+"tf_apply_deny"\s*\{/,
+  );
+  if (applyPolicy.length !== 1) {
+    throw new Error(`${file}: expected one tf_apply_deny policy, found ${applyPolicy.length}`);
+  }
+  return denyStatementsOfText(applyPolicy[0] ?? '', file);
 }
 
 /** The quoted strings of an Action value; a reference (not a literal) is a failure. */
@@ -930,7 +951,8 @@ const ALLOWED_NOT_ACTION_DENIES = [
 ];
 
 describe('AC-33: no guardrail outside the lab shadows the demo', () => {
-  const all = (): Deny[] => GUARDRAIL_FILES.flatMap((segments) => denyStatements(...segments));
+  const all = (): Deny[] =>
+    GUARDRAIL_FILES.flatMap((segments) => scannedDenies(segments.join('/'), repoText(...segments)));
 
   test('AC-33: the reader finds the Deny statements of the three guardrail files', () => {
     const denies = all();
@@ -1087,5 +1109,97 @@ describe('AC-35: the 2.1 page links the lab', () => {
     expect(link, `no line holds ${URL}`).toBeGreaterThan(labs);
     const nextHeading = lines.findIndex((line, index) => index > labs && /^#{1,6}\s/.test(line));
     if (nextHeading !== -1) expect(link).toBeLessThan(nextHeading);
+  });
+});
+
+// =================================================================================================
+// Spec 049 (issue #161): the AC-33 scan reads tf_apply_deny of ci_roles.tf, not tf_plan_deny
+// =================================================================================================
+
+const CI_ROLES = 'bootstrap/workload/ci_roles.tf';
+
+/** A ci_roles.tf text whose `<policy>` resource denies sqs:ReceiveMessage and the other one does not. */
+function ciRolesFixture(denying: 'tf_plan_deny' | 'tf_apply_deny'): string {
+  const policy = (name: string, statement: string): string => `
+resource "aws_iam_role_policy" "${name}" {
+  name = "${name}"
+  role = aws_iam_role.${name}.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      ${statement},
+    ]
+  })
+}
+`;
+  const receive = `{
+        Sid      = "DenyMessageReads"
+        Effect   = "Deny"
+        Action   = "sqs:ReceiveMessage"
+        Resource = "arn:aws:sqs:*:111111111111:*"
+      }`;
+  const other = `{
+        Sid       = "DenyStateBucketSettings"
+        Effect    = "Deny"
+        NotAction = ["s3:Get*", "s3:List*"]
+        Resource  = local.state_bucket_arn
+      }`;
+  return (
+    policy('tf_plan_deny', denying === 'tf_plan_deny' ? receive : other) +
+    policy('tf_apply_deny', denying === 'tf_apply_deny' ? receive : other)
+  );
+}
+
+/** The Deny statements of a ci_roles.tf text that the AC-33 scan would flag as covering a demo action. */
+function shadowedDemoActions(ciRolesText: string): string[] {
+  return scannedDenies(CI_ROLES, stripHclComments(ciRolesText)).flatMap((deny) =>
+    actionStrings(deny)
+      .filter((action) => DEMO_ACTIONS.some((demo) => actionPattern(action).test(demo)))
+      .map((action) => `${deny.sid} denies ${action}`),
+  );
+}
+
+describe('AC-7: the AC-33 scan reads tf_apply_deny of ci_roles.tf and not tf_plan_deny', () => {
+  const realDenies = (): Deny[] => scannedDenies(CI_ROLES, repoText(...CI_ROLES.split('/')));
+
+  test('AC-7: of ci_roles.tf the scan reads the tf_apply_deny denies', () => {
+    expect(realDenies().map((deny) => deny.sid)).toContain('DenyStateBucketSettings');
+  });
+
+  test.each(['DenyObjectReadsOutsideLabState', 'DenySecretReads', 'DenyParameterReads'])(
+    'AC-7: of ci_roles.tf the scan does not read the tf_plan_deny statement %s',
+    (sid) => {
+      expect(realDenies().map((deny) => deny.sid)).not.toContain(sid);
+    },
+  );
+
+  test.each([
+    ['bootstrap/management/scp.tf', ['bootstrap', 'management', 'scp.tf']],
+    ['bootstrap/workload/boundary.tf', ['bootstrap', 'workload', 'boundary.tf']],
+  ] as const)('AC-7: the scan reads every Deny of %s', (file, segments) => {
+    const text = repoText(...segments);
+    const whole = denyStatementsOfText(text, file);
+    expect(whole.length, file).toBeGreaterThan(0);
+    expect(scannedDenies(file, text).map((deny) => deny.sid)).toEqual(
+      whole.map((deny) => deny.sid),
+    );
+  });
+
+  test('AC-7: the scan fails when ci_roles.tf has no tf_apply_deny policy', () => {
+    const planOnly = ciRolesFixture('tf_plan_deny').replace('"tf_apply_deny"', '"tf_other"');
+    expect(() => scannedDenies(CI_ROLES, stripHclComments(planOnly))).toThrow(/tf_apply_deny/);
+  });
+});
+
+describe('AC-8: the narrowed scan still catches a shadow in tf_apply_deny', () => {
+  test('AC-8: a tf_apply_deny that denies sqs:ReceiveMessage is reported', () => {
+    expect(shadowedDemoActions(ciRolesFixture('tf_apply_deny'))).toEqual([
+      'DenyMessageReads denies sqs:ReceiveMessage',
+    ]);
+  });
+
+  test('AC-8: a tf_plan_deny that denies sqs:ReceiveMessage is not reported', () => {
+    expect(shadowedDemoActions(ciRolesFixture('tf_plan_deny'))).toEqual([]);
   });
 });

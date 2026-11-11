@@ -732,3 +732,50 @@ describe('AC-38: contract fixes', () => {
     },
   );
 });
+
+// ---- Spec 049 (issue #161): AC-6, the README on the plan role's message and log read denies ---------
+
+/** The text on one line, so that a phrase wrapped over two lines is still found. */
+const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim();
+
+/** The "Cannot" cell (4th column) of the `fg-tf-plan` row of the roles table, on one line. */
+function planRoleCannotCell(readme: string): string {
+  const row = readme.split(/\r?\n/).find((line) => line.startsWith('| `fg-tf-plan`'));
+  if (row === undefined) throw new Error('no fg-tf-plan row in the README roles table');
+  const cells = row.split('|').map((cell) => cell.trim());
+  // A row "| a | b | c | d |" splits into ['', a, b, c, d, ''].
+  return oneLine(cells[4] ?? '');
+}
+
+/** The trade-off paragraph of the plan role's read denies, on one line. */
+function tradeOffParagraph(readme: string): string {
+  const paragraph = readme
+    .split(/\r?\n\s*\r?\n/)
+    .find((block) => block.startsWith("**Trade-off of the plan role's read denies.**"));
+  if (paragraph === undefined) throw new Error('no trade-off paragraph in the README');
+  return oneLine(paragraph);
+}
+
+describe('AC-6: the README names the message and log read denies of fg-tf-plan', () => {
+  const readme = (): string => readStackFile('README.md');
+
+  test('AC-6: the fg-tf-plan "Cannot" cell contains sqs:ReceiveMessage', () => {
+    expect(planRoleCannotCell(readme())).toContain('sqs:ReceiveMessage');
+  });
+
+  test('AC-6: the fg-tf-plan "Cannot" cell contains the words "CloudWatch Logs events"', () => {
+    expect(planRoleCannotCell(readme())).toContain('CloudWatch Logs events');
+  });
+
+  test('AC-6: the trade-off paragraph contains "log events" and "queue messages"', () => {
+    const paragraph = tradeOffParagraph(readme());
+    expect(paragraph).toContain('log events');
+    expect(paragraph).toContain('queue messages');
+  });
+
+  test('AC-6: the "can still read" parenthesis is exactly the DynamoDB and Lambda one', () => {
+    const match = /can still read[^(]*(\([^)]*\))/.exec(tradeOffParagraph(readme()));
+    expect(match, 'no parenthesis after "can still read"').not.toBeNull();
+    expect(match?.[1]).toBe('(DynamoDB items, Lambda environment variables)');
+  });
+});
