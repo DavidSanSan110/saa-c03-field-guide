@@ -1,0 +1,38 @@
+id: 'd1-1.2-0019'
+domain: 1
+task: '1.2'
+services:
+  - 'shield'
+  - 'cloudfront'
+  - 'route53'
+  - 'elb'
+difficulty: hard
+type: single
+stem: 'An online betting company serves its public website through Amazon CloudFront, with an Application Load Balancer as the origin, and its domain is hosted in Amazon Route 53. The company subscribes to the AWS Business Support plan. After a large, sustained DDoS attack that scaled the fleet out and raised the monthly bill, management wants expert help from AWS during future attacks and a way to be compensated for scaling charges caused by an attack. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Rely on AWS Shield Standard for the distribution, the hosted zone and the load balancer, and add AWS WAF rate-based rules.'
+    correct: false
+    why: 'Shield Standard is automatic and free, and WAF rate-based rules help against request floods. Neither gives access to the Shield Response Team or any credit for charges caused by an attack; those are capabilities of a Shield Advanced subscription.'
+  - key: B
+    text: 'Subscribe to AWS Shield Advanced and add protection for the CloudFront distribution, the Route 53 hosted zone and the Application Load Balancer.'
+    correct: true
+    why: 'Shield Advanced covers CloudFront distributions, Route 53 hosted zones and Application Load Balancers once they are added as protected resources. It lets the company contact the Shield Response Team during an attack (the Business Support plan the company already has meets that condition) and offers cost protection as service credits for bill spikes caused by an attack.'
+  - key: C
+    text: 'Use AWS Firewall Manager to deploy AWS WAF web ACLs with managed rule groups to the distribution and the load balancer.'
+    correct: false
+    why: 'Firewall Manager rolls out rules centrally, and its Shield Advanced policies only manage an existing Shield Advanced subscription. A WAF-only policy provides no response team and no cost protection.'
+  - key: D
+    text: 'Enable AWS Shield Standard on each resource and open an AWS Support case after every attack to request a refund of the extra scaling charges.'
+    correct: false
+    why: 'Shield Standard is already applied to everyone and does not need enabling. Cost protection is something offered as part of Shield Advanced, in the form of service credits, so Standard alone does not entitle the company to compensation.'
+cue: 'expert help during DDoS attacks and compensation for scaling charges -> Shield Advanced (protect each resource), not Standard or WAF alone'
+references:
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/ddos-advanced-summary-capabilities.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/ddos-advanced-summary-protected-resources.html'
+  - 'https://docs.aws.amazon.com/waf/latest/developerguide/ddos-overview.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

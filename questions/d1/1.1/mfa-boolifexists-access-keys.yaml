@@ -1,0 +1,35 @@
+id: 'd1-1.1-0016'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+  - 'ec2'
+difficulty: hard
+type: single
+stem: 'A company wants to stop engineers from terminating Amazon EC2 instances unless they signed in with MFA. A security engineer attached to the engineers group a policy with a Deny statement for ec2:TerminateInstances and the condition {"Bool": {"aws:MultiFactorAuthPresent": "false"}}. In testing, calls made from the AWS CLI with an IAM user''s long-term access keys still terminate instances, while console users without MFA are blocked. How should the engineer fix the policy?'
+options:
+  - key: A
+    text: 'Change the condition operator to BoolIfExists so the Deny also matches requests where the key is missing: {"BoolIfExists": {"aws:MultiFactorAuthPresent": "false"}}.'
+    correct: true
+    why: 'Requests signed with long-term access keys do not carry aws:MultiFactorAuthPresent at all, so a plain Bool test on false never matches them. BoolIfExists treats a missing key as matching, so the Deny applies to those requests as well (scripts that use access keys must then obtain MFA-backed temporary credentials).'
+  - key: B
+    text: 'Register a virtual MFA device for every engineer, so that their access-key requests include the MFA flag.'
+    correct: false
+    why: 'Long-term credentials never include this key, whether or not the user owns an MFA device. The flag appears only on temporary credentials obtained with MFA, for example from GetSessionToken.'
+  - key: C
+    text: 'Add a second condition, {"NumericLessThan": {"aws:MultiFactorAuthAge": "3600"}}, so that stale MFA sessions are blocked.'
+    correct: false
+    why: 'aws:MultiFactorAuthAge is also absent when MFA was not used, and a numeric test on an absent key does not match, so the Deny would still not apply to access-key requests.'
+  - key: D
+    text: 'Replace the Deny with an Allow statement that uses Bool with aws:MultiFactorAuthPresent set to true.'
+    correct: false
+    why: 'An Allow with an MFA condition does not remove permissions granted by other statements, so engineers with another policy that allows termination are still unrestricted. Blocking needs a Deny that also catches requests without the key.'
+cue: 'Deny when MFA is not present, but access keys bypass it: the key is missing for long-term credentials, so use BoolIfExists'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_condition-keys.html'
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_mfa_configure-api-require.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

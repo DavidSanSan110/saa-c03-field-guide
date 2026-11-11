@@ -1,0 +1,35 @@
+id: 'd1-1.1-0015'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A company runs many short-lived projects. Engineers work on one or two projects at a time and create Amazon EC2 instances for them. Today there is one IAM role and one policy per project, each listing instance ARNs, and administrators must edit a policy whenever a project adds instances and create a new role and policy whenever a project starts. The company wants engineers to start and stop only the instances of their own projects, with the LEAST ongoing policy maintenance. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Tag each engineer role session or role with a project tag and tag every instance with the same key. Use one policy that allows ec2:StartInstances and ec2:StopInstances with the condition {"StringEquals": {"aws:ResourceTag/project": "${aws:PrincipalTag/project}"}}.'
+    correct: true
+    why: 'This is attribute-based access control: one policy compares the principal tag with the resource tag. New instances tagged with the right project are covered automatically, and a new project only needs matching tag values, with no policy edit.'
+  - key: B
+    text: 'Keep one role and one policy per project, and automate the policy edit with a script that runs whenever an instance launches.'
+    correct: false
+    why: 'This keeps the role-per-project model and just automates its upkeep. The number of policies still grows with every project and the script becomes new infrastructure to maintain.'
+  - key: C
+    text: 'Create one IAM group per project with an inline policy that lists the project instance IDs, and add engineers to the groups.'
+    correct: false
+    why: 'Groups simplify assigning people but each group policy still names specific resources, so every new instance forces a policy update and every new project needs a new group and policy.'
+  - key: D
+    text: 'Attach a service control policy to each project OU that allows the project instances, and remove the per-project IAM policies.'
+    correct: false
+    why: 'An SCP never grants permissions, it only limits them, so engineers would have no allow at all once the IAM policies are gone. It also does not distinguish between projects inside one account.'
+cue: 'one policy, project tag on the principal must equal project tag on the resource, new projects without policy edits: ABAC'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/introduction_attribute-based-access-control.html'
+  - 'https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

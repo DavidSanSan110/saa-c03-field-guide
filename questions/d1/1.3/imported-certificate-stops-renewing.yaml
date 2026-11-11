@@ -1,0 +1,39 @@
+id: 'd1-1.3-0019'
+domain: 1
+task: '1.3'
+services:
+  - 'acm'
+  - 'elb'
+  - 'route53'
+difficulty: medium
+type: single
+stem: "A company's public website sits behind an Application Load Balancer. Its HTTPS listener uses a certificate that was bought from a third-party CA and imported into AWS Certificate Manager (ACM). Last year the certificate expired unnoticed and caused an outage. The domain is hosted in Amazon Route 53, there is no requirement to use a specific CA, and the team wants to stop doing manual yearly renewals altogether. What should a solutions architect recommend?"
+options:
+  - key: A
+    text: 'Keep the imported certificate, since ACM renews every certificate it stores before it expires.'
+    correct: false
+    why: 'ACM does not provide managed renewal for imported certificates. The owner has to get a new certificate and reimport it, which is what caused the outage.'
+  - key: B
+    text: 'Create an Amazon EventBridge rule on the ACM certificate-approaching-expiration event that sends an email to the team.'
+    correct: false
+    why: 'ACM does send these events for imported certificates, so this is a useful warning, but someone still has to buy and reimport the certificate by hand. It does not remove the manual renewal.'
+  - key: C
+    text: 'Request a public certificate from ACM for the domain with DNS validation, and switch the ALB listener to it.'
+    correct: true
+    why: 'ACM renews certificates it issues automatically when DNS validation is used, as long as the certificate is in use and the validation CNAME record stays in place. A certificate associated with a load balancer is eligible for renewal.'
+  - key: D
+    text: 'Deploy the AWS Config rule acm-certificate-expiration-check so ACM renews the imported certificate when it is flagged.'
+    correct: false
+    why: 'The rule only reports certificates that are close to expiry as non-compliant. It does not renew or reimport anything.'
+cue: 'imported third-party certificate; ACM does not renew; no manual renewal wanted; domain in Route 53'
+references:
+  - 'https://docs.aws.amazon.com/acm/latest/userguide/import-certificate.html'
+  - 'https://docs.aws.amazon.com/acm/latest/userguide/managed-renewal.html'
+  - 'https://docs.aws.amazon.com/acm/latest/userguide/dns-validation.html'
+  - 'https://docs.aws.amazon.com/acm/latest/userguide/supported-events.html'
+  - 'https://docs.aws.amazon.com/config/latest/developerguide/acm-certificate-expiration-check.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

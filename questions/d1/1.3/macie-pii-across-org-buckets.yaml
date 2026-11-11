@@ -1,0 +1,34 @@
+id: 'd1-1.3-0016'
+domain: 1
+task: '1.3'
+services:
+  - 'macie'
+  - 's3'
+difficulty: easy
+type: single
+stem: 'A retailer with about 80 AWS accounts in one AWS Organizations organization keeps customer exports in Amazon S3 buckets that many teams create on their own. The privacy officer needs a report of which buckets hold personal data such as full names, payment card numbers and passport numbers, and wants the work managed from one central security account with as little custom code as possible. Which solution meets these requirements?'
+options:
+  - key: A
+    text: "Enable Amazon Macie with AWS Organizations, designate the security account as the Macie administrator, and run sensitive data discovery jobs or automated discovery across the member accounts' buckets."
+    correct: true
+    why: 'Macie finds sensitive data in S3 objects with managed data identifiers (personal, financial and credentials data) and can be centrally managed from an administrator account in an organization. Its findings report what was found and where, which is what the privacy officer asked for.'
+  - key: B
+    text: 'Enable Amazon GuardDuty in every account and review its S3 protection findings for personal data.'
+    correct: false
+    why: 'GuardDuty looks for suspicious or malicious activity by analysing logs such as CloudTrail data events and uses threat intelligence. It does not open objects to classify their content.'
+  - key: C
+    text: 'Write Amazon Athena queries with regular expressions over every bucket in every account and merge the results by hand.'
+    correct: false
+    why: 'This could work in theory but it is a lot of custom work: someone has to define tables for unknown data layouts, maintain the patterns and aggregate across accounts. Macie already ships managed identifiers and central management.'
+  - key: D
+    text: 'Turn on S3 Storage Lens for the organization and read the dashboards to see which buckets contain personal data.'
+    correct: false
+    why: 'Storage Lens reports usage and activity metrics for storage, not what the objects contain, so it cannot tell a bucket with passport numbers from one with images.'
+cue: 'find personal data such as card and passport numbers in S3 buckets across an organization with minimal custom code'
+references:
+  - 'https://docs.aws.amazon.com/macie/latest/user/what-is-macie.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

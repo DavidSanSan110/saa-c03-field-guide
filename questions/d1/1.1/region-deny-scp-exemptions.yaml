@@ -1,0 +1,39 @@
+id: 'd1-1.1-0020'
+domain: 1
+task: '1.1'
+services:
+  - 'organizations'
+  - 'iam'
+difficulty: hard
+type: multiple
+stem: 'A company has an AWS Organizations organization with all features enabled. The FullAWSAccess SCP remains attached everywhere. An administrator attaches this SCP to the organization root: one statement with Effect Deny, NotAction listing global services such as iam:*, organizations:*, route53:*, cloudfront:*, sts:* and support:*, Resource "*", and the condition {"StringNotEquals": {"aws:RequestedRegion": ["eu-west-3", "eu-north-1"]}}. Which statements about the effect of this SCP are true? (Choose two.)'
+options:
+  - key: A
+    text: 'A user with the AdministratorAccess policy in a member account cannot run EC2 instances in the us-east-1 Region.'
+    correct: true
+    why: 'The SCP is a ceiling for every user and role in a member account, including administrators and the account root user, and an explicit deny at the root applies to every account below it. EC2 is not in the NotAction list, so a request to an unapproved Region matches the deny.'
+  - key: B
+    text: 'Actions performed by a service-linked role are not restricted by the SCP.'
+    correct: true
+    why: 'SCPs do not affect service-linked roles, so an AWS service acting through its service-linked role is not blocked by the Region deny.'
+  - key: C
+    text: 'The same restriction applies to IAM users in the management account, because the SCP is attached to the root.'
+    correct: false
+    why: 'The management account is outside the reach of SCPs: its users and roles stay unrestricted even by a policy attached at the root, so it needs other controls.'
+  - key: D
+    text: 'Engineers in member accounts can now launch EC2 instances in eu-west-3 without any further IAM permissions.'
+    correct: false
+    why: 'An SCP never grants permissions. Engineers still need an identity-based or resource-based policy that allows the action; the SCP only keeps them inside the approved Regions.'
+  - key: E
+    text: 'The root user of a member account is exempt from the SCP, so it can still use unapproved Regions.'
+    correct: false
+    why: 'SCPs restrict the root user of a member account too. The exceptions are a short list of specific tasks and the management account, not member-account root users in general.'
+cue: 'Deny with NotAction for global services and aws:RequestedRegion: restricts member-account admins and root, not the management account or service-linked roles, and grants nothing'
+references:
+  - 'https://docs.aws.amazon.com/organizations/latest/userguide/orgs_manage_policies_scps.html'
+  - 'https://docs.aws.amazon.com/controltower/latest/controlreference/primary-region-deny-policy.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

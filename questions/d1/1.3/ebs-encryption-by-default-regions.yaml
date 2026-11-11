@@ -1,0 +1,35 @@
+id: 'd1-1.3-0018'
+domain: 1
+task: '1.3'
+services:
+  - 'ebs'
+  - 'kms'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A company runs workloads in eu-west-1 and eu-central-1. Its policy says every new Amazon EBS volume, including the root volumes created when instances launch and volumes created from copied snapshots, must be encrypted with a customer managed KMS key. Teams should not need to remember to tick an encryption box, and launches must still succeed. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'In each of the two Regions, turn on EBS encryption by default and set the customer managed key as the default encryption key.'
+    correct: true
+    why: 'Encryption by default makes new volumes and snapshot copies encrypted automatically, with the default aws/ebs key or a symmetric customer managed key you choose. It is a setting per Region, so it must be done in both Regions.'
+  - key: B
+    text: 'Turn on EBS encryption by default in eu-west-1 only, because the setting applies to the whole account in every Region.'
+    correct: false
+    why: 'Encryption by default is a Region-specific setting, so eu-central-1 would keep creating unencrypted volumes.'
+  - key: C
+    text: 'Deploy an AWS Config rule that flags unencrypted EBS volumes in both Regions.'
+    correct: false
+    why: 'A Config rule evaluates and reports resources that already exist. It does not encrypt anything at creation time, so non-compliant volumes are still created.'
+  - key: D
+    text: 'Add a service control policy that denies launching instances and creating volumes when the volume is not encrypted.'
+    correct: false
+    why: 'A deny would block the unencrypted requests instead of encrypting them, which breaks the requirement that launches must still succeed without anyone choosing encryption.'
+cue: 'every new volume encrypted automatically, Regions, customer managed key, launches must still succeed'
+references:
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/encryption-by-default.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
