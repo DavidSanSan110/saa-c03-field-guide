@@ -1,0 +1,34 @@
+id: 'd2-2.2-0022'
+domain: 2
+task: '2.2'
+services:
+  - 'rds'
+difficulty: medium
+type: single
+stem: 'A company runs its order database on Amazon RDS for PostgreSQL as a Multi-AZ DB instance deployment. Heavy reporting queries overload the primary, while the standby in the other Availability Zone does nothing until a failover. The company wants failover to stay automatic, wants the idle standby capacity to answer the reporting reads, and does not want to migrate away from RDS for PostgreSQL. Which option does all of this with the least change?'
+options:
+  - key: A
+    text: "Keep the Multi-AZ DB instance deployment and point the reporting tool at the standby instance's endpoint."
+    correct: false
+    why: 'In a Multi-AZ DB instance deployment the standby exists only as a failover target and does not accept read connections, so there is no standby endpoint to query. Readable standbys come from a different deployment option.'
+  - key: B
+    text: 'Add two cross-AZ read replicas to the Multi-AZ DB instance and send the reporting reads to them.'
+    correct: false
+    why: 'Replicas would take the reporting load, but they are extra instances that you pay for in addition to the standby, and they are not automatic failover targets: the single standby still is, and it still serves no reads.'
+  - key: C
+    text: 'Convert to a Multi-AZ DB cluster with one writer and two reader DB instances in three Availability Zones, and send the reporting reads to the readers.'
+    correct: true
+    why: 'A Multi-AZ DB cluster has a writer plus two readable reader instances in separate AZs. The readers are the automatic failover targets and also serve read traffic, replication is semisynchronous so a commit needs one reader to acknowledge it, and it stays RDS for PostgreSQL.'
+  - key: D
+    text: 'Migrate the database to Aurora PostgreSQL and use the reader endpoint for reporting.'
+    correct: false
+    why: 'Aurora would give readable replicas and quick failover, but it is a migration to a different platform, which the company ruled out, and it is much more change than switching the RDS deployment option.'
+cue: 'automatic failover plus the standbys should serve reads, staying on RDS'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/multi-az-db-clusters-concepts.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/Concepts.MultiAZ.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

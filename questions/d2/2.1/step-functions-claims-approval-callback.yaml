@@ -1,0 +1,35 @@
+id: 'd2-2.1-0022'
+domain: 2
+task: '2.1'
+services:
+  - 'step-functions'
+  - 'lambda'
+  - 'sns'
+difficulty: hard
+type: single
+stem: 'An insurer processes each claim in several steps: a Lambda function validates the claim, another calls an external fraud-scoring service that fails now and then with transient errors, and claims above a set amount must be approved by a human adjuster who receives an email and may take up to three days to answer. After approval, a last function issues the payment. The team wants retries with backoff, a defined path for rejected or failed claims, and no servers or polling code of its own to track where each claim is. Which design needs the least custom code?'
+options:
+  - key: A
+    text: "Write one Lambda function that runs all the steps in order and, for large claims, loops while it checks a DynamoDB table for the adjuster's decision."
+    correct: false
+    why: 'A single function would have to stay running while it waits for a person, and Lambda functions have a timeout, so a decision that takes days does not fit. You would also write the retry and failure handling yourself.'
+  - key: B
+    text: "Use a Standard workflow in AWS Step Functions. Give the fraud-scoring task a Retry with backoff, add Catch branches for failures and rejections, and make the approval task an SNS publish with the .waitForTaskToken pattern, so the adjuster's response calls SendTaskSuccess or SendTaskFailure with the token."
+    correct: true
+    why: 'Callback tasks pause the execution until the task token is returned with SendTaskSuccess or SendTaskFailure, and a Standard execution can wait up to one year. Retry and Catch are declared in the state machine, and the console shows the state of every claim, so there is no polling or custom state tracking.'
+  - key: C
+    text: "Connect the steps with SQS queues. Each Lambda function reads one queue and writes to the next, and a DynamoDB table stores the claim status, retry counts and the adjuster's decision."
+    correct: false
+    why: 'This can work, but every piece of the workflow logic (backoff, error routing, waiting for the decision, timeouts, tracking the status of each claim) becomes code and tables that the team builds and maintains. The requirement is the least custom code.'
+  - key: D
+    text: 'Use an Express workflow in AWS Step Functions, with the approval task using .waitForTaskToken so it holds the execution until the adjuster replies.'
+    correct: false
+    why: 'Express workflows support only the Request Response integration pattern, not .waitForTaskToken, and they are meant for short, high-volume runs. A wait of days needs a Standard workflow.'
+cue: 'wait for a human who may take days, retries and error paths, no custom tracking code -> Step Functions Standard with a task token callback'
+references:
+  - 'https://docs.aws.amazon.com/step-functions/latest/dg/connect-to-resource.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

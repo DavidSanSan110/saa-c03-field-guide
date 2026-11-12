@@ -1,0 +1,35 @@
+id: 'd2-2.2-0017'
+domain: 2
+task: '2.2'
+services:
+  - 'route53'
+  - 'elb'
+difficulty: easy # easy | medium | hard
+type: single # single | multiple
+stem: 'A ticketing company runs its full web application behind an Application Load Balancer in us-west-2 and an identical stack behind an Application Load Balancer in eu-west-1. Both stacks serve production traffic all day. The company wants each visitor sent to whichever Region responds faster for them, and wants a Region that stops working to be removed from DNS answers automatically, with no manual change. Which Route 53 configuration meets these requirements?'
+options:
+  - key: A
+    text: 'Create a latency alias record for each load balancer, one per Region, and set Evaluate Target Health to Yes on both.'
+    correct: true
+    why: 'Latency records answer with the Region that gives the user the lowest latency. Because Evaluate Target Health is on, Route 53 stops returning a record whose load balancer is unhealthy, so users fall through to the other Region. Both stacks stay active, which is the active-active pattern.'
+  - key: B
+    text: 'Create a primary and a secondary failover record, with the us-west-2 load balancer as the primary.'
+    correct: false
+    why: 'Failover routing is active-passive. All users would be sent to us-west-2 while it is healthy, so eu-west-1 would never serve visitors who are closer to it.'
+  - key: C
+    text: 'Create geolocation records that map North America to us-west-2 and Europe to eu-west-1.'
+    correct: false
+    why: "Geolocation routes by the user's location, not by measured latency, and it is a policy for localisation or legal limits. It also needs a default record, otherwise users from unmatched locations receive no answer."
+  - key: D
+    text: 'Create one simple record that lists both load balancer addresses as values.'
+    correct: false
+    why: 'A simple record returns all its values and does not use health checks, so Route 53 would keep handing out the address of a failed Region and would not pick the faster one.'
+cue: 'both Regions active, nearest/fastest Region per visitor, unhealthy Region dropped automatically'
+references:
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/routing-policy-latency.html'
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-types.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

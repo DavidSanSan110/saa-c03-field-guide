@@ -1,0 +1,42 @@
+id: 'd2-2.1-0025'
+domain: 2
+task: '2.1'
+services:
+  - 'sns'
+  - 'sqs'
+difficulty: medium
+type: multiple
+stem: 'An order service publishes every order event to one Amazon SNS topic, and each event type (OrderPlaced, OrderCancelled, OrderShipped, and others added over time) is a different message. Three consumers each have their own SQS queue subscribed to the topic. The billing queue needs only OrderPlaced and OrderCancelled. The shipping queue needs only OrderPlaced. The analytics queue must receive every event, including types added in the future. Today every queue gets all messages and the consumers discard what they do not need. The publisher should keep using a single topic and no new code should sit between the topic and the queues. Which two actions meet these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Have the publisher set a message attribute with the event type, and add a filter policy on the billing and shipping subscriptions that matches only the event types each one needs.'
+    correct: true
+    why: 'A filter policy is assigned to a subscription, and SNS delivers a message to that subscriber only if its attributes satisfy the policy. This keeps unwanted events out of the billing and shipping queues without extra components.'
+  - key: B
+    text: 'Leave the analytics subscription without a filter policy.'
+    correct: true
+    why: 'A subscription with no filter policy receives every message published to the topic, including event types added later, so analytics needs no maintenance when new events appear.'
+  - key: C
+    text: 'Add a filter policy on the analytics subscription that lists all the event types that exist today.'
+    correct: false
+    why: 'A policy that lists the current types would block event types added later, which breaks the requirement that analytics receives everything.'
+  - key: D
+    text: 'Create one SNS topic per event type, and subscribe each queue to the topics it needs.'
+    correct: false
+    why: 'This forces the publisher to choose among several topics, and the analytics queue would need a new subscription every time a type is added. The requirement is a single topic, which filter policies handle.'
+  - key: E
+    text: 'Subscribe a Lambda function to the topic that reads each event and forwards it to the right queues.'
+    correct: false
+    why: 'It puts custom code and another service to operate between the topic and the queues, which the requirement rules out. Filter policies do the same job inside SNS.'
+  - key: F
+    text: 'Attach a filter policy to the SNS topic itself so that it only publishes the event types that billing and shipping need.'
+    correct: false
+    why: 'Filter policies belong to subscriptions, not to the topic. A rule on the topic would also not give analytics a different set of messages than billing.'
+cue: 'one topic, each queue wants a subset of event types, one wants all -> filter policies on the subscriptions; no filter policy means every message'
+references:
+  - 'https://docs.aws.amazon.com/sns/latest/dg/sns-message-filtering.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

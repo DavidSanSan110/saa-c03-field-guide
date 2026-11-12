@@ -1,0 +1,35 @@
+id: 'd2-2.2-0016'
+domain: 2
+task: '2.2'
+services:
+  - 'elb'
+  - 'ec2'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A trading-data vendor serves clients over a custom binary protocol on TCP. The service runs on EC2 instances behind a Network Load Balancer that is enabled in three Availability Zones. For historical reasons the zones hold 2, 2 and 8 registered instances. Monitoring shows the instances in the two smaller zones running close to their CPU limit while the eight instances in the third zone are mostly idle. No target is failing its health check. The company wants load spread evenly across all twelve instances and accepts a small increase in cost. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Turn on cross-zone load balancing for the Network Load Balancer (or for its target group).'
+    correct: true
+    why: 'A Network Load Balancer has cross-zone load balancing off by default, so each node sends its share (about one third of the connections) only to targets in its own zone. The two-instance zones carry the same share as the eight-instance zone. With cross-zone on, every node spreads traffic over all twelve targets. The trade-off is that EC2 data transfer charges apply for the traffic that crosses zones.'
+  - key: B
+    text: 'Replace the Network Load Balancer with an Application Load Balancer, which always balances across zones.'
+    correct: false
+    why: 'An Application Load Balancer does balance across zones by default, but it only handles HTTP, HTTPS and gRPC at layer 7. The clients here speak a custom binary protocol over TCP, so an ALB cannot carry it. The existing NLB can be fixed with one setting.'
+  - key: C
+    text: 'Increase the deregistration delay on the target group so connections to the busy instances finish more slowly.'
+    correct: false
+    why: 'Deregistration delay only controls how long in-flight connections are given when a target is removed. It does not change how new connections are shared between targets, so the skew stays.'
+  - key: D
+    text: 'Turn off cross-zone load balancing at the target group level to even out each zone.'
+    correct: false
+    why: 'Turning cross-zone off keeps each node limited to the targets in its own zone, which is exactly what produces the uneven load. It is the opposite of the needed change.'
+cue: 'NLB, zones hold 2, 2 and 8 targets, small zones overloaded, no failed health checks, accepts small extra cost'
+references:
+  - 'https://docs.aws.amazon.com/elasticloadbalancing/latest/userguide/how-elastic-load-balancing-works.html'
+  - 'https://docs.aws.amazon.com/elasticloadbalancing/latest/network/edit-target-group-attributes.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

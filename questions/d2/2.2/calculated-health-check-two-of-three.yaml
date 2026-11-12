@@ -1,0 +1,34 @@
+id: 'd2-2.2-0018'
+domain: 2
+task: '2.2'
+services:
+  - 'route53'
+difficulty: hard # easy | medium | hard
+type: single # single | multiple
+stem: 'A company hosts its public site in a primary Region on three web servers that each have their own public IP address, and keeps a smaller standby copy in a second Region. The primary stack can carry production load with any two of the three servers but not with only one. Route 53 already has an endpoint health check for each of the three servers and a failover record pair for the site. The company wants DNS to switch to the standby Region as soon as fewer than two primary servers are healthy, and not before. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Create a calculated health check over the three endpoint checks that reports healthy when at least 2 of the 3 are healthy, and associate it with the primary failover record.'
+    correct: true
+    why: 'A calculated health check combines other health checks and can be set to report healthy when at least x of y are healthy. With x = 2 and y = 3, the primary record stays healthy through the loss of one server and turns unhealthy at the second failure, so Route 53 then answers with the secondary record.'
+  - key: B
+    text: 'Create a calculated health check over the three endpoint checks that reports healthy when one or more of them is healthy (OR), and associate it with the primary record.'
+    correct: false
+    why: 'With OR, the primary stays healthy until the last server fails. A single remaining server cannot carry the load, so users would be kept on an overloaded primary instead of moving to the standby.'
+  - key: C
+    text: 'Create a calculated health check over the three endpoint checks that reports healthy only when all of them are healthy (AND), and associate it with the primary record.'
+    correct: false
+    why: 'With AND, one failed server already flips the primary to unhealthy. The company explicitly wants to tolerate one failure, so this would fail over too early.'
+  - key: D
+    text: 'Build three calculated health checks, each covering a different pair of servers, then add a parent calculated health check that reports healthy when at least 2 of those three are healthy.'
+    correct: false
+    why: 'A calculated health check cannot monitor other calculated health checks, so this nested design is not possible. It is also unnecessary, because one calculated check can count the three endpoint checks directly.'
+cue: 'stays on primary with any two of three servers, fail over when fewer than two healthy, existing endpoint health checks'
+references:
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/health-checks-creating-values.html'
+  - 'https://docs.aws.amazon.com/Route53/latest/DeveloperGuide/dns-failover-types.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

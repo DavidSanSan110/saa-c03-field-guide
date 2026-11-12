@@ -1,0 +1,38 @@
+id: 'd2-2.2-0025'
+domain: 2
+task: '2.2'
+services:
+  - 's3'
+difficulty: medium
+type: multiple
+stem: 'A financial company uploads trade confirmations to a versioned Amazon S3 bucket in eu-west-1. A regulator requires a copy of every new object in a bucket in a second Region within a predictable time, backed by a service commitment, and requires that the operations team is told when an object misses that time. Which actions meet these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Configure a Cross-Region Replication rule on the bucket and turn on S3 Replication Time Control in that rule.'
+    correct: true
+    why: 'S3 Replication Time Control adds a 15-minute replication target backed by a service level agreement to a replication rule, and it also publishes replication metrics. Plain replication has no such commitment.'
+  - key: B
+    text: 'Configure S3 Event Notifications for the OperationMissedThreshold and OperationReplicatedAfterThreshold events and deliver them to an SNS topic that the operations team subscribes to.'
+    correct: true
+    why: "With Replication Time Control enabled, these events tell the bucket owner when an object's replication exceeds, or completes after, the 15-minute threshold. They can be delivered through SQS, SNS or Lambda."
+  - key: C
+    text: 'Run an S3 Batch Replication job every hour to copy the new objects.'
+    correct: false
+    why: 'Batch Replication is an on-demand job for existing, previously failed or already replicated objects. S3 Replication Time Control does not apply to it, so it gives no per-object time commitment.'
+  - key: D
+    text: 'Use a Cross-Region Replication rule without Replication Time Control and watch the destination bucket with a CloudWatch alarm.'
+    correct: false
+    why: 'Cross-Region Replication on its own is asynchronous with no service level agreement on timing. An alarm can show that copies are late, but it cannot make the replication time predictable.'
+  - key: E
+    text: 'Use Same-Region Replication with Replication Time Control to a second bucket in eu-west-1.'
+    correct: false
+    why: 'Replication Time Control also works for Same-Region Replication, but the copy would stay in the same Region as the source, and the regulator wants it in a second Region.'
+cue: 'predictable replication time with a commitment, plus being told when an object is late'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication-time-control.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

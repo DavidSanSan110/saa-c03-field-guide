@@ -1,0 +1,34 @@
+id: 'd2-2.1-0024'
+domain: 2
+task: '2.1'
+services:
+  - 'lambda'
+  - 'sqs'
+difficulty: medium
+type: single
+stem: "A retailer's AWS Lambda function reads shipment-label requests from an Amazon SQS standard queue through an event source mapping. For each message the function calls a carrier's API, which accepts at most 10 concurrent requests per customer and rejects the rest. During busy hours the queue builds up, Lambda scales the function out to many concurrent invocations, and most calls are rejected. Message order does not matter and the queue should keep absorbing the peaks. Which change keeps the load on the carrier within its limit with the least effort?"
+options:
+  - key: A
+    text: 'Set the maximum concurrency of the SQS event source mapping to 10.'
+    correct: true
+    why: 'Maximum concurrency is a setting on the event source mapping that limits how many function instances that queue can invoke at once. The queue keeps buffering messages while the function never runs more than 10 at a time. It has no extra charge, and the allowed range starts at 2.'
+  - key: B
+    text: 'Reduce the batch size of the event source mapping to 1.'
+    correct: false
+    why: 'Batch size sets how many messages go to one invocation, not how many invocations run in parallel. Smaller batches mean more invocations for the same backlog, so concurrency, and the pressure on the carrier, would not go down.'
+  - key: C
+    text: 'Replace the queue with an SQS FIFO queue and send every message with the same message group ID.'
+    correct: false
+    why: "Messages in one group are processed one at a time, which limits concurrency to 1 instead of 10 and adds ordering that the requirement does not need. With several message groups, concurrency is capped only by the number of groups or the maximum concurrency setting, not by the carrier's limit. Changing the queue type is also much more work."
+  - key: D
+    text: "Set the function's reserved concurrency to 10 and leave the event source mapping unchanged."
+    correct: false
+    why: 'Reserved concurrency limits the function, but the event source mapping is not aware of it and keeps trying to invoke more instances than the function is allowed. The Lambda documentation warns that Lambda might throttle messages when the reserved concurrency is lower than what the mapping tries to run. Maximum concurrency on the mapping is the setting designed to pace the queue.'
+cue: 'SQS-triggered Lambda overwhelms a downstream system with a hard concurrent-request limit -> maximum concurrency on the event source mapping'
+references:
+  - 'https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-scaling.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
