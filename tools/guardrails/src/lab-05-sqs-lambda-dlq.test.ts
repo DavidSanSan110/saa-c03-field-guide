@@ -1203,3 +1203,310 @@ describe('AC-8: the narrowed scan still catches a shadow in tf_apply_deny', () =
     expect(shadowedDemoActions(ciRolesFixture('tf_plan_deny'))).toEqual([]);
   });
 });
+
+// =================================================================================================
+// Spec 049 (issue #179), AC-12: the AC-33 scan also reads the locals that tf_apply_deny references
+// =================================================================================================
+
+// Known limit of this reader (shared with the scans above): it does not parse heredocs, so a policy
+// written as a <<EOT ... EOT JSON string is not seen.
+
+/** The top-level `name = value` attributes of a block body (a value ends at the line end that closes its brackets). */
+function topLevelAttributes(body: string): Map<string, string> {
+  const found = new Map<string, string>();
+  let i = 0;
+  while (i < body.length) {
+    const head = /^\s*([A-Za-z_][A-Za-z0-9_-]*)\s*=(?!=)\s*/.exec(body.slice(i));
+    if (!head) {
+      const newline = body.indexOf('\n', i);
+      i = newline === -1 ? body.length : newline + 1;
+      continue;
+    }
+    const start = i + head[0].length;
+    let depth = 0;
+    let end = start;
+    while (end < body.length) {
+      const c = body.charAt(end);
+      if (c === '"') {
+        end = skipString(body, end);
+        continue;
+      }
+      if (c === '(' || c === '[' || c === '{') depth += 1;
+      if (c === ')' || c === ']' || c === '}') depth -= 1;
+      if (c === '\n' && depth <= 0) break;
+      end += 1;
+    }
+    found.set(head[1] ?? '', body.slice(start, end));
+    i = end + 1;
+  }
+  return found;
+}
+
+/** The names of the `local.<name>` references of a text (HCL identifiers may contain `-`). */
+function localReferences(text: string): string[] {
+  return [...text.matchAll(/\blocal\.([A-Za-z_][A-Za-z0-9_-]*)/g)].map((match) => match[1] ?? '');
+}
+
+/** The comment-stripped text of every top-level .tf file of bootstrap/workload, by repo path. */
+function workloadTexts(): Map<string, string> {
+  const dir = join(REPO_ROOT, 'bootstrap', 'workload');
+  return new Map(
+    readdirSync(dir)
+      .filter((name) => name.endsWith('.tf'))
+      .sort()
+      .map((name): [string, string] => [
+        `bootstrap/workload/${name}`,
+        stripHclComments(readFileSync(join(dir, name), 'utf8')),
+      ]),
+  );
+}
+
+/**
+ * What the AC-33 scan reads of a guardrail text (comments already stripped), as `scannedDenies` does,
+ * plus, for ci_roles.tf, every Deny in each `locals` value that the tf_apply_deny block reaches
+ * through `local.<name>` references, followed transitively (a cycle ends) in the text itself and in
+ * `others`, the other .tf files of bootstrap/workload (path -> comment-stripped text), whichever
+ * file defines the local. Locals that only tf_plan_deny references, or nothing references, are not read.
+ */
+function scannedDeniesWithLocals(
+  file: string,
+  text: string,
+  others: ReadonlyMap<string, string> = new Map(),
+): Deny[] {
+  const base = scannedDenies(file, text);
+  if (!file.endsWith('ci_roles.tf')) return base;
+  const [applyPolicy = ''] = blockBodies(
+    text,
+    /\bresource\s+"aws_iam_role_policy"\s+"tf_apply_deny"\s*\{/,
+  );
+  const files = new Map<string, string>(others);
+  files.set(file, text);
+  const defined = new Map<string, { file: string; value: string }>();
+  for (const [path, fileText] of files) {
+    for (const body of blockBodies(fileText, /\blocals\s*\{/)) {
+      for (const [name, value] of topLevelAttributes(body))
+        defined.set(name, { file: path, value });
+    }
+  }
+  const queue = localReferences(applyPolicy);
+  const seen = new Set<string>();
+  const fromLocals: Deny[] = [];
+  for (let name = queue.shift(); name !== undefined; name = queue.shift()) {
+    const local = defined.get(name);
+    if (local === undefined || seen.has(name)) continue;
+    seen.add(name);
+    fromLocals.push(...denyStatementsOfText(local.value, local.file));
+    queue.push(...localReferences(local.value));
+  }
+  return [...base, ...fromLocals];
+}
+
+/** The demo actions that the Deny statements name or cover, one line per Deny and action. */
+function shadowsOf(denies: Deny[]): string[] {
+  return denies.flatMap((deny) =>
+    actionStrings(deny).flatMap((action) =>
+      DEMO_ACTIONS.filter((demo) => actionPattern(action).test(demo)).map(
+        (demo) =>
+          `${deny.sid === '' ? '(no Sid)' : deny.sid} denies ${action}, which covers ${demo}`,
+      ),
+    ),
+  );
+}
+
+/** A tf_plan_deny or tf_apply_deny policy resource of a ci_roles.tf fixture. */
+function ciRolesPolicy(name: string, statements: string): string {
+  return `
+resource "aws_iam_role_policy" "${name}" {
+  name = "${name}"
+  role = aws_iam_role.${name}.name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = ${statements}
+  })
+}
+`;
+}
+
+/** The known statement of tf_apply_deny with NotAction, after the statements of `before`. */
+function concatBefore(before: string): string {
+  return `concat(
+      ${before},
+      [
+        {
+          Sid       = "DenyStateBucketSettings"
+          Effect    = "Deny"
+          NotAction = ["s3:Get*", "s3:List*"]
+          Resource  = local.state_bucket_arn
+        },
+      ],
+    )`;
+}
+
+/**
+ * A ci_roles.tf text: the local `localName` holds a Deny of sqs:*, and only `referencedBy` uses it.
+ * With `definedHere` false the local is not defined at all.
+ */
+function ciRolesLocalsFixture(
+  referencedBy: 'tf_apply_deny' | 'tf_plan_deny' | 'nobody',
+  definedHere = true,
+  localName = 'apply_extra',
+): string {
+  const own = `[
+      {
+        Sid      = "DenySecretReads"
+        Effect   = "Deny"
+        Action   = "secretsmanager:GetSecretValue"
+        Resource = "arn:aws:secretsmanager:*:111111111111:secret:*"
+      },
+    ]`;
+  const withExtra = concatBefore(`local.${localName}`);
+  const extra = `  ${localName} = [
+    { Effect = "Deny", Action = "sqs:*", Resource = "*" },
+  ]
+`;
+  const apply = referencedBy === 'tf_apply_deny' ? withExtra : own;
+  const plan = referencedBy === 'tf_plan_deny' ? withExtra : own;
+  return `
+locals {
+  tf_plan_role_name = "fg-tf-plan"
+
+${definedHere ? extra : ''}
+}
+${ciRolesPolicy('tf_plan_deny', plan)}${ciRolesPolicy('tf_apply_deny', apply)}`;
+}
+
+/** The shadowed demo actions that the extended scan reports for a ci_roles.tf text. */
+function shadowedDemoActionsWithLocals(
+  ciRolesText: string,
+  others: ReadonlyMap<string, string> = new Map(),
+): string[] {
+  return shadowsOf(scannedDeniesWithLocals(CI_ROLES, stripHclComments(ciRolesText), others));
+}
+
+/**
+ * The cross-file chain: tf_apply_deny (ci_roles.tf) uses `local.escalation_denies` (boundary.tf), which
+ * concatenates `local.ci_extra` (defined in ci_roles.tf, a Deny of lambda:CreateFunction).
+ */
+function crossFileFixture(): { ciRoles: string; others: Map<string, string> } {
+  const ciRoles = `
+locals {
+  ci_extra = [
+    { Sid = "DenyLambda", Effect = "Deny", Action = "lambda:CreateFunction", Resource = "*" },
+  ]
+}
+${ciRolesPolicy('tf_apply_deny', concatBefore('local.escalation_denies'))}`;
+  const boundary = `
+locals {
+  deny_users = {
+    Sid      = "DenyIamUsersAndKeys"
+    Effect   = "Deny"
+    Action   = ["iam:CreateUser", "iam:CreateAccessKey"]
+    Resource = "*"
+  }
+
+  escalation_denies = concat(
+    [local.deny_users],
+    local.ci_extra,
+  )
+}
+`;
+  return {
+    ciRoles,
+    others: new Map([['bootstrap/workload/boundary.tf', stripHclComments(boundary)]]),
+  };
+}
+
+describe('AC-12: the AC-33 scan also reads the locals that tf_apply_deny references', () => {
+  const allWithLocals = (): Deny[] => {
+    const workload = workloadTexts();
+    return GUARDRAIL_FILES.flatMap((segments) =>
+      scannedDeniesWithLocals(segments.join('/'), repoText(...segments), workload),
+    );
+  };
+
+  test('AC-12: on the real files the extended scan finds the Deny statements of the three guardrail files', () => {
+    const denies = allWithLocals();
+    expect(denies.length).toBeGreaterThanOrEqual(10);
+    for (const segments of GUARDRAIL_FILES) {
+      expect(
+        denies.filter((deny) => deny.file === segments.join('/')).length,
+        segments.join('/'),
+      ).toBeGreaterThan(0);
+    }
+    expect(denies.filter((deny) => deny.sid === '')).toEqual([]);
+  });
+
+  test('AC-12: on the real files the extended scan finds no shadowed demo action', () => {
+    expect(shadowsOf(allWithLocals())).toEqual([]);
+  });
+
+  test('AC-12: on the real files every Deny with NotAction found by the extended scan is allowed', () => {
+    const notActions = allWithLocals()
+      .filter((deny) => /(?<![A-Za-z_])NotAction\s*=/.test(deny.text))
+      .map((deny) => deny.sid);
+    expect(notActions.length).toBeGreaterThan(0);
+    expect(
+      notActions.filter((sid) => !ALLOWED_NOT_ACTION_DENIES.includes(sid)),
+      'Deny statements with NotAction other than the named ones',
+    ).toEqual([]);
+  });
+
+  test('AC-12: a local that tf_apply_deny concatenates is read, so its Deny of sqs:* is reported', () => {
+    expect(shadowedDemoActionsWithLocals(ciRolesLocalsFixture('tf_apply_deny'))).toContain(
+      '(no Sid) denies sqs:*, which covers sqs:ReceiveMessage',
+    );
+  });
+
+  test('AC-12: a local with a dash in its name is read when tf_apply_deny references it', () => {
+    const text = ciRolesLocalsFixture('tf_apply_deny', true, 'apply-extra');
+    expect(shadowedDemoActionsWithLocals(text)).toContain(
+      '(no Sid) denies sqs:*, which covers sqs:ReceiveMessage',
+    );
+  });
+
+  test('AC-12: a local that only tf_plan_deny references is not read', () => {
+    expect(shadowedDemoActionsWithLocals(ciRolesLocalsFixture('tf_plan_deny'))).toEqual([]);
+  });
+
+  test('AC-12: a local that nothing references is not read', () => {
+    expect(shadowedDemoActionsWithLocals(ciRolesLocalsFixture('nobody'))).toEqual([]);
+  });
+
+  test('AC-12: a local that no file defines is not an error and adds no Deny', () => {
+    const text = stripHclComments(ciRolesLocalsFixture('tf_apply_deny', false));
+    expect(scannedDeniesWithLocals(CI_ROLES, text).map((deny) => deny.sid)).toEqual([
+      'DenyStateBucketSettings',
+    ]);
+  });
+
+  test('AC-12: a chain through another file is followed, so ci_extra reached via escalation_denies is reported', () => {
+    const { ciRoles, others } = crossFileFixture();
+    expect(shadowedDemoActionsWithLocals(ciRoles, others)).toEqual([
+      'DenyLambda denies lambda:CreateFunction, which covers lambda:CreateFunction',
+    ]);
+  });
+
+  test('AC-12: the same chain is not read when the other file does not reference ci_extra', () => {
+    const { ciRoles, others } = crossFileFixture();
+    const cut = new Map(
+      [...others].map(([path, text]): [string, string] => [
+        path,
+        text.replace('local.ci_extra', '[]'),
+      ]),
+    );
+    expect(shadowedDemoActionsWithLocals(ciRoles, cut)).toEqual([]);
+  });
+
+  test('AC-12: locals that reference each other terminate and their Deny is read once', () => {
+    const text = `
+locals {
+  loop_a = concat(local.loop_b, [{ Sid = "DenyA", Effect = "Deny", Action = "sqs:*", Resource = "*" }])
+  loop_b = concat(local.loop_a, [])
+}
+${ciRolesPolicy('tf_apply_deny', concatBefore('local.loop_a'))}`;
+    const shadows = shadowedDemoActionsWithLocals(text);
+    expect(shadows).toContain('DenyA denies sqs:*, which covers sqs:ReceiveMessage');
+    expect(shadows).toHaveLength(7); // the seven sqs: demo actions, once each
+  });
+});

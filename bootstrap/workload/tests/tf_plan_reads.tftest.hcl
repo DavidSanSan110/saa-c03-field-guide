@@ -275,3 +275,199 @@ run "ac5_boundary_does_not_cover_log_reads" {
     error_message = "the boundary policy: no Deny may name or cover logs:FilterLogEvents, GetLogEvents, GetLogRecord, GetQueryResults, StartLiveTail, StartQuery or Unmask"
   }
 }
+
+# AC-11: the tf_apply_deny policy has no Deny with NotAction that covers sqs:ReceiveMessage and reaches a queue.
+# A NotAction Deny covers an action when no NotAction pattern matches it; it reaches an ARN when its
+# Resource has a matching pattern or its NotResource has none. IAM wildcards (* and ?) are matched
+# with the regex specials of the patterns escaped. Actions and Resource patterns are matched
+# case-insensitively (lower() on both sides); NotResource is matched case-sensitively like IAM does.
+run "ac11_apply_not_action_does_not_reach_queue_receive_message" {
+  command = plan
+
+  assert {
+    condition = (
+      length(jsondecode(aws_iam_role_policy.tf_apply_deny.policy).Statement) > 0
+      && !anytrue([
+        for s in jsondecode(aws_iam_role_policy.tf_apply_deny.policy).Statement : anytrue([
+          for a in ["sqs:ReceiveMessage"] : anytrue([
+            for arn in ["arn:aws:sqs:eu-west-1:111111111111:q"] :
+            s.Effect == "Deny" && contains(keys(s), "NotAction")
+            && !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])
+            && (
+              anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+              || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+            )
+          ])
+        ])
+      ])
+    )
+    error_message = "the tf_apply_deny policy: a Deny with NotAction must not cover sqs:ReceiveMessage on a queue (it would shadow the lab 05 demo)"
+  }
+
+  # Positive control: the known NotAction statement DenyStateBucketSettings is found, its patterns match s3:GetObject
+  # and its own resource (so the wildcard conversion matches), it covers the action under test and
+  # does not reach the sample ARN. If the conversion matched nothing or everything, this fails.
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.tf_apply_deny.policy).Statement : s
+      if try(s.Sid, "") == "DenyStateBucketSettings" && s.Effect == "Deny" && contains(keys(s), "NotAction")
+      && anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("s3:GetObject")))])
+      && anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("arn:aws:s3:::field-guide-tfstate-111111111111")))])
+      && alltrue([for a in ["sqs:ReceiveMessage"] : !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])])
+      && alltrue([
+        for arn in ["arn:aws:sqs:eu-west-1:111111111111:q"] : !(
+          anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+          || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+        )
+      ])
+    ]) == 1
+    error_message = "the tf_apply_deny policy: the known NotAction statement DenyStateBucketSettings must match s3:GetObject and arn:aws:s3:::field-guide-tfstate-111111111111, cover sqs:ReceiveMessage and not reach a queue (the wildcard conversion is broken)"
+  }
+}
+
+# AC-11: the tf_apply_deny policy has no Deny with NotAction that covers an AC-3 log read and reaches a log group or a log stream.
+# A NotAction Deny covers an action when no NotAction pattern matches it; it reaches an ARN when its
+# Resource has a matching pattern or its NotResource has none. IAM wildcards (* and ?) are matched
+# with the regex specials of the patterns escaped. Actions and Resource patterns are matched
+# case-insensitively (lower() on both sides); NotResource is matched case-sensitively like IAM does.
+run "ac11_apply_not_action_does_not_reach_log_reads" {
+  command = plan
+
+  assert {
+    condition = (
+      length(jsondecode(aws_iam_role_policy.tf_apply_deny.policy).Statement) > 0
+      && !anytrue([
+        for s in jsondecode(aws_iam_role_policy.tf_apply_deny.policy).Statement : anytrue([
+          for a in ["logs:FilterLogEvents", "logs:GetLogEvents", "logs:GetLogRecord", "logs:GetQueryResults", "logs:StartLiveTail", "logs:StartQuery", "logs:Unmask"] : anytrue([
+            for arn in ["arn:aws:logs:eu-west-1:111111111111:log-group:g", "arn:aws:logs:eu-west-1:111111111111:log-group:g:log-stream:s"] :
+            s.Effect == "Deny" && contains(keys(s), "NotAction")
+            && !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])
+            && (
+              anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+              || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+            )
+          ])
+        ])
+      ])
+    )
+    error_message = "the tf_apply_deny policy: a Deny with NotAction must not cover an AC-3 log read on a log group or a log stream (it would shadow the lab 05 demo)"
+  }
+
+  # Positive control: the known NotAction statement DenyStateBucketSettings is found, its patterns match s3:GetObject
+  # and its own resource (so the wildcard conversion matches), it covers the action under test and
+  # does not reach the sample ARN. If the conversion matched nothing or everything, this fails.
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_role_policy.tf_apply_deny.policy).Statement : s
+      if try(s.Sid, "") == "DenyStateBucketSettings" && s.Effect == "Deny" && contains(keys(s), "NotAction")
+      && anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("s3:GetObject")))])
+      && anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("arn:aws:s3:::field-guide-tfstate-111111111111")))])
+      && alltrue([for a in ["logs:FilterLogEvents", "logs:GetLogEvents", "logs:GetLogRecord", "logs:GetQueryResults", "logs:StartLiveTail", "logs:StartQuery", "logs:Unmask"] : !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])])
+      && alltrue([
+        for arn in ["arn:aws:logs:eu-west-1:111111111111:log-group:g", "arn:aws:logs:eu-west-1:111111111111:log-group:g:log-stream:s"] : !(
+          anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+          || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+        )
+      ])
+    ]) == 1
+    error_message = "the tf_apply_deny policy: the known NotAction statement DenyStateBucketSettings must match s3:GetObject and arn:aws:s3:::field-guide-tfstate-111111111111, cover an AC-3 log read and not reach a log group or a log stream (the wildcard conversion is broken)"
+  }
+}
+
+# AC-11: the boundary policy has no Deny with NotAction that covers sqs:ReceiveMessage and reaches a queue.
+# A NotAction Deny covers an action when no NotAction pattern matches it; it reaches an ARN when its
+# Resource has a matching pattern or its NotResource has none. IAM wildcards (* and ?) are matched
+# with the regex specials of the patterns escaped. Actions and Resource patterns are matched
+# case-insensitively (lower() on both sides); NotResource is matched case-sensitively like IAM does.
+run "ac11_boundary_not_action_does_not_reach_queue_receive_message" {
+  command = plan
+
+  assert {
+    condition = (
+      length(jsondecode(aws_iam_policy.boundary.policy).Statement) > 0
+      && !anytrue([
+        for s in jsondecode(aws_iam_policy.boundary.policy).Statement : anytrue([
+          for a in ["sqs:ReceiveMessage"] : anytrue([
+            for arn in ["arn:aws:sqs:eu-west-1:111111111111:q"] :
+            s.Effect == "Deny" && contains(keys(s), "NotAction")
+            && !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])
+            && (
+              anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+              || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+            )
+          ])
+        ])
+      ])
+    )
+    error_message = "the boundary policy: a Deny with NotAction must not cover sqs:ReceiveMessage on a queue (it would shadow the lab 05 demo)"
+  }
+
+  # Positive control: the known NotAction statement DenyProtectedIamChanges is found, its patterns match iam:GetRole
+  # and its own resource (so the wildcard conversion matches), it covers the action under test and
+  # does not reach the sample ARN. If the conversion matched nothing or everything, this fails.
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_policy.boundary.policy).Statement : s
+      if try(s.Sid, "") == "DenyProtectedIamChanges" && s.Effect == "Deny" && contains(keys(s), "NotAction")
+      && anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("iam:GetRole")))])
+      && anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("arn:aws:iam::111111111111:role/fg-tf-plan")))])
+      && alltrue([for a in ["sqs:ReceiveMessage"] : !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])])
+      && alltrue([
+        for arn in ["arn:aws:sqs:eu-west-1:111111111111:q"] : !(
+          anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+          || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+        )
+      ])
+    ]) == 1
+    error_message = "the boundary policy: the known NotAction statement DenyProtectedIamChanges must match iam:GetRole and arn:aws:iam::111111111111:role/fg-tf-plan, cover sqs:ReceiveMessage and not reach a queue (the wildcard conversion is broken)"
+  }
+}
+
+# AC-11: the boundary policy has no Deny with NotAction that covers an AC-3 log read and reaches a log group or a log stream.
+# A NotAction Deny covers an action when no NotAction pattern matches it; it reaches an ARN when its
+# Resource has a matching pattern or its NotResource has none. IAM wildcards (* and ?) are matched
+# with the regex specials of the patterns escaped. Actions and Resource patterns are matched
+# case-insensitively (lower() on both sides); NotResource is matched case-sensitively like IAM does.
+run "ac11_boundary_not_action_does_not_reach_log_reads" {
+  command = plan
+
+  assert {
+    condition = (
+      length(jsondecode(aws_iam_policy.boundary.policy).Statement) > 0
+      && !anytrue([
+        for s in jsondecode(aws_iam_policy.boundary.policy).Statement : anytrue([
+          for a in ["logs:FilterLogEvents", "logs:GetLogEvents", "logs:GetLogRecord", "logs:GetQueryResults", "logs:StartLiveTail", "logs:StartQuery", "logs:Unmask"] : anytrue([
+            for arn in ["arn:aws:logs:eu-west-1:111111111111:log-group:g", "arn:aws:logs:eu-west-1:111111111111:log-group:g:log-stream:s"] :
+            s.Effect == "Deny" && contains(keys(s), "NotAction")
+            && !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])
+            && (
+              anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+              || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+            )
+          ])
+        ])
+      ])
+    )
+    error_message = "the boundary policy: a Deny with NotAction must not cover an AC-3 log read on a log group or a log stream (it would shadow the lab 05 demo)"
+  }
+
+  # Positive control: the known NotAction statement DenyProtectedIamChanges is found, its patterns match iam:GetRole
+  # and its own resource (so the wildcard conversion matches), it covers the action under test and
+  # does not reach the sample ARN. If the conversion matched nothing or everything, this fails.
+  assert {
+    condition = length([
+      for s in jsondecode(aws_iam_policy.boundary.policy).Statement : s
+      if try(s.Sid, "") == "DenyProtectedIamChanges" && s.Effect == "Deny" && contains(keys(s), "NotAction")
+      && anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("iam:GetRole")))])
+      && anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower("arn:aws:iam::111111111111:role/fg-tf-plan")))])
+      && alltrue([for a in ["logs:FilterLogEvents", "logs:GetLogEvents", "logs:GetLogRecord", "logs:GetQueryResults", "logs:StartLiveTail", "logs:StartQuery", "logs:Unmask"] : !anytrue([for p in flatten([try(s.NotAction, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(p), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(a)))])])
+      && alltrue([
+        for arn in ["arn:aws:logs:eu-west-1:111111111111:log-group:g", "arn:aws:logs:eu-west-1:111111111111:log-group:g:log-stream:s"] : !(
+          anytrue([for r in flatten([try(s.Resource, [])]) : can(regex(join("", ["^", replace(replace(replace(lower(r), "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), lower(arn)))])
+          || (contains(keys(s), "NotResource") && !anytrue([for r in flatten([try(s.NotResource, [])]) : can(regex(join("", ["^", replace(replace(replace(r, "/([.+^$${}()|\\[\\]\\\\])/", "\\$1"), "*", ".*"), "?", "."), "$"]), arn))]))
+        )
+      ])
+    ]) == 1
+    error_message = "the boundary policy: the known NotAction statement DenyProtectedIamChanges must match iam:GetRole and arn:aws:iam::111111111111:role/fg-tf-plan, cover an AC-3 log read and not reach a log group or a log stream (the wildcard conversion is broken)"
+  }
+}
