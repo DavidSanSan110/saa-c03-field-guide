@@ -1,6 +1,6 @@
 ---
 title: 'Domain 4: Design Cost-Optimized Architectures'
-description: 'Task statements of Domain 4: Design Cost-Optimized Architectures.'
+description: 'Task statements of Domain 4: Design Cost-Optimized Architectures, and the AWS cost management tools every task relies on: Budgets, Cost Explorer, Cost Anomaly Detection, Compute Optimizer, Trusted Advisor, cost allocation tags, consolidated billing and the Cost and Usage Report.'
 ---
 
 import DomainTasks from '../../../components/DomainTasks.astro';
@@ -11,3 +11,44 @@ import DomainWeight from '../../../components/DomainWeight.astro';
 ## Task statements
 
 <DomainTasks domain={4} />
+
+## Cost management tools
+
+Every cost question, whatever the service, can also ask how you would notice, explain or prevent the spend. These tools work across storage, compute, databases and networking, so they are here rather than in one task.
+
+| Tool                       | Question it answers                                      | Key facts                                                                                                                                                                                                                                                                        |
+| -------------------------- | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| AWS Budgets                | "Warn me, or act, when spend or usage crosses a limit"   | Cost, usage, Savings Plans and Reserved Instance budgets; alerts on actual or forecasted amounts by email or SNS; budget actions can apply an IAM policy or SCP, or stop EC2 and RDS instances                                                                                   |
+| AWS Cost Explorer          | "Where did the money go, and where is it heading?"       | Spend over the last 13 months by default (more with multi-year data turned on), grouped by service, account, Region, tag or usage type, by month, day or (opt-in) hour; forecasts up to 18 months ahead; Savings Plans and Reserved Instance purchase recommendations            |
+| AWS Cost Anomaly Detection | "Tell me when spend is unusual, without setting a limit" | Machine learning on your spend history; monitors by service, account, cost allocation tag or cost category; root-cause details; alerts through SNS or daily and weekly email summaries                                                                                           |
+| AWS Compute Optimizer      | "Is this resource the right size?"                       | Recommendations from CloudWatch utilisation (14 days by default, 93 with paid enhanced metrics) for EC2, Auto Scaling groups, EBS, Lambda, ECS on Fargate, RDS and Aurora and more, plus idle resources; you opt in first                                                        |
+| AWS Trusted Advisor        | "What in my account breaks best practice?"               | Checks in cost optimisation, performance, security, fault tolerance, service limits and operational excellence; Basic Support gets the service limits checks and a few security and fault tolerance ones, the full set needs a paid plan such as Business Support+ or Enterprise |
+| Cost Optimization Hub      | "What are all my savings opportunities, in one list?"    | Gathers recommendations (rightsizing, idle resources, Savings Plans, Reserved Instances) across accounts and Regions, with the estimated savings of each                                                                                                                         |
+| AWS Pricing Calculator     | "What will this design cost before I build it?"          | Estimates for a planned architecture; nothing needs to exist yet                                                                                                                                                                                                                 |
+
+- **Budgets or Cost Anomaly Detection?** Budgets compares spend with a number you choose. Cost Anomaly Detection learns what normal looks like, so it also catches a spike in a service whose spend grows or follows a weekly pattern, where no fixed limit fits.
+- **Cost Explorer or Compute Optimizer?** Cost Explorer shows spend and suggests commitments (Savings Plans, Reserved Instances). Compute Optimizer looks at how each resource is used and suggests a different size or type. Memory use isn't an EC2 metric unless the CloudWatch agent sends it, so without it right-sizing ignores memory.
+- **Trusted Advisor gives advice, it doesn't act.** For automatic fixes, AWS Config rules with remediation (Systems Manager Automation) do the work; for a hard stop on spend, a budget action.
+- **Budget actions** can run automatically or wait for approval. Applying an SCP or an IAM policy that denies launching new resources stops new spend in an account; stopping instances stops it for the running ones.
+- **Support plans are changing.** AWS now sells Basic, Business Support+, Enterprise and Unified Operations, and ends Developer, Business and Enterprise On-Ramp on 1 January 2027. Exam questions written earlier say "Business or Enterprise Support" for the full Trusted Advisor checks.
+
+### Organising and reporting spend
+
+- **Consolidated billing** (AWS Organizations): the management account pays one bill for all member accounts. Their usage is added together for volume pricing tiers, and Reserved Instance and Savings Plans discounts are shared across accounts (sharing can be turned off for an account).
+- **Cost allocation tags** let Cost Explorer, Budgets and cost reports split spend by team, project or environment. Both user-defined tags and AWS-generated tags (such as `aws:createdBy`) must be **activated** in the Billing console of the management account before they appear in cost data. They can take up to 24 hours to appear, and they show only spend from then on unless the management account requests a backfill (up to 12 months back).
+- **Cost categories** are rules that map accounts, tags and services to your own groups (business units, products), used in Cost Explorer, Budgets and reports.
+- **AWS Cost and Usage Report (CUR)**, now **CUR 2.0** created through **Data Exports** (the original CUR remains as a legacy export), delivers the most detailed line-item data to an S3 bucket; query it with Athena or chart it in Quick Sight (formerly Amazon QuickSight). It is the answer when Cost Explorer's grouping isn't detailed enough.
+
+| If the exam says…                                                              | Think…                                             |
+| ------------------------------------------------------------------------------ | -------------------------------------------------- |
+| Email the team when the forecast for this month goes over $1,000               | AWS Budgets with a forecasted-cost alert           |
+| Stop developers launching anything once the dev account reaches its budget     | Budget action that applies an SCP or IAM policy    |
+| Detect unexpected spend spikes without picking a threshold                     | AWS Cost Anomaly Detection                         |
+| Analyse the last months of spend by service and tag, forecast the next ones    | AWS Cost Explorer                                  |
+| Which Savings Plan should we buy?                                              | Cost Explorer recommendations                      |
+| Recommend smaller instance types or EBS volumes from actual utilisation        | AWS Compute Optimizer                              |
+| Account-wide checks for idle load balancers, unassociated Elastic IPs and more | AWS Trusted Advisor                                |
+| Show spend per project in every member account                                 | Activate cost allocation tags; use cost categories |
+| One bill for many accounts, with volume discounts combined                     | Consolidated billing in AWS Organizations          |
+| Most detailed cost data, queried with SQL                                      | Cost and Usage Report (Data Exports) + Athena      |
+| Estimate the monthly cost of a design before building it                       | AWS Pricing Calculator                             |
