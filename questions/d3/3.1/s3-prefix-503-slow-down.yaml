@@ -1,0 +1,38 @@
+id: 'd3-3.1-0005'
+domain: 3
+task: '3.1'
+services:
+  - 's3'
+difficulty: medium
+type: multiple
+stem: 'A logistics company ingests telemetry from 200,000 delivery vehicles. A fleet of ingestion workers writes one small object per reading into a single S3 bucket, and every key starts with the same prefix, telemetry/. During peak hours the workers sustain far more than 3,500 PUT requests per second against that prefix, and many requests fail with HTTP 503 Slow Down responses. The company wants the writes to succeed at this rate. Which actions should a solutions architect recommend? Choose two.'
+options:
+  - key: A
+    text: 'Enable S3 Transfer Acceleration on the bucket and send the writes to the accelerate endpoint.'
+    correct: false
+    why: 'Transfer Acceleration shortens the path between distant clients and the bucket. It does not raise the number of requests a prefix accepts per second.'
+  - key: B
+    text: 'Add a hash or vehicle-ID segment to the start of each key so that the writes are spread over many prefixes.'
+    correct: true
+    why: 'The request rate limit applies per prefix and a bucket can hold any number of prefixes, so spreading keys over many prefixes multiplies the rate the bucket can absorb.'
+  - key: C
+    text: 'Move the ingestion workers to larger EC2 instance types with more network bandwidth.'
+    correct: false
+    why: "The 503 responses come from the request rate on the prefix, not from the workers' network capacity. Bigger instances would send even more requests into the same limit."
+  - key: D
+    text: 'Make the workers retry throttled requests with exponential backoff.'
+    correct: true
+    why: 'S3 scales gradually to a new request rate and answers 503 Slow Down while it does so. Retrying with exponential backoff, as the AWS SDKs do, lets the requests succeed once the scaling is complete.'
+  - key: E
+    text: 'Create a second bucket in another Region and replicate it back to the original bucket with Cross-Region Replication.'
+    correct: false
+    why: "Replication copies objects after they are written and adds its own requests. It does not lift the per-prefix limit on the bucket that receives the workers' writes."
+cue: 'Far above 3,500 PUTs per second on one prefix, 503 Slow Down: more prefixes and retries with backoff.'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/optimizing-performance-design-patterns.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,36 @@
+id: 'd3-3.2-0008'
+domain: 3
+task: '3.2'
+services:
+  - 'ecs'
+  - 'ec2-auto-scaling'
+difficulty: hard
+type: single
+stem: "A video analytics company runs an Amazon ECS service on a cluster of GPU-based EC2 container instances in an Auto Scaling group. Service auto scaling raises the desired task count when the queue grows during the evening peak. However, ECS cannot place the new tasks because every GPU in the cluster is already in use, and the team has to add instances by hand. The group's maximum size is well above its current size. The company wants capacity to follow the number of tasks automatically while still using GPU instances. Which solution meets these requirements?"
+options:
+  - key: A
+    text: 'Move the service to the Fargate launch type so that AWS provides capacity for every task.'
+    correct: false
+    why: 'Fargate task definitions do not accept GPU resource requirements, so GPU workloads cannot run there.'
+  - key: B
+    text: 'Raise the maximum number of tasks in the service auto scaling policy so that more tasks can be requested.'
+    correct: false
+    why: 'The scaling already requests more tasks. The problem is that no instance has room to place them, and a higher task limit does not add instances.'
+  - key: C
+    text: "Add a target tracking policy on the service's average CPU utilization with a lower target value."
+    correct: false
+    why: 'This only changes how many tasks are requested, not the number of container instances. It does nothing about the missing GPU capacity.'
+  - key: D
+    text: "Register the Auto Scaling group as a capacity provider with managed scaling turned on and use it in the service's capacity provider strategy."
+    correct: true
+    why: "With managed scaling, ECS publishes a capacity metric and adjusts the group's desired capacity so that pending tasks get instances. Service auto scaling adds tasks and the capacity provider adds the hosts they need."
+cue: 'new tasks cannot be placed, no free GPU capacity, EC2 -> capacity provider with managed scaling'
+references:
+  - 'https://docs.aws.amazon.com/AmazonECS/latest/developerguide/cluster-auto-scaling.html'
+  - 'https://docs.aws.amazon.com/AmazonECS/latest/developerguide/asg-capacity-providers.html'
+  - 'https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-tasks-services.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

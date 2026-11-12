@@ -1,0 +1,33 @@
+id: 'd3-3.2-0007'
+domain: 3
+task: '3.2'
+services:
+  - 'lambda'
+difficulty: medium
+type: single
+stem: 'A document-services company converts uploaded files to thumbnails with an AWS Lambda function configured with 512 MB of memory. Monitoring shows that each invocation uses well under 200 MB of memory, but the function is busy on the CPU for its whole run and the conversion takes about 40 seconds, close to the timeout the team set. Traffic is steady, so cold starts are not the issue. The team wants the conversions to finish much faster with the smallest change. What should a solutions architect recommend?'
+options:
+  - key: A
+    text: 'Turn on provisioned concurrency for the function so that execution environments are always initialized.'
+    correct: false
+    why: 'Provisioned concurrency keeps environments warm and removes initialization delay. The slow part here is the CPU-bound work inside each invocation, which is unchanged.'
+  - key: B
+    text: 'Increase the memory setting of the function, for example to 3,008 MB, and re-test the duration.'
+    correct: true
+    why: 'Lambda allocates CPU in proportion to memory (about one vCPU at 1,769 MB), so more memory means more compute for a CPU-bound function. It often shortens the run enough to offset the higher per-GB-second rate.'
+  - key: C
+    text: 'Configure reserved concurrency on the function so that it always has execution capacity available.'
+    correct: false
+    why: 'Reserved concurrency guarantees and caps the number of concurrent executions. It does not give a single invocation more CPU.'
+  - key: D
+    text: 'Edit the function configuration to request 2 vCPUs while leaving the memory at 512 MB.'
+    correct: false
+    why: 'Lambda has no separate CPU setting. CPU power can only be raised by raising the memory.'
+cue: 'CPU-bound, memory use is low, steady traffic -> CPU scales with the memory setting'
+references:
+  - 'https://docs.aws.amazon.com/lambda/latest/dg/configuration-memory.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

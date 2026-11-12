@@ -1,0 +1,35 @@
+id: 'd3-3.1-0008'
+domain: 3
+task: '3.1'
+services:
+  - 'fsx'
+difficulty: medium
+type: single
+stem: 'A logistics company is retiring an on-premises NetApp NAS and moving its data to AWS. Linux application servers mount the data over NFS, Windows servers reach the same data over SMB, and a few database servers use iSCSI LUNs from the same storage system. The new storage must keep serving all three protocols and must stay available if an entire Availability Zone fails. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Create an Amazon EFS Regional file system and mount it on the Linux and Windows servers.'
+    correct: false
+    why: 'EFS speaks NFS only and is not supported on Windows clients, so it offers no SMB access and no iSCSI LUNs.'
+  - key: B
+    text: 'Put all of the data on a Multi-AZ FSx for NetApp ONTAP file system.'
+    correct: true
+    why: 'FSx for ONTAP gives multi-protocol access to data over NFS, SMB and iSCSI. A Multi-AZ deployment keeps a standby file server in a second AZ with synchronous replication, so it continues serving data when an AZ is unavailable.'
+  - key: C
+    text: 'Put all of the data on a Multi-AZ FSx for Windows File Server file system.'
+    correct: false
+    why: 'It survives an AZ failure but is an SMB file server: it does not serve the Linux NFS mounts as native shares or expose iSCSI LUNs.'
+  - key: D
+    text: 'Put all of the data on a Multi-AZ FSx for OpenZFS file system.'
+    correct: false
+    why: 'OpenZFS is aimed at NFS workloads; it does not give the Windows servers SMB shares or the database servers iSCSI LUNs.'
+cue: 'same data over NFS and SMB, plus iSCSI, migrating a NetApp NAS, survive an AZ failure'
+references:
+  - 'https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/what-is-fsx-ontap.html'
+  - 'https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/high-availability-AZ.html'
+  - 'https://docs.aws.amazon.com/fsx/latest/ONTAPGuide/supported-fsx-clients.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
