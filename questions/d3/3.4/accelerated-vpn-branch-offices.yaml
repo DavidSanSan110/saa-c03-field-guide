@@ -1,0 +1,35 @@
+id: 'd3-3.4-0008'
+domain: 3
+task: '3.4'
+services:
+  - 'vpn'
+  - 'transit-gateway'
+  - 'global-accelerator'
+difficulty: medium
+type: single
+stem: 'A company connects branch offices on three other continents to its VPCs with Site-to-Site VPN connections attached to a transit gateway. Because the tunnels cross long stretches of the public internet, the offices see jitter and packet loss. The company needs a better network path within days; ordering Direct Connect would take weeks. Which solution meets the requirement?'
+options:
+  - key: A
+    text: 'Create additional Site-to-Site VPN connections to a virtual private gateway in each VPC and spread the office traffic across them.'
+    correct: false
+    why: 'More connections add tunnels, not a better path: they still run over the public internet, and connections on a virtual private gateway share its bandwidth.'
+  - key: B
+    text: 'Order Direct Connect hosted connections from partners for each office and move the traffic to them.'
+    correct: false
+    why: 'Direct Connect gives consistent latency, but provisioning takes weeks, which breaks the timeline.'
+  - key: C
+    text: 'Create new accelerated Site-to-Site VPN connections on the transit gateway and move the offices to them.'
+    correct: true
+    why: 'An accelerated VPN uses Global Accelerator to carry the tunnels from the nearest AWS edge location over the AWS network. It requires a transit gateway attachment, and acceleration cannot be switched on for an existing connection, so new connections are created.'
+  - key: D
+    text: 'Turn on equal-cost multi-path routing on the transit gateway to spread traffic over all tunnels.'
+    correct: false
+    why: 'ECMP spreads traffic over more tunnels to add bandwidth, but every tunnel still crosses the same unstable internet paths.'
+cue: 'Jitter and packet loss over long internet paths, transit gateway, needed now: accelerated Site-to-Site VPN.'
+references:
+  - 'https://docs.aws.amazon.com/vpn/latest/s2svpn/accelerated-vpn.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

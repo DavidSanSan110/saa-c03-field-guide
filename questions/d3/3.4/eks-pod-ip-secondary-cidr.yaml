@@ -1,0 +1,35 @@
+id: 'd3-3.4-0009'
+domain: 3
+task: '3.4'
+services:
+  - 'vpc'
+  - 'eks'
+difficulty: medium
+type: single
+stem: 'An Amazon EKS cluster runs in a VPC whose primary IPv4 CIDR block is a /24. Every pod receives its own VPC IP address, and new pods now fail to start because the subnets have no free addresses. The VPC is connected to other networks, so any new address range must not overlap with the ranges already in use. What should a solutions architect do to add pod capacity with the least disruption?'
+options:
+  - key: A
+    text: 'Add a non-overlapping secondary IPv4 CIDR block to the VPC and create new subnets from it for the pods.'
+    correct: true
+    why: 'A VPC can have additional IPv4 CIDR blocks associated after creation. New subnets from the secondary block give pods fresh addresses, and the EKS VPC CNI can place pod interfaces in such subnets with custom networking.'
+  - key: B
+    text: "Change the VPC's primary CIDR block from /24 to /16 so that the existing subnets can be enlarged."
+    correct: false
+    why: 'You cannot increase or decrease the size of an existing CIDR block, and the primary block cannot be removed.'
+  - key: C
+    text: 'Associate an IPv6 CIDR block with the VPC and keep running the cluster as an IPv4 cluster.'
+    correct: false
+    why: 'An IPv6 block adds no IPv4 addresses, so an IPv4 cluster keeps drawing pod IPs from the same exhausted subnets. Only a cluster created with the IPv6 family would avoid the shortage.'
+  - key: D
+    text: 'Create a second VPC with a larger CIDR block, move the cluster there and connect the two VPCs with a peering connection.'
+    correct: false
+    why: 'Rebuilding the cluster and re-peering is far more work and disruption than adding a CIDR block to the existing VPC, which is the supported way to grow the address space.'
+cue: 'Subnets out of IPv4 addresses, VPC must stay, no overlap: add a secondary CIDR and new subnets.'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/vpc-cidr-blocks.html'
+  - 'https://docs.aws.amazon.com/eks/latest/userguide/cni-custom-network.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
