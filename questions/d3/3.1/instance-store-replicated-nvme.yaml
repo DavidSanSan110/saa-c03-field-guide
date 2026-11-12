@@ -1,0 +1,35 @@
+id: 'd3-3.1-0007'
+domain: 3
+task: '3.1'
+services:
+  - 'ec2'
+  - 'ebs'
+difficulty: medium
+type: single
+stem: "An ad-tech company runs a distributed key-value store on Linux EC2 instances. The software keeps three copies of every record on different nodes and rebuilds a node's data from the other nodes if that node is lost, so losing one node's disk is acceptable. Each node serves a very high rate of random reads and writes and needs the lowest possible latency. The company wants to keep storage cost low. Which storage design should a solutions architect choose?"
+options:
+  - key: A
+    text: 'Run the nodes on storage optimized instances and keep the data on their local NVMe instance store volumes.'
+    correct: true
+    why: "Instance store disks are physically attached to the host, which gives low latency and high random I/O at no extra charge. The application's own replication covers the loss of a node's local data."
+  - key: B
+    text: 'Attach an io2 Block Express volume with high provisioned IOPS to every node.'
+    correct: false
+    why: 'These are network-attached volumes billed for the IOPS you provision, and they add durability the application already provides through its replicas. They cost more and are not the lowest-latency option.'
+  - key: C
+    text: 'Attach several gp3 volumes to each node and stripe them with RAID 0.'
+    correct: false
+    why: "Striping adds up the volumes' IOPS, but the data still travels over the network and every volume is billed. It does not match local disks for latency or cost."
+  - key: D
+    text: 'Mount an Amazon EFS file system on all nodes and store the data there.'
+    correct: false
+    why: 'EFS is a shared NFS file system for file workloads. Every operation crosses the network, and the application does not need shared storage because it already replicates its own data.'
+cue: 'Data already replicated across nodes, highest random I/O and lowest latency at low cost: instance store.'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/InstanceStorage.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/ssd-instance-store.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

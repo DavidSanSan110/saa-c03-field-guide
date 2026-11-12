@@ -1,0 +1,35 @@
+id: 'd3-3.1-0009'
+domain: 3
+task: '3.1'
+services:
+  - 'storage-gateway'
+  - 's3'
+difficulty: medium
+type: single
+stem: "A manufacturer's plant applications write production reports to a network share over NFS and SMB. The plant needs fast access to recently written files from the local network, but the company also wants every file stored as an individual object in Amazon S3 so that cloud analytics services can read it directly with the S3 API. The applications must not be rewritten. Which solution meets these requirements?"
+options:
+  - key: A
+    text: 'Install a Volume Gateway (cached volumes) from AWS Storage Gateway and present its volumes to the plant servers over iSCSI.'
+    correct: false
+    why: 'Cached volumes are block storage over iSCSI, not an NFS or SMB share. Their data lives in S3 as volume data that cannot be reached with the S3 API, so analytics services cannot read files from it.'
+  - key: B
+    text: "Run an AWS DataSync task on a schedule that copies the plant's file server to an S3 bucket."
+    correct: false
+    why: 'DataSync copies data but does not provide a share or a local cache; the applications would still write to the existing server, and the S3 copy is only as fresh as the last run.'
+  - key: C
+    text: 'Create an AWS Transfer Family SFTP server backed by the S3 bucket and have the applications upload files to it.'
+    correct: false
+    why: 'Transfer Family offers SFTP, FTPS, FTP and AS2 endpoints, not an NFS or SMB mount, so the unmodified applications could not write to it, and it has no local cache.'
+  - key: D
+    text: 'Deploy an Amazon S3 File Gateway on premises and create NFS and SMB file shares that are backed by the S3 bucket.'
+    correct: true
+    why: 'S3 File Gateway exposes NFS and SMB shares to local applications, keeps recently used data in a local cache for low latency, and stores each file as an object in S3 that other AWS services can access directly.'
+cue: 'keep writing over NFS or SMB, low-latency access to recent files, each file stored as an S3 object'
+references:
+  - 'https://docs.aws.amazon.com/filegateway/latest/files3/what-is-file-s3.html'
+  - 'https://docs.aws.amazon.com/storagegateway/latest/vgw/StorageGatewayConcepts.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

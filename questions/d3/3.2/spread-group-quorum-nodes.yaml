@@ -1,0 +1,34 @@
+id: 'd3-3.2-0009'
+domain: 3
+task: '3.2'
+services:
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A company runs a five-node coordination cluster on Amazon EC2, with every node in one Availability Zone. The cluster keeps its quorum as long as no more than two nodes are lost at the same time. The architect wants the failure of one rack, with its shared power and network, to be able to affect at most one node. The nodes are launched one at a time over several weeks and may use different instance types. Which approach meets this requirement?'
+options:
+  - key: A
+    text: 'Launch the five instances into a spread placement group in that Availability Zone as each node is created.'
+    correct: true
+    why: 'A spread placement group puts each instance on distinct underlying hardware (its own rack), which suits a small number of critical instances, mixed types and launches over time.'
+  - key: B
+    text: 'Launch the five instances into a cluster placement group.'
+    correct: false
+    why: 'A cluster group packs the instances close together in one part of the network for low latency, so several nodes can share hardware: the opposite of what is needed.'
+  - key: C
+    text: 'Launch the five instances into a partition placement group with two partitions and divide them between the partitions.'
+    correct: false
+    why: 'Instances in the same partition can share racks, so with five instances in two partitions several nodes would share hardware. A single rack failure could remove more than one node.'
+  - key: D
+    text: 'Launch the five instances on a single Dedicated Host.'
+    correct: false
+    why: 'A Dedicated Host is one physical server, so all five instances would fail together if it fails. It gives isolation from other customers, not separation between instances.'
+cue: 'small number of critical instances, each on distinct hardware -> spread placement group'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/placement-strategies.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/placement-groups.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

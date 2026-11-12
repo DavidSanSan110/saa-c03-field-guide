@@ -1,0 +1,33 @@
+id: 'd3-3.1-0006'
+domain: 3
+task: '3.1'
+services:
+  - 'ebs'
+difficulty: medium
+type: single
+stem: 'A retail company rebuilds its test database environment every morning by creating gp3 EBS volumes from a snapshot of the production volume, in two Availability Zones. The restored volumes are provisioned with 10,000 IOPS, yet the first queries after each rebuild are slow because blocks are read for the first time. The team needs every new volume to deliver its full provisioned performance from the very first read, with no manual warm-up step. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Raise the provisioned IOPS on the restored volumes to 16,000.'
+    correct: false
+    why: 'More provisioned IOPS raises the ceiling, but the slow first reads come from blocks being loaded for the first time. Extra IOPS does not remove that latency.'
+  - key: B
+    text: 'Change the restored volumes from gp3 to io2 so that they get sub-millisecond latency.'
+    correct: false
+    why: 'A different volume type does not change how a volume restored from a snapshot behaves on first access to each block.'
+  - key: C
+    text: 'Enable EBS fast snapshot restore for the snapshot in both Availability Zones where the volumes are created.'
+    correct: true
+    why: 'Fast snapshot restore is enabled per snapshot and Availability Zone. Volumes created from it are fully initialized at creation, so they deliver all their provisioned performance immediately.'
+  - key: D
+    text: 'Attach each new volume and read every block once with a script before the test run starts.'
+    correct: false
+    why: 'Reading all the blocks does initialize the volume, but it is a manual step that takes a long time. The requirement is full performance from the first read with no warm-up.'
+cue: 'Volumes created from a snapshot must deliver full provisioned performance from the very first read: fast snapshot restore.'
+references:
+  - 'https://docs.aws.amazon.com/ebs/latest/userguide/ebs-fast-snapshot-restore.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
