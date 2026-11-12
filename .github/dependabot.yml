@@ -33,6 +33,10 @@ updates:
       # runs `corepack enable` in it. Stay on 1.64 (and its image) until that script is fixed.
       - dependency-name: '@playwright/test'
         versions: ['>=1.65']
+      # The types follow the Node major we run (`.nvmrc`: 22). Newer majors would type APIs that
+      # Node 22 doesn't have. Move both together.
+      - dependency-name: '@types/node'
+        versions: ['>=23']
 
   - package-ecosystem: github-actions
     directory: /
