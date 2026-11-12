@@ -1,0 +1,33 @@
+id: 'd4-4.3-0010'
+domain: 4
+task: '4.3'
+services:
+  - 'rds'
+difficulty: medium
+type: single
+stem: 'A company runs a production Amazon RDS for PostgreSQL database on a db.r6g.xlarge instance. It is busy around the clock and will stay in service for at least the next three years. Within about a year the team expects to scale it up to db.r6g.2xlarge as traffic grows. Which approach gives the lowest database instance cost?'
+options:
+  - key: A
+    text: 'Keep the instance On-Demand and stop it each night to avoid paying for idle hours.'
+    correct: false
+    why: 'The database is busy 24 hours a day, so there are no idle hours to stop it in. On-Demand rates also stay at full price throughout.'
+  - key: B
+    text: 'Wait until the move to db.r6g.2xlarge is done, because a reservation is lost when the instance class changes.'
+    correct: false
+    why: 'RDS for PostgreSQL reservations are size-flexible within the same instance class type, so a scale-up in the db.r6g family keeps the discount. Waiting just means paying On-Demand rates meanwhile.'
+  - key: C
+    text: 'Migrate the database to Aurora Serverless and let it scale capacity automatically.'
+    correct: false
+    why: 'The load is constant and the size is known, so there is little to gain from automatic scaling, and the migration adds effort. The steady usage is exactly what a committed discount rewards.'
+  - key: D
+    text: 'Purchase a reserved DB instance for RDS for PostgreSQL in the same Region on the db.r6g class, with a term matching the planned lifetime.'
+    correct: true
+    why: 'A reservation is a billing discount on matching usage in the same Region and engine. Size flexibility for PostgreSQL applies it across sizes in the db.r6g family, so the discount still covers the larger instance after the scale-up (in part or in full).'
+cue: 'always-on, known size, three years, scale within the same instance family -> reserved DB instance (size-flexible for PostgreSQL)'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/USER_WorkingWithReservedDBInstances.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

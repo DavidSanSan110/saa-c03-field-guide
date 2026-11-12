@@ -1,0 +1,42 @@
+id: 'd4-4.1-0008'
+domain: 4
+task: '4.1'
+services:
+  - 's3'
+difficulty: medium
+type: multiple
+stem: "A logistics company's field devices upload large video files to an S3 bucket using multipart upload over unreliable mobile networks. Many uploads are interrupted and never retried. The storage bill for the bucket keeps rising even though the list of finished objects stays roughly the same size, and nobody can say which buckets in the account are affected. The team wants to locate the waste and stop it from coming back, with no custom code. Which two actions should the team take? Choose two."
+options:
+  - key: A
+    text: 'Add a lifecycle rule to the bucket that aborts multipart uploads still unfinished a set number of days after they started.'
+    correct: true
+    why: 'The abort action stops uploads that were not completed within the period and deletes their stored parts. It applies to existing and future uploads and leaves completed objects alone, so it removes the waste without any script.'
+  - key: B
+    text: 'Review the S3 Storage Lens cost-optimization metrics for incomplete multipart upload bytes older than seven days, per bucket.'
+    correct: true
+    why: 'Storage Lens reports how many bytes of unfinished uploads exist, including those older than seven days, and can break them down by account, Region or bucket. That shows which buckets hold the waste and which lack an abort rule.'
+  - key: C
+    text: 'Turn on S3 Versioning so that the parts of unfinished uploads are kept as noncurrent versions that can be expired.'
+    correct: false
+    why: 'Parts of an unfinished upload are not object versions. Versioning adds more stored data and does not clean up abandoned parts.'
+  - key: D
+    text: 'Raise the part size used by the devices so that fewer parts are left behind by each interrupted upload.'
+    correct: false
+    why: 'Part size changes how an upload is split, not whether abandoned parts are kept. The stored bytes of a failed upload still stay and are still billed until they are aborted.'
+  - key: E
+    text: 'Create a lifecycle rule that moves objects to a Glacier storage class after a few days.'
+    correct: false
+    why: 'Transition rules act on completed objects. Unfinished upload parts are not objects, so they stay where they are and keep costing money.'
+  - key: F
+    text: 'Enable S3 Storage Class Analysis on the bucket to find the unfinished uploads.'
+    correct: false
+    why: 'Storage Class Analysis studies access patterns to guide moving data between Standard and Standard-IA. It does not report on incomplete multipart uploads.'
+cue: 'bill grows while finished objects stay the same; interrupted multipart uploads; no custom code'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpu-abort-incomplete-mpu-lifecycle-config.html'
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-lens-optimize-storage.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,35 @@
+id: 'd4-4.2-0010'
+domain: 4
+task: '4.2'
+services:
+  - 'ecs'
+  - 'fargate'
+  - 'sqs'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A photo service runs an Amazon ECS service on AWS Fargate with 12 tasks that pull thumbnail jobs from an Amazon SQS queue. A failed job simply returns to the queue and is retried, and the containers shut down cleanly when they receive SIGTERM. The business needs at least 3 tasks always running so the queue never goes unserved, but the rest can be interrupted. The team wants to reduce the Fargate bill without adding servers to manage. What should they configure?'
+options:
+  - key: A
+    text: 'Use only the FARGATE_SPOT capacity provider, relying on Fargate to substitute regular capacity whenever Spot capacity is unavailable'
+    correct: false
+    why: 'Fargate does not replace Spot capacity with on-demand capacity. During tight supply tasks wait and the service retries, so no minimum number of tasks is guaranteed.'
+  - key: B
+    text: 'Use a capacity provider strategy with FARGATE holding a base of 3 tasks and FARGATE_SPOT given a positive weight for the remaining tasks'
+    correct: true
+    why: 'The base places the first 3 tasks on regular Fargate so the floor is protected, and the weighted Spot provider runs the interruption-tolerant rest at a discount. Spot tasks get a two-minute warning and a SIGTERM, which these containers handle.'
+  - key: C
+    text: 'Move the tasks to an Auto Scaling group capacity provider backed by On-Demand EC2 instances'
+    correct: false
+    why: 'This brings back instance management and patching, and On-Demand instances do not use the cheaper spare-capacity pricing that suits the tolerant tasks.'
+  - key: D
+    text: 'Keep all 12 tasks on FARGATE and add a spend commitment'
+    correct: false
+    why: 'A commitment only discounts the regular rate. The nine interruption-tolerant tasks could run at the lower Fargate Spot rate, so this leaves available savings unused.'
+cue: 'minimum tasks must run, the rest interruption tolerant -> FARGATE base plus weighted FARGATE_SPOT'
+references:
+  - 'https://docs.aws.amazon.com/AmazonECS/latest/developerguide/fargate-capacity-providers.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

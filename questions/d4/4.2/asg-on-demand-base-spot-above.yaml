@@ -1,0 +1,36 @@
+id: 'd4-4.2-0008'
+domain: 4
+task: '4.2'
+services:
+  - 'ec2-auto-scaling'
+  - 'ec2'
+  - 'elb'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A retailer runs a stateless order API on EC2 behind an Application Load Balancer. At least 6 instances must always be running, and the daily peak raises the fleet to around 40. Losing any single instance is harmless because the load balancer drains it and the Auto Scaling group replaces it. The team wants the lowest compute cost while the 6-instance floor is never at risk of Spot reclaim. Which Auto Scaling configuration fits best?'
+options:
+  - key: A
+    text: 'A launch template with one instance type, all capacity on Spot, and the lowest-price allocation strategy'
+    correct: false
+    why: 'Nothing guarantees the 6-instance floor, since every instance can be reclaimed. Lowest-price concentrates on few pools and is the strategy with the highest interruption risk according to the docs.'
+  - key: B
+    text: 'A mixed instances policy with 6 On-Demand instances as base capacity, 0 percent On-Demand above the base, many instance types across several Availability Zones, and price-capacity-optimized for Spot'
+    correct: true
+    why: 'The base keeps the floor on On-Demand, and everything above it runs on Spot. Offering many types and zones widens the Spot pools, and price-capacity-optimized favors pools that are cheap and least likely to be interrupted.'
+  - key: C
+    text: 'A mixed instances policy with 6 On-Demand base capacity and Spot above it, but restricted to one instance type in a single Availability Zone'
+    correct: false
+    why: 'The split is right, but one type in one zone gives only a single Spot pool. The docs advise flexibility across instance types and zones, because a thin pool means more interruptions and launches that cannot be fulfilled.'
+  - key: D
+    text: 'All On-Demand capacity covered by reservations sized for the 40-instance peak'
+    correct: false
+    why: 'Reservations sized for the peak are paid for even during the many hours when only a handful of instances run, so spend is higher than needed for a fault-tolerant fleet.'
+cue: 'steady floor must not be interrupted, burst above it is disposable -> On-Demand base plus Spot above, diversified, price-capacity-optimized'
+references:
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/mixed-instances-groups-set-up-overview.html'
+  - 'https://docs.aws.amazon.com/autoscaling/ec2/userguide/allocation-strategies.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

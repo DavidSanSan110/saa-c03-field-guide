@@ -1,0 +1,35 @@
+id: 'd4-4.2-0006'
+domain: 4
+task: '4.2'
+services:
+  - 'ec2'
+difficulty: medium # easy | medium | hard
+type: single # single | multiple
+stem: 'A software company serves a customer portal from 25 t3.large instances running Amazon Linux. The portal is a Python application packaged as a multi-architecture container image, so it already builds for both x86_64 and arm64. CPU use is low most of the day with short bursts, and the team wants to cut the monthly EC2 bill without buying any commitment and without a larger instance size. What should a solutions architect recommend?'
+options:
+  - key: A
+    text: 'Relaunch the fleet on T4g instances using an arm64 AMI and the arm64 variant of the image'
+    correct: true
+    why: 'T4g runs on AWS Graviton2 (arm64) and is documented as the lowest-cost EC2 instance type, with up to 40% better price/performance and 20% lower cost than T3. The image already supports arm64, and the burstable CPU model still fits the workload.'
+  - key: B
+    text: 'Relaunch the fleet on T3a instances, which use AMD processors and keep the current x86_64 image'
+    correct: false
+    why: 'T3a does save money, but the docs describe it as only 10% lower cost than T3. Since the application already supports arm64, this leaves the larger saving of T4g unused.'
+  - key: C
+    text: 'Move to t3.xlarge instances and cover them with a three-year commitment'
+    correct: false
+    why: 'A bigger size raises the hourly cost, and the stem rules out both a larger size and a commitment. The workload is not short of CPU, so more capacity does not address the bill.'
+  - key: D
+    text: 'Keep the t3.large instances and switch them to unlimited mode'
+    correct: false
+    why: 'T3 instances already launch in unlimited mode by default, and that mode exists to avoid throttling during bursts, not to lower the hourly price. It would not reduce spend.'
+cue: 'already builds for arm64, low CPU with bursts, no commitment, no larger size -> burstable Graviton (T4g)'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances.html'
+  - 'https://docs.aws.amazon.com/ec2/latest/instancetypes/gp.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-unlimited-mode-concepts.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

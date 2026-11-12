@@ -1,0 +1,34 @@
+id: 'd4-4.1-0009'
+domain: 4
+task: '4.1'
+services:
+  - 'efs'
+difficulty: medium
+type: single
+stem: 'A design studio keeps project files on a Regional Amazon EFS file system with Elastic throughput, mounted by render servers in several Availability Zones. Most projects go quiet after delivery, so a large share of the files has not been touched for months, and some for over a year. Occasionally an old project is reopened, and then its files must be served from the fast storage class again without anyone doing a manual step. The servers must keep using the same mount paths and the studio still needs the file system to survive the loss of an Availability Zone. Which change reduces storage cost the most while meeting these needs?'
+options:
+  - key: A
+    text: 'Run a nightly script that copies files older than 60 days to an S3 bucket in an archive class and deletes them from the file system.'
+    correct: false
+    why: 'It needs custom code, breaks the existing mount paths for archived files, and reopening a project would mean a manual restore and copy back instead of automatic handling.'
+  - key: B
+    text: 'Recreate the file system as an EFS One Zone file system to lower the price of all stored data.'
+    correct: false
+    why: 'A One Zone file system keeps data in a single Availability Zone and is not resilient to the loss of that zone, which the studio rules out. It also does nothing special for files that are inactive.'
+  - key: C
+    text: 'Enable a lifecycle policy that moves files to Infrequent Access after a period of no access, and leave the setting for returning files to Standard unchanged.'
+    correct: false
+    why: 'By default files stay in Infrequent Access after they are read, so a reopened project would keep being served from the slower class with access charges on every read. Nothing here also uses the cheaper Archive class for very old files.'
+  - key: D
+    text: 'Set lifecycle policies to move inactive files to Infrequent Access and later to Archive, and set files to return to Standard on first access.'
+    correct: true
+    why: 'Lifecycle management tiers by time since last access within the same file system, so mount paths and Regional resilience are unchanged. Archive is available because the file system uses Elastic throughput, and the on-first-access setting returns a reopened project to Standard automatically.'
+cue: 'inactive for months or over a year; reopened files back to fast class automatically; same mount paths; survive AZ loss'
+references:
+  - 'https://docs.aws.amazon.com/efs/latest/ug/lifecycle-management-efs.html'
+  - 'https://docs.aws.amazon.com/efs/latest/ug/features.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

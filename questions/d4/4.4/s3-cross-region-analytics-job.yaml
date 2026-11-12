@@ -1,0 +1,35 @@
+id: 'd4-4.4-0009'
+domain: 4
+task: '4.4'
+services:
+  - 's3'
+  - 'ec2'
+difficulty: medium
+type: single
+stem: 'A research company keeps a 30 TB dataset in an S3 bucket in Europe (Ireland). Every night a fleet of EC2 instances in US East (N. Virginia) reads the whole dataset to train a model, and it only writes a small result file. The bill shows high data transfer charges for these reads. Nothing else requires the compute to be in US East, and the results can be stored anywhere. What change lowers the cost the most?'
+options:
+  - key: A
+    text: 'Enable S3 Transfer Acceleration on the bucket and read through the accelerate endpoint.'
+    correct: false
+    why: 'Transfer Acceleration speeds up long-distance transfers between a client and a bucket, and its charges come on top of the normal data transfer charges. It does not remove the inter-Region cost of reading the data.'
+  - key: B
+    text: 'Run the nightly fleet in Europe (Ireland), in the same Region as the bucket.'
+    correct: true
+    why: "Data moving from an S3 bucket to EC2 in the same Region is not charged, while reading it from another Region is billed as inter-Region transfer every night. Moving the compute to the bucket's Region removes that recurring charge, and only the small result file needs to travel."
+  - key: C
+    text: 'Create an S3 gateway endpoint in the VPC of the US East fleet.'
+    correct: false
+    why: "A gateway endpoint can cut NAT gateway processing charges, but the data still leaves the bucket's Region, so the inter-Region transfer charge remains."
+  - key: D
+    text: 'Copy the dataset from the bucket to EBS volumes in US East at the start of every run.'
+    correct: false
+    why: 'Copying the full dataset each night still pulls the same 30 TB across Regions each time, so the transfer bill is unchanged and EBS storage costs are added.'
+cue: "large dataset read repeatedly from another Region, compute can move: run the compute in the bucket's Region"
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/transfer-acceleration.html'
+  - 'https://aws.amazon.com/s3/pricing/'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,33 @@
+id: 'd4-4.1-0010'
+domain: 4
+task: '4.1'
+services:
+  - 's3'
+difficulty: hard
+type: single
+stem: 'An e-commerce company runs a nightly job that creates resized product previews from its original photos. Each preview averages about 40 KB, is rebuilt automatically if lost, and is deleted by the job after roughly 10 days. Previews are almost never read after the first day, yet when one is requested it must load in milliseconds. A developer suggests writing them to S3 One Zone-IA because the previews can be recreated and the class has a low price per GB. What should a solutions architect recommend to keep the cost of this data lowest?'
+options:
+  - key: A
+    text: 'Accept the suggestion and upload the previews directly to S3 One Zone-IA.'
+    correct: false
+    why: 'Recreatable data is a good fit for One Zone-IA in general, but it bills at least 128 KB per object and at least 30 days of storage. With 40 KB objects deleted after about 10 days, the minimums wipe out the lower per-GB price.'
+  - key: B
+    text: 'Upload the previews to S3 Standard-IA, so that losing an Availability Zone does not affect them.'
+    correct: false
+    why: 'It has the same 128 KB billable size and 30-day minimum duration as One Zone-IA, so the same penalty applies to these small, short-lived objects. The extra zones are also not needed for data that can be rebuilt.'
+  - key: C
+    text: 'Upload the previews to S3 Glacier Instant Retrieval, which still returns objects in milliseconds.'
+    correct: false
+    why: 'It keeps millisecond access but has a 128 KB minimum billable object size and a 90-day minimum storage duration, so it is an even worse match for 40 KB objects removed after 10 days.'
+  - key: D
+    text: 'Keep the previews in S3 Standard and let a lifecycle expiration rule remove them after about 10 days, instead of using any infrequent-access class.'
+    correct: true
+    why: 'Standard has no minimum storage duration and no minimum billable object size, so the company pays only for the small size and the short time it really stores the data, with millisecond access. Infrequent-access classes would charge for 128 KB and 30 days per object.'
+cue: '40 KB objects, deleted after about 10 days, recreatable: minimum billable size and minimum duration'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-class-intro.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
