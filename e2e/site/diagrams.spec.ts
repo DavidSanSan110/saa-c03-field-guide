@@ -93,6 +93,9 @@ function captionRegion(island: Island): Locator {
   return island.root.locator('[data-caption]');
 }
 
+/** Fits several axe runs under load; stays under the 30 s test timeout so the poll's deadline fires. */
+const AXE_POLL = { timeout: 20_000 } as const;
+
 async function axeViolations(page: Page) {
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
@@ -554,7 +557,7 @@ test.describe('accessibility of the 2.2 page', () => {
   }) => {
     await openAlbPage(page);
 
-    await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+    await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
   });
 
   test('AC-17: axe finds no WCAG A/AA violations at the failed state of "az-failure"', async ({
@@ -562,7 +565,7 @@ test.describe('accessibility of the 2.2 page', () => {
   }) => {
     await openAlbAt(page, 'az-failure', 1);
 
-    await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+    await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
   });
 
   test('AC-17: axe finds no WCAG A/AA violations at the last step of the last scenario', async ({
@@ -575,7 +578,7 @@ test.describe('accessibility of the 2.2 page', () => {
     for (let step = 0; step < last.steps.length; step += 1) await island.forward.click();
     await expectStep(island, last.steps.length - 1);
 
-    await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+    await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
   });
 });
 
@@ -701,7 +704,7 @@ for (const entry of TASK_1_2_DIAGRAMS) {
     }) => {
       await openTask12Island(page, entry.id);
 
-      await expect.poll(() => axeViolations(page)).toEqual([]);
+      await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]);
     });
 
     for (const scenarioId of scenarioIdsOf(entry.id, entry.scenarioIds)) {
@@ -732,7 +735,7 @@ for (const entry of TASK_1_2_DIAGRAMS) {
         for (let step = 0; step < scenario.steps.length; step += 1) await island.forward.click();
         await expectStep(island, scenario.steps.length - 1);
 
-        await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+        await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
       });
     }
   });
@@ -822,7 +825,7 @@ for (const entry of TASK_1_3_DIAGRAMS) {
     }) => {
       await openTask13Island(page, entry.id);
 
-      await expect.poll(() => axeViolations(page)).toEqual([]);
+      await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]);
     });
 
     for (const scenarioId of scenarioIdsOf(entry.id, entry.scenarioIds)) {
@@ -853,7 +856,7 @@ for (const entry of TASK_1_3_DIAGRAMS) {
         for (let step = 0; step < scenario.steps.length; step += 1) await island.forward.click();
         await expectStep(island, scenario.steps.length - 1);
 
-        await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+        await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
       });
     }
   });
@@ -950,7 +953,7 @@ for (const entry of TASK_1_1_DIAGRAMS) {
     }) => {
       await openTask11Island(page, entry.id);
 
-      await expect.poll(() => axeViolations(page)).toEqual([]);
+      await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]);
     });
 
     for (const scenarioId of scenarioIdsOf(entry.id, entry.scenarioIds)) {
@@ -981,7 +984,7 @@ for (const entry of TASK_1_1_DIAGRAMS) {
         for (let step = 0; step < scenario.steps.length; step += 1) await island.forward.click();
         await expectStep(island, scenario.steps.length - 1);
 
-        await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+        await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
       });
     }
   });
@@ -1078,7 +1081,7 @@ for (const entry of TASK_2_1_DIAGRAMS) {
     }) => {
       await openTask21Island(page, entry.id);
 
-      await expect.poll(() => axeViolations(page)).toEqual([]);
+      await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]);
     });
 
     for (const scenarioId of scenarioIdsOf(entry.id, entry.scenarioIds)) {
@@ -1109,7 +1112,7 @@ for (const entry of TASK_2_1_DIAGRAMS) {
         for (let step = 0; step < scenario.steps.length; step += 1) await island.forward.click();
         await expectStep(island, scenario.steps.length - 1);
 
-        await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+        await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
       });
     }
   });
@@ -1201,7 +1204,7 @@ for (const entry of TASK_2_2_DIAGRAMS) {
     }) => {
       await openTask22Island(page, entry.id);
 
-      await expect.poll(() => axeViolations(page)).toEqual([]);
+      await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]);
     });
 
     for (const scenarioId of scenarioIdsOf(entry.id, entry.scenarioIds)) {
@@ -1232,8 +1235,55 @@ for (const entry of TASK_2_2_DIAGRAMS) {
         for (let step = 0; step < scenario.steps.length; step += 1) await island.forward.click();
         await expectStep(island, scenario.steps.length - 1);
 
-        await expect.poll(() => axeViolations(page)).toEqual([]); // a state that just appeared is mid-fade
+        await expect.poll(() => axeViolations(page), AXE_POLL).toEqual([]); // a state that just appeared is mid-fade
       });
     }
   });
 }
+
+// ===========================================================================
+// Spec 050: the axe polls keep their budget
+// ===========================================================================
+
+/**
+ * The top-level arguments of every call to the poll helper in `source`, in file order.
+ * Also matches a generic call and the line-wrapped form Prettier makes of a long one.
+ * The pattern is built from pieces so this function's own text is not counted as a call.
+ */
+function pollCallArguments(source: string): string[][] {
+  const pollStart = new RegExp(
+    ['expect', '\\s*\\.\\s*poll', '\\s*(?:<[^>]*>)?\\s*\\('].join(''),
+    'g',
+  );
+  const calls: string[][] = [];
+  for (const match of source.matchAll(pollStart)) {
+    const args: string[] = [];
+    let depth = 1;
+    let current = '';
+    for (const char of source.slice(match.index + match[0].length)) {
+      if (char === '(' || char === '[' || char === '{') depth += 1;
+      if (char === ')' || char === ']' || char === '}') depth -= 1;
+      if (depth === 0) break;
+      if (char === ',' && depth === 1) {
+        args.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    args.push(current.trim());
+    calls.push(args.filter((arg) => arg !== ''));
+  }
+  return calls;
+}
+
+test('AC-2: every axe poll in diagrams.spec.ts uses the AXE_POLL budget', () => {
+  const axePolls = pollCallArguments(readFileSync(import.meta.filename, 'utf8')).filter(
+    ([callback]) => callback?.includes('axeViolations') === true,
+  );
+
+  const withoutBudget = axePolls.filter((args) => args[1] !== 'AXE_POLL');
+
+  expect(withoutBudget).toEqual([]);
+  expect(axePolls.length).toBeGreaterThanOrEqual(13);
+});
