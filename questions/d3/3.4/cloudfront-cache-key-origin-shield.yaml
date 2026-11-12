@@ -1,0 +1,43 @@
+id: 'd3-3.4-0007'
+domain: 3
+task: '3.4'
+services:
+  - 'cloudfront'
+difficulty: medium
+type: multiple
+stem: 'A streaming company serves video thumbnails and article pages to viewers on every continent through a CloudFront distribution. The origin is an on-premises web server with limited capacity that is overloaded at peak hours. CloudFront reports a low cache hit ratio. The cache policy forwards all headers, all cookies and all query strings, although the response only varies with one query string parameter and the Accept-Language header. The origin already returns sensible Cache-Control headers. Which two actions will increase the cache hit ratio and reduce the load on the origin? Choose two.'
+options:
+  - key: A
+    text: "Place AWS Global Accelerator in front of the origin and send the viewer traffic through the accelerator's static IP addresses."
+    correct: false
+    why: 'Global Accelerator improves the network path and gives static IPs, but it does not cache anything: every request would still reach the overloaded origin.'
+  - key: B
+    text: 'Change the cache policy so the cache key contains only the one query string parameter and the Accept-Language header, and move any other value the origin needs into an origin request policy.'
+    correct: true
+    why: 'Each extra header, cookie or query string in the cache key splits the cache into more copies. A smaller cache key gives more hits, while an origin request policy still delivers the other values to the origin on a miss.'
+  - key: C
+    text: 'Create an invalidation for /* every hour so the edge locations always hold fresh copies of the objects.'
+    correct: false
+    why: "Invalidations remove objects from the caches, which causes more misses and more origin requests. The origin's Cache-Control headers already control freshness."
+  - key: D
+    text: 'Enable Origin Shield for the origin in the AWS Region with the lowest latency to it, so all cache layers fetch through one extra caching layer.'
+    correct: true
+    why: 'Origin Shield consolidates requests from all edge locations and regional edge caches into as few origin requests as possible. The docs list viewers in many geographic regions and on-premises origins with capacity limits as use cases.'
+  - key: E
+    text: 'Add a second origin and use Route 53 latency routing records to send viewers to the nearest origin.'
+    correct: false
+    why: 'More origins do not raise the hit ratio and add cost and operational work. The problem is the fragmented cache key, not the distance to the origin.'
+  - key: F
+    text: 'Turn on S3 Transfer Acceleration for the origin so that content reaches the edge locations faster.'
+    correct: false
+    why: 'Transfer Acceleration speeds up uploads to an S3 bucket. The origin here is an on-premises web server, and it has no effect on caching.'
+cue: 'Low cache hit ratio, everything forwarded in the cache key, viewers worldwide, capacity-limited origin: a leaner cache key plus Origin Shield.'
+references:
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/origin-shield.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-the-cache-key.html'
+  - 'https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/controlling-origin-requests.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
