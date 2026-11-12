@@ -1,0 +1,34 @@
+id: 'd4-4.3-0006'
+domain: 4
+task: '4.3'
+services:
+  - 'dynamodb'
+difficulty: medium
+type: single
+stem: 'An online retailer keeps ten years of order history in a very large DynamoDB table (Standard table class). Cost reports show that storage costs are several times higher than the combined read and write costs, because customers only open old orders occasionally. The application must keep using the same DynamoDB API with the same latency and no code changes. How can the company reduce the cost of this table the most?'
+options:
+  - key: A
+    text: 'Export the old orders to Amazon S3 and have the application query them there with Athena.'
+    correct: false
+    why: 'This would cut storage cost, but it changes the access path and latency and needs application changes. The requirement is to keep the same DynamoDB API and performance.'
+  - key: B
+    text: 'Switch the table to provisioned mode with auto scaling to lower the cost of the occasional reads.'
+    correct: false
+    why: 'The bill is dominated by storage, and the capacity mode only affects how throughput is charged. It leaves the storage price unchanged.'
+  - key: C
+    text: 'Update the table class of the existing table to DynamoDB Standard-IA.'
+    correct: true
+    why: 'Standard-IA has a lower storage price and a higher throughput price, so it pays off when storage is the dominant cost. It keeps the same APIs, performance, durability and availability, and can be applied to an existing table.'
+  - key: D
+    text: 'Keep the Standard class and purchase reserved capacity to discount the table.'
+    correct: false
+    why: 'Reserved capacity discounts provisioned read and write units, not storage, and it applies only to provisioned Standard-class tables. It does not touch the dominant storage cost.'
+cue: 'storage cost several times the read/write cost, rarely accessed, same API and no code changes -> Standard-IA table class'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithTables.tableclasses.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/reserved-capacity.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

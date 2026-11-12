@@ -1,0 +1,35 @@
+id: 'd4-4.4-0010'
+domain: 4
+task: '4.4'
+services:
+  - 'vpc'
+  - 'transit-gateway'
+  - 'route53'
+difficulty: hard
+type: single
+stem: 'A company has 40 workload VPCs in one Region, each in its own account, all attached to a transit gateway. The workloads call several AWS services (not S3 or DynamoDB) privately through interface VPC endpoints, and every VPC currently has its own copy of each endpoint in three Availability Zones. The hourly endpoint charges are large, and the company wants to lower them without opening any route to the internet. Which approach does that?'
+options:
+  - key: A
+    text: 'Create one set of interface endpoints in a shared services VPC attached to the transit gateway, turn off private DNS on them, and create private hosted zones named after the service endpoints with alias records to the endpoints, associated with the workload VPCs.'
+    correct: true
+    why: 'Interface endpoints are billed per hour for each Availability Zone plus data processing, so one shared set replaces 40 copies. The workload VPCs reach it through the transit gateway. Private DNS has to be off on the shared endpoints, and the manually created hosted zones, associated with the other VPCs, make the service names resolve to the shared endpoints.'
+  - key: B
+    text: 'Create the endpoints once in a shared services VPC and keep private DNS enabled, relying on the managed hosted zone to resolve the names in all workload VPCs.'
+    correct: false
+    why: 'The hosted zone that AWS creates for private DNS only works inside the VPC that contains the endpoint, so the other 39 VPCs would still resolve the public service addresses and not use the shared endpoints.'
+  - key: C
+    text: 'Replace the interface endpoints with gateway endpoints in each VPC for the same services.'
+    correct: false
+    why: 'Gateway endpoints are available only for Amazon S3 and Amazon DynamoDB, so they cannot replace endpoints for other services.'
+  - key: D
+    text: 'Remove the endpoints and give each VPC a NAT gateway so the workloads reach the services through the public service endpoints.'
+    correct: false
+    why: 'A NAT gateway has its own hourly and per-GB charges, and it sends traffic to the public endpoints through an internet gateway. This breaks the requirement of staying off the internet and may not be cheaper.'
+cue: 'many VPCs each with the same interface endpoints, transit gateway already in place: centralize the endpoints in one VPC and share them with private hosted zones'
+references:
+  - 'https://docs.aws.amazon.com/whitepapers/latest/building-scalable-secure-multi-vpc-network-infrastructure/centralized-access-to-vpc-private-endpoints.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

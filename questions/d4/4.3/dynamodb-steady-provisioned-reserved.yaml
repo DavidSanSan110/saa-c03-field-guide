@@ -1,0 +1,35 @@
+id: 'd4-4.3-0005'
+domain: 4
+task: '4.3'
+services:
+  - 'dynamodb'
+difficulty: hard
+type: single
+stem: 'A logistics company stores shipment events in a DynamoDB table that uses the Standard table class in on-demand capacity mode. Traffic has been very regular for a year: it rises and falls gently with the working day, and the peak is known to stay within a narrow, well-forecast range. The company expects to keep the table for at least another year and wants the lowest possible throughput cost without throttling. What should a solutions architect do?'
+options:
+  - key: A
+    text: 'Keep on-demand mode and purchase DynamoDB reserved capacity for the expected request volume.'
+    correct: false
+    why: 'Reserved capacity is a commitment on provisioned throughput. It is not available for tables in on-demand capacity mode, so this purchase cannot be made.'
+  - key: B
+    text: 'Change the table to the Standard-IA table class and purchase reserved capacity for the baseline read and write units.'
+    correct: false
+    why: 'Standard-IA lowers storage cost but raises throughput cost, and reserved capacity is not offered for Standard-IA tables. The cost problem here is throughput, not storage.'
+  - key: C
+    text: 'Switch the table to provisioned mode on the Standard class, enable auto scaling with minimum and maximum limits around the forecast range, and purchase reserved capacity for the steady baseline.'
+    correct: true
+    why: 'Provisioned mode suits steady workloads with predictable growth. Auto scaling follows the daily curve, and a reservation (for provisioned Standard-class tables) discounts the baseline that will always be in use.'
+  - key: D
+    text: 'Switch the table to provisioned mode and set a fixed capacity equal to the highest forecast peak, with auto scaling turned off.'
+    correct: false
+    why: 'A fixed peak-sized setting is billed every hour whether or not it is used, so the company would pay for unused capacity during the quieter hours. Auto scaling is what trims that waste.'
+cue: 'very regular traffic, narrow forecast range, keep the table another year, lowest throughput cost -> provisioned + auto scaling + reserved capacity (Standard class only)'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/capacity-mode.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/provisioned-capacity-mode.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/reserved-capacity.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

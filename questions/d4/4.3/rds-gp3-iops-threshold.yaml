@@ -1,0 +1,33 @@
+id: 'd4-4.3-0008'
+domain: 4
+task: '4.3'
+services:
+  - 'rds'
+difficulty: hard
+type: single
+stem: 'A company is creating a production Amazon RDS for MySQL database that holds about 300 GiB of data. Load tests show the workload needs a sustained 20,000 IOPS, and single-digit millisecond latency is acceptable. The instance class can support that I/O rate. The team wants to meet the IOPS requirement at the lowest storage cost. Which configuration should the team choose?'
+options:
+  - key: A
+    text: 'General Purpose SSD (gp3) storage of 300 GiB, with the provisioned IOPS raised to 20,000.'
+    correct: false
+    why: 'For MySQL, extra provisioned IOPS on gp3 is available only when the storage size is at or above the threshold of 400 GiB. At 300 GiB the baseline of 3,000 IOPS is all the volume can deliver.'
+  - key: B
+    text: 'Provisioned IOPS SSD (io2 Block Express) storage of 300 GiB with 20,000 IOPS provisioned.'
+    correct: false
+    why: 'It would deliver the IOPS, but the sub-millisecond latency it is built for is not required, and the IOPS are billed whether used or not. gp3 can reach the same IOPS at a lower price.'
+  - key: C
+    text: 'General Purpose SSD (gp2) storage enlarged to roughly 6,700 GiB so that its baseline reaches 20,000 IOPS.'
+    correct: false
+    why: 'On gp2, IOPS cannot be provisioned and only scales with size at 3 IOPS per GiB, so the company would pay for thousands of GiB it does not need.'
+  - key: D
+    text: 'General Purpose SSD (gp3) storage of at least 400 GiB, with the provisioned IOPS raised to 20,000.'
+    correct: true
+    why: 'At 400 GiB and above, gp3 for MySQL starts at a baseline of 12,000 IOPS and 500 MiB/s, and IOPS can be raised independently of size, so you pay only for the extra 8,000 IOPS plus a small amount of extra storage.'
+cue: '300 GiB, 20,000 IOPS, single-digit ms acceptable, lowest cost -> gp3 sized past the 400 GiB threshold, IOPS provisioned independently'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/CHAP_Storage.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

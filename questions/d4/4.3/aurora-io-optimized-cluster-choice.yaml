@@ -1,0 +1,37 @@
+id: 'd4-4.3-0009'
+domain: 4
+task: '4.3'
+services:
+  - 'aurora'
+difficulty: hard
+type: multiple
+stem: "A company runs five Aurora clusters, all on the Aurora Standard storage configuration and all on engine versions that support Aurora I/O-Optimized. Cost Explorer shows what share of each cluster's total Aurora spending is charged for I/O requests. The company wants to switch only the clusters for which Aurora I/O-Optimized lowers the bill. Which two clusters should it switch? Choose two."
+options:
+  - key: A
+    text: 'An order-processing cluster where I/O requests account for about 40 percent of its total Aurora cost.'
+    correct: true
+    why: 'I/O-Optimized has no per-request I/O charges and is the best choice when I/O is 25 percent or more of the total Aurora spend. At 40 percent the switch pays off.'
+  - key: B
+    text: 'An internal wiki cluster where I/O requests account for about 5 percent of its total Aurora cost.'
+    correct: false
+    why: 'With I/O well below 25 percent of the spend, Standard is cheaper, because the higher storage and instance rates of I/O-Optimized would outweigh the small I/O saving.'
+  - key: C
+    text: 'A telemetry-ingest cluster where I/O requests account for about 32 percent of its total Aurora cost.'
+    correct: true
+    why: '32 percent is above the 25 percent point at which I/O-Optimized becomes the cheaper configuration, because the per-request I/O charges disappear.'
+  - key: D
+    text: 'A reporting cluster where I/O requests account for about 24 percent of its total Aurora cost.'
+    correct: false
+    why: 'This is just under the 25 percent line, so Aurora Standard is still the better fit for it.'
+  - key: E
+    text: 'A development cluster where I/O requests account for about 10 percent of its total Aurora cost.'
+    correct: false
+    why: 'At 10 percent I/O share this cluster has moderate I/O usage, which is the case Aurora Standard is designed for.'
+cue: 'I/O spend 25 percent or more of total Aurora spend -> I/O-Optimized; below 25 percent -> Standard'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Overview.StorageReliability.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

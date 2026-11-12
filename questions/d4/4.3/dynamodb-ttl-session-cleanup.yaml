@@ -1,0 +1,37 @@
+id: 'd4-4.3-0007'
+domain: 4
+task: '4.3'
+services:
+  - 'dynamodb'
+difficulty: hard
+type: multiple
+stem: 'A web application stores login sessions in a DynamoDB table. Every session lapses 24 hours after it is created, and the table keeps growing because nothing removes old sessions. The company wants to stop paying for stale data without spending write capacity on cleanup, and the application must never treat an expired session as valid, even if the system has not yet removed the item. Which two actions meet these requirements? Choose two.'
+options:
+  - key: A
+    text: "Enable TTL on the table and write each session's expiry as a Number holding a Unix epoch time in seconds."
+    correct: true
+    why: 'TTL removes expired items in the background without consuming write throughput. The attribute must be a Number in epoch seconds, otherwise the item is ignored by the TTL process.'
+  - key: B
+    text: 'Run a scheduled Lambda function that scans the table and deletes the expired sessions.'
+    correct: false
+    why: 'A scan reads the whole table and each delete is a normal write, so this spends read and write capacity that TTL would not.'
+  - key: C
+    text: 'Enable TTL and store the expiry in the TTL attribute as an ISO 8601 date string.'
+    correct: false
+    why: 'Items whose TTL attribute is not a Number are ignored by the TTL process, so nothing would ever be deleted.'
+  - key: D
+    text: 'Add a filter expression to session lookups and scans that excludes items whose expiry time has already passed.'
+    correct: true
+    why: 'Deletion can happen any time within a few days after expiry, so expired items may still be returned. A filter expression keeps them out of results until they are removed.'
+  - key: E
+    text: 'Raise the provisioned write capacity of the table so the cleanup job finishes faster.'
+    correct: false
+    why: 'This adds cost instead of removing it, and it does not remove any data by itself.'
+cue: 'sessions expire, no write capacity for cleanup, items may linger after expiry -> TTL (epoch seconds, Number) plus a filter on expiry'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

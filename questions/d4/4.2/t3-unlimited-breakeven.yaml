@@ -1,0 +1,39 @@
+id: 'd4-4.2-0009'
+domain: 4
+task: '4.2'
+services:
+  - 'ec2'
+  - 'cloudwatch'
+difficulty: hard # easy | medium | hard
+type: multiple # single | multiple
+stem: 'A company runs 30 t3.large instances in unlimited mode. Twenty of them average about 15 percent CPU over any 24-hour window. The other ten sit near 85 percent CPU almost all day, and the monthly bill for them is higher than expected. All thirty must keep delivering their full CPU performance with no throttling. Which two actions together give the lowest total cost? Choose two.'
+options:
+  - key: A
+    text: 'Move the ten busy instances to m5.large, a fixed-performance type of the same size'
+    correct: true
+    why: 't3.large reaches its cost breakeven against m5.large at 42.5 percent average CPU. At 85 percent, the surplus-credit charges push the burstable instances above the fixed-performance price.'
+  - key: B
+    text: 'Leave the twenty lightly used instances on T3 in unlimited mode'
+    correct: true
+    why: 'At 15 percent average they stay below both the 30 percent baseline and the breakeven point, so they incur no surplus charge and cost less than m5.large while delivering the same performance.'
+  - key: C
+    text: 'Switch all thirty instances to standard mode'
+    correct: false
+    why: 'Standard mode gradually lowers CPU to the baseline once credits run out. The busy instances would be throttled, which breaks the no-throttling requirement.'
+  - key: D
+    text: 'Move all thirty instances to m5.large'
+    correct: false
+    why: 'The twenty lightly used instances are well below the breakeven point, so they are cheaper on T3 and this change would raise their cost.'
+  - key: E
+    text: 'Move the ten busy instances to t3.2xlarge so they earn more credits'
+    correct: false
+    why: 'A larger T3 costs more per hour, and its breakeven against the matching m5 is still about 52.5 percent. Instances held near 85 percent still pay for surplus credits.'
+cue: 'average CPU above breakeven (42.5 percent for t3.large) -> fixed-performance m5; below it -> keep T3 unlimited'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-unlimited-mode-concepts.html'
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/burstable-performance-instances-standard-mode.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

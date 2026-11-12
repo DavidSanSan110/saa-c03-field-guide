@@ -1,0 +1,45 @@
+id: 'd4-4.4-0008'
+domain: 4
+task: '4.4'
+services:
+  - 'ec2'
+  - 'vpc'
+  - 'elb'
+difficulty: hard
+type: multiple
+stem: 'A company runs 60 web servers in public subnets. Each server receives an auto-assigned public IPv4 address and users connect to the servers directly by those addresses. Over the years the company has also allocated many Elastic IP addresses across several accounts and Regions, and nobody knows which are still in use. The bill now shows a large public IPv4 address charge. The website must stay reachable from the internet. Which actions will reduce the charge? Choose two.'
+options:
+  - key: A
+    text: 'Place the servers behind an Application Load Balancer and turn off auto-assign public IP on their network interfaces.'
+    correct: true
+    why: 'A load balancer uses far fewer public IPv4 addresses than one per server, so the count of billed addresses falls sharply while the site stays reachable through the load balancer. The servers no longer need their own public address.'
+  - key: B
+    text: 'Use IPAM Public IP Insights to find Elastic IP addresses that are not associated with anything, and release them.'
+    correct: true
+    why: 'Every public IPv4 address is charged, including Elastic IPs that are allocated but idle. Public IP Insights lists addresses across Regions (and across the organization when IPAM is integrated with it) and shows the unassociated ones, so they can be released.'
+  - key: C
+    text: 'Convert every auto-assigned public IP address into an Elastic IP address.'
+    correct: false
+    why: 'Elastic IP addresses are billed like any other public IPv4 address, so the count and the charge stay the same. This adds a fixed address but no saving.'
+  - key: D
+    text: 'Stop and start each instance once a day so the platform releases its public IP address.'
+    correct: false
+    why: 'A stopped instance gives up its address, but a new one is assigned when the instance starts again. The count of addresses in use stays the same, and the daily restart would take servers out of service.'
+  - key: E
+    text: 'Attach a second network interface with a private IPv4 address to each server.'
+    correct: false
+    why: 'Private addresses are not billed as public IPv4 addresses, and adding one does not remove the public address on the first interface.'
+  - key: F
+    text: 'Turn on DNS hostnames for the VPC so that servers use private DNS names for users.'
+    correct: false
+    why: 'DNS hostnames only change how names resolve. Users on the internet still need public addresses to reach the servers, so no public address is removed.'
+cue: 'all public IPv4 addresses are billed (even idle Elastic IPs): fewer addresses through a load balancer, and release the unassociated ones found with IPAM'
+references:
+  - 'https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/using-instance-addressing.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/ipam/view-public-ip-insights.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/userguide/vpc-ip-addressing.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

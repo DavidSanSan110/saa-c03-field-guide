@@ -1,0 +1,35 @@
+id: 'd4-4.4-0006'
+domain: 4
+task: '4.4'
+services:
+  - 'vpc'
+  - 'transit-gateway'
+difficulty: medium
+type: single
+stem: 'A retail company runs three VPCs in the same Region, owned by three different AWS accounts: storefront, inventory and analytics. The VPC CIDR blocks do not overlap. Each VPC must be able to reach the other two over private addresses, and the inventory and analytics VPCs exchange several terabytes of data every day. The company has no plans to add more VPCs. The network team wants the lowest possible networking bill that still keeps all traffic off the internet. Which design should the team choose?'
+options:
+  - key: A
+    text: 'Attach all three VPCs to a new transit gateway and route every VPC through it.'
+    correct: false
+    why: 'A transit gateway bills each attachment per hour and also bills the traffic it processes. That is a fair price for a hub that connects many networks, but for three VPCs with heavy traffic it adds charges that direct connections do not have.'
+  - key: B
+    text: 'Create VPC peering connections between each pair of VPCs and add routes to the peer CIDR blocks in the route tables.'
+    correct: true
+    why: 'Creating a peering connection is free and the connection has no hourly or per-GB processing fee. Only normal data transfer applies, and traffic that stays inside an Availability Zone is free. Three VPCs need just three peering connections, and no VPC has to forward traffic for another one, so this is the cheapest private design here.'
+  - key: C
+    text: 'Give each VPC a NAT gateway and an internet gateway, and have the VPCs call each other through public endpoints protected by security groups.'
+    correct: false
+    why: 'This sends traffic over public addresses and through NAT gateways, which add hourly and per-GB charges and public IPv4 charges. It also breaks the requirement to keep traffic off the internet.'
+  - key: D
+    text: 'Attach all three VPCs to a transit gateway and turn on flexible cost allocation so the processing charges land in the accounts that send the traffic.'
+    correct: false
+    why: 'Flexible cost allocation only changes which account is billed for the transit gateway data processing. The attachment-hour and per-GB charges still exist, so the total cost is not reduced.'
+cue: 'three VPCs, same Region, heavy traffic, no plans to add more, lowest networking cost: peering has no hourly or processing fee, transit gateway bills both'
+references:
+  - 'https://docs.aws.amazon.com/vpc/latest/peering/what-is-vpc-peering.html'
+  - 'https://docs.aws.amazon.com/vpc/latest/tgw/what-is-transit-gateway.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

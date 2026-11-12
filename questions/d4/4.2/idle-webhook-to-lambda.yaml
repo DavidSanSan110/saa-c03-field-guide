@@ -1,0 +1,35 @@
+id: 'd4-4.2-0007'
+domain: 4
+task: '4.2'
+services:
+  - 'lambda'
+  - 'eventbridge'
+  - 'ec2'
+difficulty: easy # easy | medium | hard
+type: single # single | multiple
+stem: 'An internal tools team runs a webhook receiver and a nightly CSV conversion job on two m5.large instances that stay on around the clock. Average CPU is about 3 percent. Webhook calls arrive in short bursts, a few thousand a day, and each is handled in under five seconds. The nightly conversion finishes in about four minutes. The team wants the lowest cost for this pattern and as little server maintenance as possible. What should they do?'
+options:
+  - key: A
+    text: 'Buy one-year Reserved Instances for both m5.large instances'
+    correct: false
+    why: 'A reservation lowers the hourly rate, but the team still pays for two mostly idle servers every hour and keeps patching them.'
+  - key: B
+    text: 'Run the workload on a single smaller always-on instance inside an Auto Scaling group'
+    correct: false
+    why: 'A smaller instance cuts the bill, but there is still a charge for every idle hour and the instance still has to be maintained.'
+  - key: C
+    text: 'Move both pieces to AWS Lambda functions, with the webhook triggered through an HTTP endpoint and the nightly job triggered by an Amazon EventBridge schedule'
+    correct: true
+    why: 'Lambda is billed per request plus execution time, with no upfront commitment, so idle hours cost nothing. Both tasks are short enough for the per-invocation time limit, and EventBridge is a supported trigger for the schedule.'
+  - key: D
+    text: 'Keep two instances running at all times, but buy them as Spot capacity managed by Auto Scaling'
+    correct: false
+    why: 'Spot lowers the instance rate, but instances can be reclaimed and the group still runs two servers all day. Idle capacity is paid for and server upkeep remains.'
+cue: '3 percent average CPU, short bursts, seconds-long handlers -> pay per invocation (Lambda), not any always-on instance'
+references:
+  - 'https://docs.aws.amazon.com/lambda/latest/dg/welcome.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

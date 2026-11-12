@@ -1,0 +1,33 @@
+id: 'd4-4.1-0007'
+domain: 4
+task: '4.1'
+services:
+  - 's3'
+difficulty: medium
+type: single
+stem: 'A hospital network keeps radiology images from closed patient cases for seven years. Today they sit in S3 Standard. Auditors and clinicians open a few of them roughly once a quarter, and when they do, the image viewer must display the file immediately, with no restore step and no waiting. The images are never deleted or moved before the retention period ends. A solutions architect wants the lowest storage cost that still keeps this behavior. Which storage class should the images use?'
+options:
+  - key: A
+    text: 'S3 Glacier Flexible Retrieval, restoring each image before the viewer opens it.'
+    correct: false
+    why: 'Flexible Retrieval is an archive class: objects are not available for real-time access and must be restored first, which takes minutes to hours. That breaks the open-immediately requirement.'
+  - key: B
+    text: 'S3 Standard-IA, because it also serves objects in milliseconds.'
+    correct: false
+    why: 'It does meet the latency need, but it is aimed at data read about once a month. For data read about once a quarter, an archive class with the same millisecond access is the better fit and costs less to store.'
+  - key: C
+    text: 'S3 Glacier Instant Retrieval, since data is kept for years and read only occasionally.'
+    correct: true
+    why: 'It is designed for long-lived archive data accessed about once a quarter and still returns objects in milliseconds, with no restore step. Its 90-day minimum storage duration is irrelevant because the images stay for seven years.'
+  - key: D
+    text: 'S3 Glacier Deep Archive, using the standard retrieval option when an image is requested.'
+    correct: false
+    why: 'Deep Archive is for data accessed less than once a year, needs a restore with retrieval times of hours, and has a 180-day minimum duration. It cannot serve an immediate read.'
+cue: 'read about once a quarter, must open immediately with no restore, kept for years'
+references:
+  - 'https://docs.aws.amazon.com/AmazonS3/latest/userguide/storage-class-intro.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
