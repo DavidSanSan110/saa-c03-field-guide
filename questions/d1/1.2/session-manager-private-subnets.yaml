@@ -1,0 +1,38 @@
+id: 'd1-1.2-0018'
+domain: 1
+task: '1.2'
+services:
+  - 'systems-manager'
+  - 'vpc'
+  - 'ec2'
+  - 'iam'
+difficulty: medium
+type: single
+stem: 'A software company keeps its back-end servers in private subnets of a VPC. Those subnets have no internet gateway route and no NAT gateway, and the company wants to keep it that way. Administrators must be able to open a shell on these servers, but the security team will not accept any open inbound port, any SSH key pair to manage, or any bastion host. Access must be granted through IAM, and the commands run in each session must be recorded. Which solution meets these requirements?'
+options:
+  - key: A
+    text: "Launch a bastion host in a public subnet, allow SSH to it from the office IP range, allow SSH to the servers only from the bastion's security group, and store the key pair in AWS Secrets Manager."
+    correct: false
+    why: 'This still leaves inbound port 22 open on the bastion and the servers, and it still depends on SSH key pairs and a bastion host. These are exactly the three things the security team refuses.'
+  - key: B
+    text: "Attach an instance profile that includes the AmazonSSMManagedInstanceCore managed policy, make sure SSM Agent is running, create interface VPC endpoints for Systems Manager (ssm and ssmmessages, plus ec2messages), allow HTTPS 443 from the instances on the endpoints' security group, and let administrators start Session Manager sessions with session logging sent to S3 or CloudWatch Logs."
+    correct: true
+    why: 'SSM Agent opens the connection outward, so no inbound port is needed. The instance profile lets Systems Manager act on the instance, the interface endpoints give the agent a private path to the service without a NAT or internet gateway, IAM policies decide who can start sessions, and Session Manager can log session activity to S3 or CloudWatch Logs. Without internet access, the log destination needs its own endpoint too: a gateway endpoint for S3 or an interface endpoint for CloudWatch Logs.'
+  - key: C
+    text: 'Use the same instance profile and agent setup, but create gateway VPC endpoints for Systems Manager and add the routes to the private route tables.'
+    correct: false
+    why: 'The Systems Manager documentation tells you to reach the service through interface endpoints (AWS PrivateLink) such as ssm and ssmmessages, which are network interfaces with private IPs in your subnets. It does not describe a gateway endpoint for Systems Manager, so the agent would still have no path to the service.'
+  - key: D
+    text: 'Attach the instance profile with the AmazonSSMManagedInstanceCore policy and install SSM Agent, then start sessions from the console. No other network setup is needed because the agent talks to Systems Manager over the AWS internal network automatically.'
+    correct: false
+    why: 'The agent must still reach the Systems Manager endpoints (ssm, ssmmessages, ec2messages) over HTTPS, either through the internet or through interface VPC endpoints. In subnets with no NAT gateway and no endpoints, the instances can never register as managed nodes.'
+cue: 'no inbound port, no SSH keys, no bastion, private subnets with no internet route -> Session Manager, instance profile and interface endpoints'
+references:
+  - 'https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager.html'
+  - 'https://docs.aws.amazon.com/systems-manager/latest/userguide/setup-create-vpc.html'
+  - 'https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-getting-started-instance-profile.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

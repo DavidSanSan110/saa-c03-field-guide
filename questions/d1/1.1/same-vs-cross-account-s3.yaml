@@ -1,0 +1,35 @@
+id: 'd1-1.1-0018'
+domain: 1
+task: '1.1'
+services:
+  - 'iam'
+  - 's3'
+difficulty: hard
+type: single
+stem: 'The bucket "reports" lives in account 111111111111. Its bucket policy has one statement that allows s3:GetObject on the bucket objects for two principals: the role arn:aws:iam::111111111111:role/AuditA and the role arn:aws:iam::222222222222:role/AuditB. Neither role has any identity-based policy that mentions S3, and no SCPs or permissions boundaries are in place. Both roles try to download an object from the bucket. What is the result?'
+options:
+  - key: A
+    text: 'Both requests succeed, because the bucket policy names both roles.'
+    correct: false
+    why: "The bucket policy is enough only for a principal in the same account as the resource. A cross-account request is allowed only if the caller's own account also allows it."
+  - key: B
+    text: 'AuditA succeeds and AuditB is denied.'
+    correct: true
+    why: 'Inside one account the permissions of identity-based and resource-based policies are combined, so the bucket policy alone allows AuditA. AuditB is in another account, so its identity-based policy must allow the request too, and it has no S3 permissions.'
+  - key: C
+    text: 'Both requests are denied, because neither role has an identity-based policy that allows S3.'
+    correct: false
+    why: 'For a role in the same account as the bucket, an allow in the resource-based policy is sufficient when nothing denies the request, so AuditA is not blocked by the missing identity policy.'
+  - key: D
+    text: 'AuditA is denied and AuditB succeeds, because the bucket policy trusts the other account more than its own.'
+    correct: false
+    why: 'There is no such preference. The cross-account case is the stricter one: both the trusted and the trusting account must return an allow.'
+cue: 'same account: an allow in either policy is enough; different account: both the identity policy and the resource policy must allow'
+references:
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic.html'
+  - 'https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic-cross-account.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

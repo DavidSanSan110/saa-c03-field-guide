@@ -1,0 +1,39 @@
+id: 'd1-1.3-0020'
+domain: 1
+task: '1.3'
+services:
+  - 'rds'
+difficulty: hard
+type: multiple
+stem: 'A company keeps its orders in Amazon RDS for MySQL. The database is already encrypted at rest with a KMS key. A compliance review finds that some application hosts connect without TLS. The company wants the database itself to reject any connection that is not encrypted, and wants the clients to confirm they are talking to a genuine RDS server. Which two actions meet these requirements? Choose two.'
+options:
+  - key: A
+    text: 'Set the require_secure_transport parameter to ON in a custom DB parameter group that is associated with the DB instance.'
+    correct: true
+    why: 'This parameter makes MySQL refuse connections that are not encrypted. It is changed through the DB parameter group, and for this parameter no reboot is needed for the change to take effect.'
+  - key: B
+    text: 'Set the rds.force_ssl parameter to 1 in the DB parameter group.'
+    correct: false
+    why: 'rds.force_ssl is the parameter for RDS for PostgreSQL. A MySQL instance uses require_secure_transport instead.'
+  - key: C
+    text: 'Download the RDS certificate bundle for the Region and configure the client connections to use it and to verify the server certificate.'
+    correct: true
+    why: "Server identity verification needs the RDS CA certificates in the client's trust store. Clients validate the server certificate against the bundle, while the server-side parameter forces encryption."
+  - key: D
+    text: "Restrict the DB instance's security group to the application hosts' addresses on the database port."
+    correct: false
+    why: 'A security group controls who can reach the port, not whether the connection is encrypted, so plain-text connections from allowed hosts would still work.'
+  - key: E
+    text: 'Rely on the encryption at rest with the KMS key, which also encrypts the traffic between clients and the instance.'
+    correct: false
+    why: 'Encryption at rest protects stored data, logs and backups. It does not encrypt the client connection, which needs TLS.'
+cue: 'database must reject non-encrypted connections (MySQL) and clients must verify the server: parameter group plus RDS CA bundle'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/mysql-ssl-connections.require-ssl.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/UsingWithRDS.SSL.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/UserGuide/PostgreSQL.Concepts.General.SSL.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

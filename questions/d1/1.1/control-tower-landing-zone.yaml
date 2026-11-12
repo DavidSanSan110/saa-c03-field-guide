@@ -1,0 +1,34 @@
+id: 'd1-1.1-0017'
+domain: 1
+task: '1.1'
+services:
+  - 'control-tower'
+  - 'organizations'
+difficulty: easy
+type: single
+stem: 'A company is moving from a single AWS account to a multi-account environment. It wants dedicated accounts for centralized logs and auditing, mandatory security rules applied per organizational unit (including detection of non-compliant resources), and a self-service way for teams to request new accounts that start with the approved baseline. The cloud team is small and wants the LEAST setup and operational effort. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Set up AWS Control Tower to create a landing zone, enable controls on the OUs and let teams request accounts through Account Factory.'
+    correct: true
+    why: 'Control Tower orchestrates Organizations, Service Catalog and IAM Identity Center to build a best-practice landing zone, governs it with preventive, detective and proactive controls per OU, and Account Factory provisions new accounts from a configurable template.'
+  - key: B
+    text: 'Create the organization manually, write SCPs and AWS Config rules for each OU, and script account creation with the Organizations API.'
+    correct: false
+    why: 'This can reach a similar result but every piece (baseline, guardrails, account vending, drift handling) must be designed, built and maintained by the team, which is the opposite of least effort.'
+  - key: C
+    text: 'Enable IAM Identity Center and create one permission set per team, so each team signs in to its own account.'
+    correct: false
+    why: 'Identity Center handles workforce sign-in and access to accounts. It does not create a landing zone, apply controls or provision accounts from a baseline.'
+  - key: D
+    text: 'Deploy a CloudFormation stack set from the existing account that creates the logging and audit resources.'
+    correct: false
+    why: 'A stack set can deploy resources into accounts but gives no guardrails, no compliance dashboard and no account provisioning workflow, so most requirements stay unmet.'
+cue: 'start a multi-account environment, best-practice guardrails, new accounts with a baseline, least effort: Control Tower with Account Factory'
+references:
+  - 'https://docs.aws.amazon.com/controltower/latest/userguide/what-is-control-tower.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
