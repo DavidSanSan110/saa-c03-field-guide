@@ -1,0 +1,34 @@
+id: 'd3-3.3-0008'
+domain: 3
+task: '3.3'
+services:
+  - 'neptune'
+difficulty: medium
+type: single
+stem: 'A payments company stores accounts, devices, cards and addresses in a relational database. Fraud analysts need to uncover rings of accounts that are connected through shared devices, cards and addresses, following many hops of relationships, and results must come back in real time. The current SQL queries with many self-joins have become too slow as the data grew. The company wants a managed service built for this access pattern. Which solution should the company choose?'
+options:
+  - key: A
+    text: 'Move the data to Amazon Redshift and run the relationship queries as analytical SQL'
+    correct: false
+    why: 'Redshift is a data warehouse for large analytical scans, not for low-latency, real-time traversal of many relationship hops; it would still rely on joins.'
+  - key: B
+    text: 'Store the data in Amazon Neptune and query it with Gremlin or openCypher'
+    correct: true
+    why: 'Neptune is a managed graph database optimized for traversing large numbers of relationships with minimal latency, and fraud detection is a listed use case; complex SQL for connected data is hard to write and tune.'
+  - key: C
+    text: 'Move to a larger Amazon Aurora instance class and add more indexes on the join columns'
+    correct: false
+    why: 'This keeps the relational model and the multi-hop self-joins; a bigger instance and indexes may help a little, but the join-heavy queries remain complex and do not scale with the number of hops.'
+  - key: D
+    text: 'Index the records in Amazon OpenSearch Service and use full-text queries to find matching values'
+    correct: false
+    why: 'OpenSearch is built for full-text search and log analytics; it finds matching values but does not natively follow chains of relationships between entities.'
+cue: 'rings of accounts, shared devices and cards, many hops of relationships, self-joins too slow'
+references:
+  - 'https://docs.aws.amazon.com/neptune/latest/userguide/intro.html'
+  - 'https://docs.aws.amazon.com/decision-guides/latest/databases-on-aws-how-to-choose/databases-on-aws-how-to-choose.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

@@ -1,0 +1,33 @@
+id: 'd3-3.3-0005'
+domain: 3
+task: '3.3'
+services:
+  - 'dynamodb'
+difficulty: medium
+type: single
+stem: 'An online retailer has a production Amazon DynamoDB table of orders whose partition key is OrderId. A new customer-service screen must show all orders of a given customer, newest first, with single-digit millisecond latency. CustomerId and OrderDate are regular attributes of each item. The table holds hundreds of millions of items and cannot be recreated. Which approach meets the requirement with the least effort?'
+options:
+  - key: A
+    text: 'Create a local secondary index with CustomerId as its partition key and OrderDate as its sort key.'
+    correct: false
+    why: 'A local secondary index must use the same partition key as the table and can only be created together with the table, so it cannot be added now and cannot be keyed by CustomerId.'
+  - key: B
+    text: 'Run a Scan on the table with a filter expression on CustomerId and sort the results in the application.'
+    correct: false
+    why: 'A Scan reads every item before the filter applies, which is slow and consumes a lot of capacity on a table this large.'
+  - key: C
+    text: 'Query the table by CustomerId using strongly consistent reads to get the latest data quickly.'
+    correct: false
+    why: "Consistency only controls how fresh the read is. A Query needs the table's partition key, and CustomerId is not part of the key, so this cannot work."
+  - key: D
+    text: 'Add a global secondary index to the existing table with CustomerId as partition key and OrderDate as sort key, and query the index.'
+    correct: true
+    why: "A GSI can have any scalar attributes as keys and can be added to an existing table. DynamoDB maintains it automatically and a Query on it returns the customer's orders sorted by date."
+cue: 'new query by a non-key attribute on a table already in production'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

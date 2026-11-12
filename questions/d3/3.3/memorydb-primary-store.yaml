@@ -1,0 +1,36 @@
+id: 'd3-3.3-0007'
+domain: 3
+task: '3.3'
+services:
+  - 'memorydb'
+  - 'elasticache'
+difficulty: medium
+type: single
+stem: 'A fintech company is building a real-time bidding service. The application already uses Redis data structures (hashes, sorted sets) and needs microsecond reads and single-digit millisecond writes. This in-memory store will be the only copy of the bidding state, with no other database behind it, and no acknowledged write may be lost if a node fails. The team wants a fully managed service. Which solution meets these requirements?'
+options:
+  - key: A
+    text: 'Amazon ElastiCache for Redis OSS with cluster mode enabled and one replica per shard, with the bidding state written only to the cache'
+    correct: false
+    why: 'ElastiCache for Redis OSS is a cache for frequently accessed data in front of a durable database. Its replicas copy data asynchronously and help availability, but this setup does not give the durable, log-backed storage the requirement calls for.'
+  - key: B
+    text: 'Amazon ElastiCache for Memcached with nodes spread across several Availability Zones'
+    correct: false
+    why: 'Memcached supports only simple data types, has no replication, no automatic failover and no backup of node-based clusters, so it cannot hold the only copy of data and lacks the Redis data structures.'
+  - key: C
+    text: 'Amazon MemoryDB with a Multi-AZ cluster'
+    correct: true
+    why: 'MemoryDB is Valkey and Redis OSS compatible, gives microsecond reads and single-digit millisecond writes, and stores data durably in a Multi-AZ transactional log, so it can be the primary database.'
+  - key: D
+    text: 'Amazon DynamoDB with DAX in front of the table'
+    correct: false
+    why: 'DynamoDB with DAX is durable and fast, but it speaks the DynamoDB API, not Redis commands and data structures, so the application would need to be rewritten.'
+cue: 'in-memory, Redis data structures, only copy of the data, no write lost on node failure'
+references:
+  - 'https://docs.aws.amazon.com/memorydb/latest/devguide/what-is-memorydb.html'
+  - 'https://docs.aws.amazon.com/decision-guides/latest/databases-on-aws-how-to-choose/databases-on-aws-how-to-choose.html'
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/SelectEngine.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

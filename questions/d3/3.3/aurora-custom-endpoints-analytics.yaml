@@ -1,0 +1,34 @@
+id: 'd3-3.3-0006'
+domain: 3
+task: '3.3'
+services:
+  - 'aurora'
+difficulty: medium
+type: single
+stem: "A company runs an Amazon Aurora MySQL cluster with one writer and three identical Aurora Replicas. The web application sends all reads to the cluster reader endpoint. Analysts have started running heavy ad-hoc queries through the same reader endpoint, and the application's read latency has risen. The company adds two larger replicas for the analysts and wants analyst connections to reach only those two, while application reads keep using the original three, with connections still balanced inside each group and no manual host lists. Which solution meets these requirements?"
+options:
+  - key: A
+    text: 'Create one custom endpoint for the two larger replicas and another for the original replicas, and point each group of clients to its endpoint.'
+    correct: true
+    why: 'A custom endpoint represents a set of instances you choose and balances connections among its members. Two endpoints separate the workloads, and no instance addresses are hard-coded.'
+  - key: B
+    text: 'Keep both groups on the reader endpoint, because it distributes connections across all replicas automatically.'
+    correct: false
+    why: 'The reader endpoint balances over all replicas, including the new large ones, so analytic queries keep landing on the replicas the application uses. It cannot separate the two workloads.'
+  - key: C
+    text: 'Give the analysts the instance endpoints of the two larger replicas and keep the application on the reader endpoint.'
+    correct: false
+    why: 'Instance endpoints are meant for diagnosis and tuning. They give no connection balancing or rerouting if an instance fails, and the reader endpoint would still send application reads to the large replicas.'
+  - key: D
+    text: 'Create a Multi-AZ standby of the cluster and run the analytic queries against it.'
+    correct: false
+    why: 'That adds a different resource and does not separate traffic among the existing Aurora Replicas. Aurora storage is already replicated across Availability Zones, so nothing new is gained here.'
+cue: 'separate groups of replicas for analytics and the application, each with balanced connections'
+references:
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Overview.Endpoints.html'
+  - 'https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/Aurora.Endpoints.Custom.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

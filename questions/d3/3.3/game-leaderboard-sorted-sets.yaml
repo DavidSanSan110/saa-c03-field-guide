@@ -1,0 +1,34 @@
+id: 'd3-3.3-0009'
+domain: 3
+task: '3.3'
+services:
+  - 'elasticache'
+difficulty: medium
+type: single
+stem: "A mobile game studio wants a global leaderboard for millions of players. After every match the player's score must be updated, and the game must return the top 100 players and any single player's rank within milliseconds. Scores are also stored in the studio's main database, so the leaderboard can be rebuilt if needed. Which solution provides the leaderboard with the best performance?"
+options:
+  - key: A
+    text: "Amazon ElastiCache for Memcached, storing each player's score as a key and sorting in the application"
+    correct: false
+    why: 'Memcached supports only simple key-value data and has no sorted sets, so ranking would mean fetching and sorting many keys in application code.'
+  - key: B
+    text: 'Scores kept in DynamoDB, indexed by score in a GSI, with a Scan to get the top players'
+    correct: false
+    why: 'A Scan reads the whole table and is slow and expensive at this size; DynamoDB is also not an in-memory ranking structure and has no built-in rank lookup.'
+  - key: C
+    text: 'Amazon RDS with an indexed score column, running an ORDER BY query on every leaderboard request'
+    correct: false
+    why: 'Sorting and ranking on a relational database for every request adds load and latency at millions of players and constant score updates, far from in-memory speed.'
+  - key: D
+    text: 'Amazon ElastiCache for Valkey, with each player stored as a member of a sorted set ordered by score'
+    correct: true
+    why: 'Valkey and Redis OSS support sorted sets, which keep members ordered by score in memory, so updates, top-N and rank lookups are fast; the main database remains the durable copy.'
+cue: "real-time ranking, top 100, a player's rank, millions of players"
+references:
+  - 'https://docs.aws.amazon.com/AmazonElastiCache/latest/dg/SelectEngine.html'
+  - 'https://docs.aws.amazon.com/decision-guides/latest/databases-on-aws-how-to-choose/databases-on-aws-how-to-choose.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110

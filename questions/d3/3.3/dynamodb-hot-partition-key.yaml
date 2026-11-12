@@ -1,0 +1,35 @@
+id: 'd3-3.3-0004'
+domain: 3
+task: '3.3'
+services:
+  - 'dynamodb'
+difficulty: medium
+type: single
+stem: 'A logistics company stores shipment events in an Amazon DynamoDB table in provisioned capacity mode. The partition key is the event date (for example 2026-11-12) and the sort key is the event ID. During the daily peak, the application receives ProvisionedThroughputExceededException errors on writes, yet CloudWatch shows that the table consumes only a small fraction of its provisioned write capacity. Almost all writes of the day target the current date. Which solution resolves the throttling?'
+options:
+  - key: A
+    text: 'Increase the provisioned write capacity units of the table to several times the current value.'
+    correct: false
+    why: 'The table already has spare capacity. A single partition key value is served by one partition, which has its own throughput ceiling, so adding table-level capacity does not lift it.'
+  - key: B
+    text: 'Change the key design so writes spread over many partition key values, for example by appending a calculated or random suffix to the date.'
+    correct: true
+    why: 'Every write of the day lands on one key value, so one partition takes the whole load. Adding a suffix (write sharding) or using a high-cardinality key spreads the writes over several partitions. Reads for a day then query each suffix and merge the results.'
+  - key: C
+    text: 'Send the writes through a DAX cluster placed between the application and the table.'
+    correct: false
+    why: 'DAX is an in-memory cache that helps repeated reads. Writes pass through to the table, so the hot partition still receives every write.'
+  - key: D
+    text: 'Add a global secondary index on the event ID so that the writes are distributed through the index.'
+    correct: false
+    why: 'A GSI is an extra copy for alternate queries. Writes still go to the base table first, and the index is updated as well, which adds write load rather than removing the hot key.'
+cue: 'throttled although consumption is far below capacity; partition key is a date, so all writes hit one key value'
+references:
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-design.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-uniform-load.html'
+  - 'https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-partition-key-sharding.html'
+status: reviewed
+provenance:
+  generated_by: claude-sonnet
+  verified_by: claude-opus
+  reviewed_by: DavidSanSan110
