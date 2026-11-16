@@ -11,13 +11,13 @@
     "typecheck": "astro check"
   },
   "dependencies": {
-    "@astrojs/react": "7.1.4",
-    "@astrojs/starlight": "^0.42.10",
+    "@astrojs/react": "7.1.9",
+    "@astrojs/starlight": "^0.43.0",
     "@field-guide/diagram-engine": "workspace:*",
     "@field-guide/quiz-core": "workspace:*",
     "@field-guide/questions": "workspace:*",
     "@field-guide/schema": "workspace:*",
-    "astro": "^7.4.7",
+    "astro": "^7.4.12",
     "react": "19.3.1",
     "react-dom": "19.3.1",
     "yaml": "^2.9.1"
